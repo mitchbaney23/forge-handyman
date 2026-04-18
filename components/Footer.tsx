@@ -1,0 +1,102 @@
+import Link from "next/link";
+import { BUSINESS, NAV_LINKS, SERVICE_AREA } from "@/lib/constants";
+import { Logo } from "@/components/Logo";
+import { Icon } from "@/lib/icons";
+
+export function Footer() {
+  return (
+    <footer className="texture-navy mt-16 text-white/85">
+      <div className="container-page py-14">
+        <div className="grid gap-10 md:grid-cols-4">
+          <div>
+            <Logo variant="light" />
+            <p className="mt-4 text-sm leading-relaxed text-white/70">
+              Honest work, fair prices, and a craftsman you can trust in your home.
+              Serving Garner, Clayton, South Raleigh, and surrounding communities.
+            </p>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-white">
+              Contact
+            </h4>
+            <ul className="mt-4 space-y-3 text-sm">
+              <li>
+                <a
+                  href={BUSINESS.phoneHref}
+                  className="flex items-center gap-2 hover:text-amber-forge-light"
+                >
+                  <Icon name="phone" className="h-4 w-4 text-amber-forge-light" />
+                  {BUSINESS.phone}
+                </a>
+              </li>
+              <li>
+                <a
+                  href={BUSINESS.emailHref}
+                  className="flex items-center gap-2 hover:text-amber-forge-light"
+                >
+                  <Icon name="mail" className="h-4 w-4 text-amber-forge-light" />
+                  {BUSINESS.email}
+                </a>
+              </li>
+              <li className="flex items-start gap-2">
+                <Icon
+                  name="clock"
+                  className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-forge-light"
+                />
+                <div>
+                  {BUSINESS.hours.map((h) => (
+                    <div key={h.day} className="text-white/75">
+                      <span className="text-white">{h.day}:</span> {h.time}
+                    </div>
+                  ))}
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-white">
+              Quick Links
+            </h4>
+            <ul className="mt-4 space-y-2 text-sm">
+              {NAV_LINKS.map((link) => (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    className="text-white/75 hover:text-amber-forge-light"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-white">
+              Service Area
+            </h4>
+            <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm text-white/75">
+              {SERVICE_AREA.map((area) => (
+                <li key={area.name}>{area.name}, NC</li>
+              ))}
+            </ul>
+            <Link
+              href="/contact"
+              className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-amber-forge-light hover:text-amber-forge"
+            >
+              Request a free estimate
+              <Icon name="arrow-right" className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-12 flex flex-col gap-3 border-t border-white/15 pt-6 text-xs text-white/55 sm:flex-row sm:items-center sm:justify-between">
+          <p>© {new Date().getFullYear()} Forge Handyman Service. All rights reserved.</p>
+          <p>Licensed &amp; Insured · Part of the Forge family of local ventures.</p>
+        </div>
+      </div>
+    </footer>
+  );
+}

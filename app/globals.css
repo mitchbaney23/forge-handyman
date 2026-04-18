@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-cream text-ink antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  h1, h2, h3, h4, h5 {
+    @apply font-semibold tracking-tight text-navy;
+  }
+
+  ::selection {
+    @apply bg-amber-forge text-white;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-amber-forge ring-offset-2 ring-offset-white;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-[1200px] px-4 sm:px-6 lg:px-8;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-primary {
+    @apply btn bg-amber-forge text-white shadow-sm hover:bg-amber-forge-dark hover:shadow-md active:translate-y-px;
+  }
+
+  .btn-secondary {
+    @apply btn border border-white/40 bg-white/10 text-white backdrop-blur hover:bg-white/20;
+  }
+
+  .btn-navy {
+    @apply btn bg-navy text-white hover:bg-navy-600 active:translate-y-px;
+  }
+
+  .btn-outline {
+    @apply btn border border-navy/20 bg-white text-navy hover:border-navy hover:bg-navy hover:text-white;
+  }
+
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.18em] text-amber-forge;
+  }
+
+  .section {
+    @apply py-16 sm:py-20 lg:py-24;
+  }
+
+  .section-tight {
+    @apply py-12 sm:py-16;
+  }
+
+  .prose-ink p {
+    @apply text-ink/80 leading-relaxed;
+  }
+}
+
+@layer utilities {
+  .texture-navy {
+    background-color: #1B3A5C;
+    background-image:
+      radial-gradient(at 20% 10%, rgba(74, 111, 165, 0.35) 0, transparent 50%),
+      radial-gradient(at 85% 85%, rgba(217, 119, 6, 0.18) 0, transparent 55%),
+      linear-gradient(135deg, rgba(255,255,255,0.02) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.02) 50%, rgba(255,255,255,0.02) 75%, transparent 75%);
+    background-size: auto, auto, 18px 18px;
+  }
+
+  .scroll-safe {
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+
+  @media (min-width: 768px) {
+    .scroll-safe {
+      padding-bottom: 0;
+    }
+  }
+}
