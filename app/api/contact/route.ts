@@ -5,6 +5,7 @@ import {
   sendNotificationEmail,
   type ContactSubmission,
 } from "@/lib/google";
+import { checkServiceArea } from "@/lib/geocoding";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,6 +119,16 @@ export async function POST(request: NextRequest) {
   const { data, error } = validate(raw);
   if (!data) {
     return NextResponse.json({ error: error ?? "Invalid input." }, { status: 400 });
+  }
+
+  const serviceArea = await checkServiceArea(data.address);
+  if (!serviceArea.inArea) {
+    return NextResponse.json({
+      ok: false,
+      outOfArea: true,
+      distanceMiles: Math.round(serviceArea.distanceMiles * 10) / 10,
+      radiusMiles: serviceArea.radiusMiles,
+    });
   }
 
   if (isDevMode()) {

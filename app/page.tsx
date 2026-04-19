@@ -4,7 +4,7 @@ import { TrustBar } from "@/components/TrustBar";
 import { ServiceCard } from "@/components/ServiceCard";
 import { TestimonialCard } from "@/components/TestimonialCard";
 import { CTABanner } from "@/components/CTABanner";
-import { SERVICES, TESTIMONIALS, SERVICE_AREA } from "@/lib/constants";
+import { SERVICES, TESTIMONIALS, BUSINESS } from "@/lib/constants";
 import { Icon } from "@/lib/icons";
 
 export default function HomePage() {
@@ -112,42 +112,12 @@ export default function HomePage() {
       </section>
 
       <section className="bg-white">
-        <div className="container-page section grid gap-10 lg:grid-cols-2 lg:items-center">
-          <div>
-            <p className="eyebrow">Service Area</p>
-            <h2 className="mt-3 text-3xl font-bold sm:text-4xl">
-              Proudly Serving Our Neighbors in Wake &amp; Johnston Counties
-            </h2>
-            <p className="mt-4 text-base text-ink/75">
-              Forge is a local business for local folks. If you&rsquo;re in or
-              around any of these communities, we&rsquo;re just a call away.
+        <div className="container-page py-10 sm:py-12">
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-navy/10 bg-cream px-6 py-5 text-center sm:flex-row sm:justify-center sm:gap-4 sm:text-left">
+            <Icon name="map-pin" className="h-5 w-5 text-amber-forge" />
+            <p className="text-sm font-semibold text-navy sm:text-base">
+              {BUSINESS.serviceAreaLine}
             </p>
-            <ul className="mt-6 grid grid-cols-2 gap-2 text-sm font-medium text-navy sm:grid-cols-3">
-              {SERVICE_AREA.map((area) => (
-                <li
-                  key={area.name}
-                  className="flex items-center gap-2 rounded-md border border-navy/10 bg-cream px-3 py-2"
-                >
-                  <Icon name="map-pin" className="h-4 w-4 text-amber-forge" />
-                  {area.name}, NC
-                </li>
-              ))}
-            </ul>
-            <p className="mt-6 text-sm text-ink/60">
-              Not listed?{" "}
-              <Link href="/contact" className="font-semibold text-amber-forge hover:underline">
-                Give us a call
-              </Link>{" "}
-              — we may still be able to help.
-            </p>
-          </div>
-          <div
-            className="relative aspect-[4/3] overflow-hidden rounded-xl border border-navy/10 bg-cream"
-            aria-label="Service area map placeholder"
-          >
-            <MapIllustration />
-            {/* Placeholder for embedded Google Map. Replace with iframe when ready.
-                <img src="/service-area-map.jpg" alt="Map of Garner, Clayton and South Raleigh service area" /> */}
           </div>
         </div>
       </section>
@@ -218,59 +188,3 @@ function FeatureBlock({
   );
 }
 
-function MapIllustration() {
-  return (
-    <svg
-      viewBox="0 0 400 300"
-      className="h-full w-full"
-      role="img"
-      aria-label="Stylized map of Wake and Johnston County service area"
-    >
-      <defs>
-        <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0%" stopColor="#E8EEF5" />
-          <stop offset="100%" stopColor="#F8F9FA" />
-        </linearGradient>
-      </defs>
-      <rect width="400" height="300" fill="url(#bg)" />
-      <g stroke="#C5D3E2" strokeWidth="1" fill="none">
-        <path d="M0 80 L400 60" />
-        <path d="M0 140 L400 130" />
-        <path d="M0 210 L400 200" />
-        <path d="M60 0 L80 300" />
-        <path d="M180 0 L200 300" />
-        <path d="M300 0 L310 300" />
-      </g>
-      <g fill="#4A6FA5" opacity="0.25">
-        <path d="M40 80 L180 50 L260 120 L210 220 L90 200 Z" />
-        <path d="M220 150 L330 100 L360 200 L280 240 Z" />
-      </g>
-      <g fontFamily="Inter, sans-serif" fontSize="11" fill="#1B3A5C" fontWeight="600">
-        <g>
-          <circle cx="120" cy="140" r="6" fill="#D97706" />
-          <text x="132" y="144">Garner</text>
-        </g>
-        <g>
-          <circle cx="250" cy="175" r="6" fill="#D97706" />
-          <text x="262" y="179">Clayton</text>
-        </g>
-        <g>
-          <circle cx="170" cy="90" r="5" fill="#1B3A5C" />
-          <text x="182" y="94">S. Raleigh</text>
-        </g>
-        <g>
-          <circle cx="80" cy="220" r="5" fill="#1B3A5C" />
-          <text x="92" y="224">Fuquay</text>
-        </g>
-        <g>
-          <circle cx="310" cy="145" r="5" fill="#1B3A5C" />
-          <text x="322" y="149">Wendell</text>
-        </g>
-        <g>
-          <circle cx="340" cy="215" r="5" fill="#1B3A5C" />
-          <text x="280" y="240">Smithfield</text>
-        </g>
-      </g>
-    </svg>
-  );
-}

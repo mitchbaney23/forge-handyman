@@ -10,7 +10,7 @@ export const BUSINESS = {
   city: "Garner",
   region: "NC",
   country: "US",
-  serviceRadiusLabel: "Wake & Johnston Counties, NC",
+  serviceAreaLine: "Serving Garner, Clayton & South Raleigh, NC",
   hours: [
     { day: "Monday – Friday", time: "8:00 AM – 6:00 PM" },
     { day: "Saturday", time: "9:00 AM – 2:00 PM" },
@@ -27,7 +27,6 @@ export const NAV_LINKS = [
   { label: "Home", href: "/" },
   { label: "Services", href: "/services" },
   { label: "About", href: "/about" },
-  { label: "Service Area", href: "/service-area" },
   { label: "Contact", href: "/contact" },
 ];
 
@@ -132,54 +131,6 @@ export const SERVICES: Service[] = [
   },
 ];
 
-export const SERVICE_AREA = [
-  {
-    name: "Garner",
-    blurb:
-      "Our home base. From Lake Benson to White Oak, we cover every neighborhood in Garner and respond fast.",
-  },
-  {
-    name: "Clayton",
-    blurb:
-      "A short drive down 70 — we serve Flowers Plantation, downtown Clayton, and the newer developments off 42.",
-  },
-  {
-    name: "South Raleigh",
-    blurb:
-      "Inside the Beltline and out — Renaissance Park, Southgate, Hedingham, and the neighborhoods along Rock Quarry Road.",
-  },
-  {
-    name: "Fuquay-Varina",
-    blurb:
-      "Historic downtown, the South Lakes area, and all the growing communities along 401.",
-  },
-  {
-    name: "Knightdale",
-    blurb:
-      "Knightdale Station, Princeton Manor, and the neighborhoods off Smithfield Road and Hodge Road.",
-  },
-  {
-    name: "Wendell",
-    blurb:
-      "Wendell Falls and older downtown Wendell — we're regulars out 64 east.",
-  },
-  {
-    name: "Smithfield",
-    blurb:
-      "Downtown Smithfield and the communities along 70 and 301 in Johnston County.",
-  },
-  {
-    name: "Archer Lodge",
-    blurb:
-      "Between Wendell and Clayton — a quiet community we're proud to serve.",
-  },
-  {
-    name: "Willow Spring",
-    blurb:
-      "The rural pockets along 401 south and 42 west, where neighbors still wave.",
-  },
-];
-
 export const TRUST_SIGNALS = [
   { icon: "shield", label: "Licensed & Insured" },
   { icon: "hammer", label: "40+ Years Experience" },
@@ -234,7 +185,7 @@ export const TESTIMONIALS = [
     quote:
       "I don't leave reviews usually, but David earned this one. Knew exactly what he was doing, explained everything, and treated my home like it was his own.",
     name: "Priya K.",
-    location: "Fuquay-Varina, NC",
+    location: "Garner, NC",
   },
 ];
 

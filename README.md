@@ -56,6 +56,8 @@ See `.env.example`. Required in production:
 | `BUSINESS_EMAIL`                 | Notification destination — `david@forgehandyman.com` |
 | `NEXT_PUBLIC_DEV_MODE`           | `true` for local dev (skips Google API calls)      |
 | `NEXT_PUBLIC_SITE_URL`           | Canonical site URL — used in metadata + sitemap    |
+| `GOOGLE_GEOCODING_API_KEY`       | Geocoding API key — validates submitted addresses  |
+| `SERVICE_AREA_RADIUS_MILES`      | Optional override for the 15-mile default radius   |
 
 ---
 
@@ -72,6 +74,8 @@ The `/api/contact` route authenticates with a Google service account using
    - Gmail API
    - Google Calendar API
    - Google Sheets API
+   - Geocoding API (used to validate that submitted addresses fall inside
+     the service radius — see step 6 below).
 
 ### 2. Service account
 
@@ -106,6 +110,22 @@ The service account acts on behalf of `david@forgehandyman.com` (via
 delegation), so no extra sharing is needed — events are created on David's
 primary calendar. Set `GOOGLE_CALENDAR_ID=david@forgehandyman.com`.
 
+### 6. Geocoding API key (service-area validation)
+
+The contact form geocodes every submitted address to make sure it's inside
+the ~15-mile service radius around Garner. This uses a plain API key —
+not the service account.
+
+1. In Google Cloud Console → **APIs & Services → Credentials → Create credentials → API key**.
+2. Restrict the key to the **Geocoding API** only.
+3. Copy the key into `GOOGLE_GEOCODING_API_KEY`.
+4. Override the radius with `SERVICE_AREA_RADIUS_MILES` if you want to
+   widen or tighten the default 15 miles.
+
+The check fails open: if the key is missing or Google returns an error,
+the submission is accepted anyway so a real customer never gets bounced
+by an API hiccup.
+
 ---
 
 ## Deploy to Vercel
@@ -131,7 +151,6 @@ forge-handyman/
 │   ├── page.tsx              # Homepage
 │   ├── services/page.tsx
 │   ├── about/page.tsx
-│   ├── service-area/page.tsx
 │   ├── contact/page.tsx
 │   ├── not-found.tsx
 │   ├── sitemap.ts
@@ -152,6 +171,7 @@ forge-handyman/
 ├── lib/
 │   ├── constants.ts          # Business info, services, service area, etc.
 │   ├── google.ts             # gmail / calendar / sheets client helpers
+│   ├── geocoding.ts          # Geocoding + Haversine service-area check
 │   └── icons.tsx             # Inline SVG icon set
 ├── public/
 │   └── favicon.svg

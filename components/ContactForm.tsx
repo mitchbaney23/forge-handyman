@@ -4,7 +4,9 @@ import { useState, type FormEvent } from "react";
 import { REFERRAL_SOURCES, SERVICE_OPTIONS } from "@/lib/constants";
 import { Icon } from "@/lib/icons";
 
-type Status = "idle" | "submitting" | "success" | "error";
+type Status = "idle" | "submitting" | "success" | "error" | "out-of-area";
+
+type OutOfAreaInfo = { distanceMiles: number; radiusMiles: number };
 
 type FieldErrors = Partial<Record<keyof FormState, string>>;
 
@@ -54,6 +56,7 @@ export function ContactForm() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState<Status>("idle");
   const [serverMessage, setServerMessage] = useState<string>("");
+  const [outOfArea, setOutOfArea] = useState<OutOfAreaInfo | null>(null);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setState((s) => ({ ...s, [key]: value }));
@@ -86,6 +89,14 @@ export function ContactForm() {
         );
         return;
       }
+      if (data?.outOfArea) {
+        setStatus("out-of-area");
+        setOutOfArea({
+          distanceMiles: data.distanceMiles,
+          radiusMiles: data.radiusMiles,
+        });
+        return;
+      }
       setStatus("success");
       setState(initial);
     } catch {
@@ -95,6 +106,48 @@ export function ContactForm() {
       );
     }
   };
+
+  if (status === "out-of-area" && outOfArea) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-forge text-white">
+          <Icon name="map-pin" className="h-6 w-6" />
+        </div>
+        <h3 className="mt-4 text-xl font-semibold text-navy">
+          You&rsquo;re just outside our service area
+        </h3>
+        <p className="mt-2 text-sm text-ink/80">
+          Your address looks to be about{" "}
+          <span className="font-semibold">
+            {outOfArea.distanceMiles} miles
+          </span>{" "}
+          from Garner, and we currently keep bookings within roughly{" "}
+          {outOfArea.radiusMiles} miles so we can stay local and responsive.
+        </p>
+        <p className="mt-3 text-sm text-ink/80">
+          That said — we occasionally make exceptions for bigger jobs. Give David
+          a call at{" "}
+          <a
+            href="tel:+18285519690"
+            className="font-semibold text-amber-forge underline hover:text-navy"
+          >
+            (828) 551-9690
+          </a>{" "}
+          and we&rsquo;ll see what we can do.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setStatus("idle");
+            setOutOfArea(null);
+          }}
+          className="mt-5 text-sm font-semibold text-navy hover:text-amber-forge"
+        >
+          Update my address
+        </button>
+      </div>
+    );
+  }
 
   if (status === "success") {
     return (

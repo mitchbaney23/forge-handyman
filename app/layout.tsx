@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     template: `%s | ${BUSINESS.name}`,
   },
   description:
-    "Forge Handyman Service — honest work and fair prices from a 40-year veteran craftsman. Serving Garner, Clayton, South Raleigh, and surrounding NC communities.",
+    "Forge Handyman Service — honest work and fair prices from a 40-year veteran craftsman. Serving Garner, Clayton & South Raleigh, NC.",
   keywords: [
     "handyman Garner NC",
     "handyman Clayton NC",
@@ -36,7 +36,6 @@ export const metadata: Metadata = {
     "deck repair Garner",
     "drywall repair Clayton",
     "home repair Wake County",
-    "Johnston County handyman",
   ],
   applicationName: BUSINESS.name,
   authors: [{ name: BUSINESS.owner }],
@@ -96,12 +95,6 @@ const structuredData = {
     { "@type": "City", name: "Garner", address: { "@type": "PostalAddress", addressRegion: "NC" } },
     { "@type": "City", name: "Clayton", address: { "@type": "PostalAddress", addressRegion: "NC" } },
     { "@type": "City", name: "Raleigh", address: { "@type": "PostalAddress", addressRegion: "NC" } },
-    { "@type": "City", name: "Fuquay-Varina", address: { "@type": "PostalAddress", addressRegion: "NC" } },
-    { "@type": "City", name: "Knightdale", address: { "@type": "PostalAddress", addressRegion: "NC" } },
-    { "@type": "City", name: "Wendell", address: { "@type": "PostalAddress", addressRegion: "NC" } },
-    { "@type": "City", name: "Smithfield", address: { "@type": "PostalAddress", addressRegion: "NC" } },
-    { "@type": "City", name: "Archer Lodge", address: { "@type": "PostalAddress", addressRegion: "NC" } },
-    { "@type": "City", name: "Willow Spring", address: { "@type": "PostalAddress", addressRegion: "NC" } },
   ],
   openingHoursSpecification: BUSINESS.hoursStructured.map((block) => ({
     "@type": "OpeningHoursSpecification",

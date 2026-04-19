@@ -96,9 +96,8 @@ export default function ContactPage() {
               title="Service Area"
               body={
                 <p className="text-sm text-ink/75">
-                  Serving Garner, Clayton, South Raleigh, Fuquay-Varina,
-                  Knightdale, Wendell, Smithfield, Archer Lodge, Willow Spring,
-                  and surrounding communities.
+                  {BUSINESS.serviceAreaLine}. Bookings are limited to roughly a
+                  15-mile radius of Garner so we can stay local and responsive.
                 </p>
               }
             />
