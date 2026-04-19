@@ -48,11 +48,6 @@ export const metadata: Metadata = {
     description:
       "Trusted local handyman serving Garner, Clayton, and South Raleigh. Free estimates, licensed and insured.",
   },
-  icons: {
-    icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-    ],
-  },
   robots: {
     index: true,
     follow: true,

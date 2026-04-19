@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 type LogoProps = {
@@ -5,20 +6,40 @@ type LogoProps = {
 };
 
 export function Logo({ variant = "dark" }: LogoProps) {
-  const markColor = variant === "light" ? "text-amber-forge-light" : "text-amber-forge";
-  const textColor = variant === "light" ? "text-white" : "text-navy";
-  const subColor = variant === "light" ? "text-white/60" : "text-ink/55";
+  if (variant === "light") {
+    return <LightFallback />;
+  }
 
   return (
-    <Link href="/" className="group inline-flex items-center gap-3" aria-label="Forge Handyman Service — Home">
-      <span
-        className={`grid h-10 w-10 place-items-center rounded-lg ${
-          variant === "light" ? "bg-white/10" : "bg-navy"
-        } transition-transform group-hover:-rotate-6`}
-      >
+    <Link
+      href="/"
+      className="inline-flex items-center"
+      aria-label="Forge Handyman Service — Home"
+    >
+      <Image
+        src="/logo.png"
+        alt="Forge Handyman Service"
+        width={1536}
+        height={1024}
+        priority
+        sizes="(max-width: 768px) 120px, 170px"
+        className="h-11 w-auto md:h-14"
+      />
+    </Link>
+  );
+}
+
+function LightFallback() {
+  return (
+    <Link
+      href="/"
+      className="group inline-flex items-center gap-3"
+      aria-label="Forge Handyman Service — Home"
+    >
+      <span className="grid h-10 w-10 place-items-center rounded-lg bg-white/10 transition-transform group-hover:-rotate-6">
         <svg
           viewBox="0 0 24 24"
-          className={`h-5 w-5 ${markColor}`}
+          className="h-5 w-5 text-amber-forge-light"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.8"
@@ -31,10 +52,10 @@ export function Logo({ variant = "dark" }: LogoProps) {
         </svg>
       </span>
       <span className="flex flex-col leading-none">
-        <span className={`text-base font-bold tracking-tight ${textColor}`}>
+        <span className="text-base font-bold tracking-tight text-white">
           Forge Handyman
         </span>
-        <span className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${subColor}`}>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
           Service
         </span>
       </span>
