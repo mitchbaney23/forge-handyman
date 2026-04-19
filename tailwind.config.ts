@@ -32,8 +32,9 @@ const config: Config = {
           "forge-light": "#F59E0B",
         },
         brand: {
-          orange: "#EA6B1F",
-          "orange-dark": "#C2560F",
+          orange: "#BF5700",
+          "orange-dark": "#8A3E00",
+          "orange-light": "#E07420",
           ink: "#1E1E1E",
         },
         ink: "#1F2937",
