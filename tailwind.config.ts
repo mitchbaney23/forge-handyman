@@ -31,11 +31,17 @@ const config: Config = {
           "forge-dark": "#B45309",
           "forge-light": "#F59E0B",
         },
+        brand: {
+          orange: "#EA6B1F",
+          "orange-dark": "#C2560F",
+          ink: "#1E1E1E",
+        },
         ink: "#1F2937",
         cream: "#F8F9FA",
       },
       fontFamily: {
         sans: [
+          "var(--font-inter)",
           "Inter",
           "ui-sans-serif",
           "system-ui",
@@ -44,6 +50,14 @@ const config: Config = {
           "Roboto",
           "Helvetica Neue",
           "Arial",
+          "sans-serif",
+        ],
+        display: [
+          "var(--font-oswald)",
+          "Oswald",
+          "Impact",
+          "ui-sans-serif",
+          "system-ui",
           "sans-serif",
         ],
       },

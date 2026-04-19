@@ -1,9 +1,23 @@
 import type { Metadata, Viewport } from "next";
+import { Inter, Oswald } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { MobileCTA } from "@/components/MobileCTA";
 import { BUSINESS } from "@/lib/constants";
+
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
+
+const oswald = Oswald({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  display: "swap",
+  variable: "--font-oswald",
+});
 
 const siteUrl = BUSINESS.siteUrl;
 
@@ -105,8 +119,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="flex min-h-screen flex-col scroll-safe">
+    <html lang="en" className={`${inter.variable} ${oswald.variable}`}>
+      <body className="flex min-h-screen flex-col scroll-safe font-sans">
         <Header />
         <main id="main" className="flex-1">
           {children}
