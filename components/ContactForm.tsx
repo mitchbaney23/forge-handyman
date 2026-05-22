@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import Script from "next/script";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { REFERRAL_SOURCES, SERVICE_OPTIONS } from "@/lib/constants";
 import { Icon } from "@/lib/icons";
 
@@ -32,6 +33,26 @@ const initial: FormState = {
   referralSource: "",
 };
 
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        container: string | HTMLElement,
+        options: {
+          sitekey: string;
+          callback?: (token: string) => void;
+          "error-callback"?: () => void;
+          "expired-callback"?: () => void;
+        },
+      ) => string;
+      reset: (widgetId?: string) => void;
+      remove: (widgetId?: string) => void;
+    };
+  }
+}
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+
 function validate(state: FormState): FieldErrors {
   const errors: FieldErrors = {};
   if (!state.name.trim()) errors.name = "Please enter your name.";
@@ -44,8 +65,7 @@ function validate(state: FormState): FieldErrors {
   if (!state.address.trim())
     errors.address = "Please share your address or city.";
   if (!state.serviceType) errors.serviceType = "Select a service.";
-  if (!state.preferredDate)
-    errors.preferredDate = "Pick a preferred date.";
+  if (!state.preferredDate) errors.preferredDate = "Pick a preferred date.";
   if (!state.description.trim())
     errors.description = "Tell us a bit about the work.";
   return errors;
@@ -57,10 +77,77 @@ export function ContactForm() {
   const [status, setStatus] = useState<Status>("idle");
   const [serverMessage, setServerMessage] = useState<string>("");
   const [outOfArea, setOutOfArea] = useState<OutOfAreaInfo | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string>("");
+  const utmSourceRef = useRef<string>("");
+  const honeypotRef = useRef<HTMLInputElement>(null);
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const utm = params.get("utm_source");
+    if (utm) utmSourceRef.current = utm.slice(0, 120);
+  }, []);
+
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return;
+    if (!turnstileContainerRef.current) return;
+    if (turnstileWidgetIdRef.current) return;
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const tryRender = (): boolean => {
+      if (cancelled) return true;
+      const ts = window.turnstile;
+      const container = turnstileContainerRef.current;
+      if (!ts || !container) return false;
+      const widgetId = ts.render(container, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (token) => setTurnstileToken(token),
+        "expired-callback": () => setTurnstileToken(""),
+        "error-callback": () => setTurnstileToken(""),
+      });
+      turnstileWidgetIdRef.current = widgetId;
+      return true;
+    };
+
+    if (!tryRender()) {
+      intervalId = setInterval(() => {
+        if (tryRender() && intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+      }, 250);
+    }
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+      const ts = window.turnstile;
+      const widgetId = turnstileWidgetIdRef.current;
+      if (ts && widgetId) {
+        try {
+          ts.remove(widgetId);
+        } catch {
+          // ignore — widget may already be gone
+        }
+      }
+      turnstileWidgetIdRef.current = null;
+    };
+  }, []);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setState((s) => ({ ...s, [key]: value }));
     if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
+  };
+
+  const resetTurnstile = () => {
+    setTurnstileToken("");
+    const ts = window.turnstile;
+    const widgetId = turnstileWidgetIdRef.current;
+    if (ts && widgetId) ts.reset(widgetId);
   };
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -71,6 +158,12 @@ export function ContactForm() {
       return;
     }
 
+    if (TURNSTILE_SITE_KEY && !turnstileToken) {
+      setServerMessage("Please complete the verification challenge below.");
+      setStatus("error");
+      return;
+    }
+
     setStatus("submitting");
     setServerMessage("");
 
@@ -78,7 +171,12 @@ export function ContactForm() {
       const response = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(state),
+        body: JSON.stringify({
+          ...state,
+          website: honeypotRef.current?.value ?? "",
+          turnstileToken: turnstileToken || undefined,
+          utmSource: utmSourceRef.current || undefined,
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -87,6 +185,7 @@ export function ContactForm() {
           data?.error ||
             "We couldn't submit your request. Please try again or call us directly.",
         );
+        resetTurnstile();
         return;
       }
       if (data?.outOfArea) {
@@ -99,11 +198,13 @@ export function ContactForm() {
       }
       setStatus("success");
       setState(initial);
+      resetTurnstile();
     } catch {
       setStatus("error");
       setServerMessage(
         "Network error — please try again or call (828) 551-9690.",
       );
+      resetTurnstile();
     }
   };
 
@@ -178,167 +279,201 @@ export function ContactForm() {
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
-      noValidate
-      className="space-y-5 rounded-xl border border-navy/10 bg-white p-6 shadow-card sm:p-8"
-    >
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field
-          id="name"
-          label="Name"
-          required
-          error={errors.name}
-        >
-          <input
-            id="name"
-            name="name"
-            autoComplete="name"
-            value={state.name}
-            onChange={(e) => update("name", e.target.value)}
-            className={inputClass(!!errors.name)}
-          />
-        </Field>
-        <Field id="phone" label="Phone" required error={errors.phone}>
-          <input
-            id="phone"
-            name="phone"
-            type="tel"
-            autoComplete="tel"
-            placeholder="(555) 555-5555"
-            value={state.phone}
-            onChange={(e) => update("phone", e.target.value)}
-            className={inputClass(!!errors.phone)}
-          />
-        </Field>
-      </div>
-
-      <Field id="email" label="Email" required error={errors.email}>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          value={state.email}
-          onChange={(e) => update("email", e.target.value)}
-          className={inputClass(!!errors.email)}
+    <>
+      {TURNSTILE_SITE_KEY && (
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          async
+          defer
+          strategy="afterInteractive"
         />
-      </Field>
-
-      <Field
-        id="address"
-        label="Address or City"
-        required
-        error={errors.address}
+      )}
+      <form
+        onSubmit={onSubmit}
+        noValidate
+        className="space-y-5 rounded-xl border border-navy/10 bg-white p-6 shadow-card sm:p-8"
       >
-        <input
-          id="address"
-          name="address"
-          autoComplete="street-address"
-          placeholder="123 Main St, Garner, NC"
-          value={state.address}
-          onChange={(e) => update("address", e.target.value)}
-          className={inputClass(!!errors.address)}
-        />
-      </Field>
-
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field
-          id="serviceType"
-          label="Service Needed"
-          required
-          error={errors.serviceType}
+        {/* Honeypot — visually and assistively hidden, bots fill it. */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: "-9999px",
+            width: "1px",
+            height: "1px",
+            overflow: "hidden",
+          }}
         >
-          <select
+          <label htmlFor="website">Leave this field empty</label>
+          <input
+            ref={honeypotRef}
+            id="website"
+            name="website"
+            type="text"
+            tabIndex={-1}
+            autoComplete="off"
+            defaultValue=""
+          />
+        </div>
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field id="name" label="Name" required error={errors.name}>
+            <input
+              id="name"
+              name="name"
+              autoComplete="name"
+              value={state.name}
+              onChange={(e) => update("name", e.target.value)}
+              className={inputClass(!!errors.name)}
+            />
+          </Field>
+          <Field id="phone" label="Phone" required error={errors.phone}>
+            <input
+              id="phone"
+              name="phone"
+              type="tel"
+              autoComplete="tel"
+              placeholder="(555) 555-5555"
+              value={state.phone}
+              onChange={(e) => update("phone", e.target.value)}
+              className={inputClass(!!errors.phone)}
+            />
+          </Field>
+        </div>
+
+        <Field id="email" label="Email" required error={errors.email}>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            value={state.email}
+            onChange={(e) => update("email", e.target.value)}
+            className={inputClass(!!errors.email)}
+          />
+        </Field>
+
+        <Field
+          id="address"
+          label="Address or City"
+          required
+          error={errors.address}
+        >
+          <input
+            id="address"
+            name="address"
+            autoComplete="street-address"
+            placeholder="123 Main St, Garner, NC"
+            value={state.address}
+            onChange={(e) => update("address", e.target.value)}
+            className={inputClass(!!errors.address)}
+          />
+        </Field>
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field
             id="serviceType"
-            name="serviceType"
-            value={state.serviceType}
-            onChange={(e) => update("serviceType", e.target.value)}
-            className={inputClass(!!errors.serviceType)}
+            label="Service Needed"
+            required
+            error={errors.serviceType}
           >
-            <option value="" disabled>
-              Select a service…
-            </option>
-            {SERVICE_OPTIONS.map((service) => (
-              <option key={service} value={service}>
-                {service}
+            <select
+              id="serviceType"
+              name="serviceType"
+              value={state.serviceType}
+              onChange={(e) => update("serviceType", e.target.value)}
+              className={inputClass(!!errors.serviceType)}
+            >
+              <option value="" disabled>
+                Select a service…
+              </option>
+              {SERVICE_OPTIONS.map((service) => (
+                <option key={service} value={service}>
+                  {service}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            id="preferredDate"
+            label="Preferred Date"
+            required
+            error={errors.preferredDate}
+          >
+            <input
+              id="preferredDate"
+              name="preferredDate"
+              type="date"
+              value={state.preferredDate}
+              min={new Date().toISOString().split("T")[0]}
+              onChange={(e) => update("preferredDate", e.target.value)}
+              className={inputClass(!!errors.preferredDate)}
+            />
+          </Field>
+        </div>
+
+        <Field
+          id="description"
+          label="Description of Work"
+          required
+          error={errors.description}
+        >
+          <textarea
+            id="description"
+            name="description"
+            rows={5}
+            placeholder="Tell us what needs doing. Be as specific as you like — the more detail, the better the estimate."
+            value={state.description}
+            onChange={(e) => update("description", e.target.value)}
+            className={inputClass(!!errors.description)}
+          />
+        </Field>
+
+        <Field id="referralSource" label="How did you hear about us?">
+          <select
+            id="referralSource"
+            name="referralSource"
+            value={state.referralSource}
+            onChange={(e) => update("referralSource", e.target.value)}
+            className={inputClass(false)}
+          >
+            <option value="">Prefer not to say</option>
+            {REFERRAL_SOURCES.map((source) => (
+              <option key={source} value={source}>
+                {source}
               </option>
             ))}
           </select>
         </Field>
-        <Field
-          id="preferredDate"
-          label="Preferred Date"
-          required
-          error={errors.preferredDate}
+
+        {TURNSTILE_SITE_KEY && (
+          <div className="flex justify-center" ref={turnstileContainerRef} />
+        )}
+
+        {status === "error" && serverMessage && (
+          <div
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+          >
+            {serverMessage}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={status === "submitting"}
+          className="btn-primary w-full text-base"
         >
-          <input
-            id="preferredDate"
-            name="preferredDate"
-            type="date"
-            value={state.preferredDate}
-            min={new Date().toISOString().split("T")[0]}
-            onChange={(e) => update("preferredDate", e.target.value)}
-            className={inputClass(!!errors.preferredDate)}
-          />
-        </Field>
-      </div>
-
-      <Field
-        id="description"
-        label="Description of Work"
-        required
-        error={errors.description}
-      >
-        <textarea
-          id="description"
-          name="description"
-          rows={5}
-          placeholder="Tell us what needs doing. Be as specific as you like — the more detail, the better the estimate."
-          value={state.description}
-          onChange={(e) => update("description", e.target.value)}
-          className={inputClass(!!errors.description)}
-        />
-      </Field>
-
-      <Field id="referralSource" label="How did you hear about us?">
-        <select
-          id="referralSource"
-          name="referralSource"
-          value={state.referralSource}
-          onChange={(e) => update("referralSource", e.target.value)}
-          className={inputClass(false)}
-        >
-          <option value="">Prefer not to say</option>
-          {REFERRAL_SOURCES.map((source) => (
-            <option key={source} value={source}>
-              {source}
-            </option>
-          ))}
-        </select>
-      </Field>
-
-      {status === "error" && serverMessage && (
-        <div
-          role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-        >
-          {serverMessage}
-        </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={status === "submitting"}
-        className="btn-primary w-full text-base"
-      >
-        {status === "submitting" ? "Sending…" : "Request a Free Estimate"}
-        {status !== "submitting" && <Icon name="arrow-right" className="h-4 w-4" />}
-      </button>
-      <p className="text-center text-xs text-ink/55">
-        We&rsquo;ll respond within one business day. No spam, ever.
-      </p>
-    </form>
+          {status === "submitting" ? "Sending…" : "Request a Free Estimate"}
+          {status !== "submitting" && (
+            <Icon name="arrow-right" className="h-4 w-4" />
+          )}
+        </button>
+        <p className="text-center text-xs text-ink/55">
+          We&rsquo;ll respond within one business day. No spam, ever.
+        </p>
+      </form>
+    </>
   );
 }
 

@@ -16,7 +16,6 @@ export type ContactSubmission = {
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/calendar",
-  "https://www.googleapis.com/auth/spreadsheets",
 ];
 
 function getBusinessEmail(): string {
@@ -235,31 +234,5 @@ function buildEventStart(preferredDate: string): Date {
   return parsed;
 }
 
-export async function appendSheetRow(data: ContactSubmission): Promise<void> {
-  const auth = getAuth();
-  const sheets = google.sheets({ version: "v4", auth });
-  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-  if (!spreadsheetId) throw new Error("GOOGLE_SHEET_ID is not configured");
-
-  await sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: "Sheet1!A:J",
-    valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [
-        [
-          data.submittedAt,
-          data.name,
-          data.phone,
-          data.email,
-          data.address,
-          data.serviceType,
-          data.preferredDate,
-          data.description,
-          data.referralSource,
-          "New",
-        ],
-      ],
-    },
-  });
-}
+// Sheet writes moved to lib/sheet/repo.ts in Stage 2 — the contact form now
+// calls appendContactRow there. Gmail + Calendar helpers remain here.
