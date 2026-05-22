@@ -6,7 +6,8 @@
  *   1. Reads the current header row.
  *   2. If headers already match the canonical schema → no-op.
  *   3. Otherwise: duplicates Sheet1 → backup-{timestamp}, then writes the
- *      canonical 19-column header row to Sheet1!A1:S1.
+ *      canonical header row to Sheet1!A1:?1.
+ *   4. Ensures the Audit tab exists with its header row.
  *
  * Required env (loaded from .env.local or the shell):
  *   GOOGLE_SERVICE_ACCOUNT_EMAIL
@@ -14,8 +15,11 @@
  *   GOOGLE_SHEET_ID
  *   BUSINESS_EMAIL
  *
- * Run with: npx tsx scripts/setup-sheet.ts
+ * Run with: npm run setup-sheet
  */
+
+import { config as loadEnv } from 'dotenv'
+loadEnv({ path: '.env.local' })
 
 import {
   SHEET_HEADERS,
