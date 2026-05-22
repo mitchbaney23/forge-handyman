@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "prepare": "husky",
     "secret-scan": "secretlint --maskSecrets \"**/*\" \"!**/node_modules/**\" \"!**/.next/**\" \"!**/.git/**\" \"!**/package-lock.json\"",
-    "setup-sheet": "tsx scripts/setup-sheet.ts"
+    "setup-sheet": "tsx --env-file=.env.local scripts/setup-sheet.ts"
   },
   "lint-staged": {
     "*": [

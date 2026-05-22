@@ -43,3 +43,4 @@ credentials*
 service-account*
 !credentials*.example
 !service-account*.example
+.env*
