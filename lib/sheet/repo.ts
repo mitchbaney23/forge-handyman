@@ -23,6 +23,11 @@ export const SHEET_HEADERS = [
   'first_touch_sent_at',
   'hours_to_first_touch',
   'utm_source',
+  'job_id',
+  'stripe_customer_id',
+  'stripe_payment_method_id',
+  'deposit_paid_cents',
+  'balance_owed_cents',
 ] as const
 
 export type SheetColumn = (typeof SHEET_HEADERS)[number]
@@ -58,7 +63,14 @@ export interface ContactRow {
   first_touch_sent_at?: string
   hours_to_first_touch?: string
   utm_source?: string
+  job_id?: string
+  stripe_customer_id?: string
+  stripe_payment_method_id?: string
+  deposit_paid_cents?: string
+  balance_owed_cents?: string
 }
+
+export type ContactRowPartial = Partial<ContactRow>
 
 function getSpreadsheetId(): string {
   const id = process.env.GOOGLE_SHEET_ID
@@ -127,6 +139,62 @@ export async function writeHeaderRow(): Promise<void> {
     valueInputOption: 'RAW',
     requestBody: { values: [Array.from(SHEET_HEADERS)] },
   })
+}
+
+export async function findRowByJobId(
+  jobId: string,
+): Promise<{ rowNumber: number; row: ContactRow } | null> {
+  if (!jobId) return null
+  const auth = getSheetAuth()
+  const sheets = google.sheets({ version: 'v4', auth })
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: getSpreadsheetId(),
+    range: SHEET_RANGE_FULL,
+  })
+  const values = response.data.values ?? []
+  if (values.length < 2) return null
+
+  const jobIdColIndex = SHEET_HEADERS.indexOf('job_id')
+  for (let i = 1; i < values.length; i++) {
+    const cell = String(values[i][jobIdColIndex] ?? '').trim()
+    if (cell === jobId) {
+      const row: Record<string, string> = {}
+      SHEET_HEADERS.forEach((header, idx) => {
+        row[header] = String(values[i][idx] ?? '')
+      })
+      return { rowNumber: i + 1, row: row as unknown as ContactRow }
+    }
+  }
+  return null
+}
+
+export async function updateRowByJobId(
+  jobId: string,
+  updates: ContactRowPartial,
+): Promise<{ updated: boolean; rowNumber?: number }> {
+  const found = await findRowByJobId(jobId)
+  if (!found) return { updated: false }
+  const auth = getSheetAuth()
+  const sheets = google.sheets({ version: 'v4', auth })
+
+  const data = Object.entries(updates).map(([key, value]) => {
+    const column = SHEET_COLUMN_LETTER[key as SheetColumn]
+    return {
+      range: `Sheet1!${column}${found.rowNumber}:${column}${found.rowNumber}`,
+      values: [[value ?? '']],
+    }
+  })
+
+  if (data.length === 0) return { updated: true, rowNumber: found.rowNumber }
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: getSpreadsheetId(),
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data,
+    },
+  })
+  return { updated: true, rowNumber: found.rowNumber }
 }
 
 export async function backupCurrentSheet(): Promise<{ backupTitle: string } | null> {

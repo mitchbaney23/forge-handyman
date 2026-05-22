@@ -23,6 +23,7 @@ import {
   readHeaderRow,
   writeHeaderRow,
 } from '../lib/sheet/repo'
+import { ensureAuditTab } from '../lib/sheet/audit-log'
 
 function arraysEqual(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false
@@ -61,6 +62,11 @@ async function main(): Promise<void> {
     return
   }
   console.log('✓ Verified header row matches canonical schema.')
+
+  console.log('Ensuring Audit tab exists…')
+  const audit = await ensureAuditTab()
+  if (audit.created) console.log('✓ Created Audit tab with header row.')
+  else console.log('✓ Audit tab already exists.')
 }
 
 main().catch((err) => {

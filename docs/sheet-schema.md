@@ -9,7 +9,7 @@ If the columns ever change, update this file, update [`lib/sheet/repo.ts`](../li
 - Sheet name: `Sheet1` (do not rename — code looks for this exact tab name)
 - Header row: row 1
 - Data rows: row 2 onward
-- Total columns: **19** (A–S)
+- Total columns: **24** (A–X)
 - Sheet ID lives in Vercel as `GOOGLE_SHEET_ID`
 
 ## Columns
@@ -35,6 +35,11 @@ If the columns ever change, update this file, update [`lib/sheet/repo.ts`](../li
 | Q | `first_touch_sent_at` | ISO timestamp | Admin dashboard (when Mitch sends the first reply) | Speed-to-lead analytics | Optional — not blocking |
 | R | `hours_to_first_touch` | number (decimal hours) | Optional sheet formula (see below) | Speed-to-lead analytics | Empty unless the formula is added manually |
 | S | `utm_source` | string | Contact form (captured from URL query params on page load) | Marketing analytics | Empty if user came in directly |
+| T | `job_id` | UUID v4 string | Contact form (server-generated `randomUUID()`) | Stripe webhooks, admin dashboard | Opaque ID used in all URLs and Stripe metadata. Never expose sequential row numbers to customers. |
+| U | `stripe_customer_id` | string `cus_...` | Stripe webhook `checkout.session.completed` | Balance auto-charge (Stage 5) | Set when the customer pays the deposit; needed for off-session balance charge |
+| V | `stripe_payment_method_id` | string `pm_...` | Stripe webhook `checkout.session.completed` | Balance auto-charge (Stage 5) | Saved card; off-session payments use this |
+| W | `deposit_paid_cents` | integer string | Stripe webhook `checkout.session.completed` | Admin dashboard | Cents (e.g., `15000` = $150). Sheet stores as string to avoid type coercion |
+| X | `balance_owed_cents` | integer string | Admin dashboard when quote sent (Stage 5); cleared to `0` by webhook on balance-charge success | Balance auto-charge | Cents |
 
 ## Optional formula for column R (`hours_to_first_touch`)
 
@@ -59,9 +64,29 @@ The header order in `SHEET_HEADERS` is authoritative. The script writes whatever
 
 | Source | Columns written |
 |---|---|
-| Contact form (`POST /api/contact`) | A, B, C, D, E, F, G, H, I, J (status=`New`), S (utm_source) |
-| Setup script (`scripts/setup-sheet.ts`) | Headers in row 1 |
-| Admin dashboard (Stage 5) | J (status changes), K (complete_date), Q (first_touch_sent_at) |
+| Contact form (`POST /api/contact`) | A, B, C, D, E, F, G, H, I, J (status=`New`), S (utm_source), T (job_id) |
+| Setup script (`scripts/setup-sheet.ts`) | Headers in row 1 + creates Audit tab |
+| Admin dashboard (Stage 5) | J (status changes), K (complete_date), Q (first_touch_sent_at), X (balance_owed_cents when quote sent) |
+| Stripe webhook `checkout.session.completed` | J (`Booked`), U, V, W |
+| Stripe webhook `payment_intent.succeeded` (balance) | J (`Complete`), X (`0`) |
+| Stripe webhook `payment_intent.payment_failed` | J (`Payment Failed`) |
+| Stripe webhook `charge.refunded` | J (`Refunded` / `Partial Refund`) |
 | Stage 6 follow-up automation | L, M, N, O |
 | Twilio inbound STOP webhook (Stage 4) | P (opt_out) |
 | Unsubscribe page (Stage 6) | P (opt_out) |
+
+## Audit tab
+
+Stage 3 adds a second tab named `Audit` in the same spreadsheet. Append-only log of every state-changing action (Stripe webhooks, admin button presses, refunds, etc.). Schema:
+
+| Column | Header | Notes |
+|---|---|---|
+| A | `timestamp` | ISO 8601 |
+| B | `actor` | Email address, `stripe-webhook`, or `twilio-webhook` |
+| C | `action` | Dotted-noun, e.g., `job.booked`, `balance.charged`, `refund.issued` |
+| D | `target` | The thing acted on — usually the `job_id` |
+| E | `before` | JSON snapshot before the action (optional) |
+| F | `after` | JSON snapshot after the action (optional) |
+| G | `notes` | Free-form context (optional) |
+
+The setup script auto-creates this tab if it's missing.

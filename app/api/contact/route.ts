@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { NextResponse, type NextRequest } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { z } from 'zod'
@@ -72,7 +73,11 @@ function payloadToSubmission(payload: ContactPayload, submittedAt: string): Cont
   }
 }
 
-function payloadToRow(payload: ContactPayload, submittedAt: string): ContactRow {
+function payloadToRow(
+  payload: ContactPayload,
+  submittedAt: string,
+  jobId: string,
+): ContactRow {
   return {
     submitted_at: submittedAt,
     name: payload.name,
@@ -85,6 +90,7 @@ function payloadToRow(payload: ContactPayload, submittedAt: string): ContactRow 
     referral_source: payload.referralSource,
     status: 'New',
     utm_source: payload.utmSource,
+    job_id: jobId,
   }
 }
 
@@ -158,12 +164,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     })
   }
 
+  const jobId = randomUUID()
   const submission = payloadToSubmission(payload, submittedAt)
-  const row = payloadToRow(payload, submittedAt)
+  const row = payloadToRow(payload, submittedAt, jobId)
 
   logger.info(
     {
       ip,
+      jobId,
       submittedAt,
       maskedEmail: maskEmail(payload.email),
       maskedPhone: maskPhone(payload.phone),
