@@ -1,169 +1,221 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { randomUUID } from 'node:crypto'
+import { NextResponse, type NextRequest } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
+import { z } from 'zod'
+import { checkServiceArea } from '@/lib/geocoding'
 import {
-  appendSheetRow,
   createCalendarEvent,
   sendNotificationEmail,
   type ContactSubmission,
-} from "@/lib/google";
-import { checkServiceArea } from "@/lib/geocoding";
+} from '@/lib/google'
+import { logger, maskEmail, maskPhone } from '@/lib/security/logger'
+import {
+  checkLimit,
+  extractIp,
+  rateLimitHeaders,
+} from '@/lib/security/rate-limit'
+import { verifyTurnstileToken } from '@/lib/security/turnstile'
+import {
+  emailSchema,
+  fieldErrorsFromZod,
+  freeTextSchema,
+  honeypotSchema,
+  nameSchema,
+  phoneSchema,
+  shortTextSchema,
+} from '@/lib/security/zod'
+import { appendContactRow, type ContactRow } from '@/lib/sheet/repo'
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-type RawPayload = Partial<Record<keyof ContactSubmission, unknown>>;
+const contactSchema = z.object({
+  name: nameSchema,
+  phone: phoneSchema,
+  email: emailSchema,
+  address: shortTextSchema,
+  serviceType: shortTextSchema.refine((s) => s.length <= 80, 'Service type too long'),
+  preferredDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format'),
+  description: freeTextSchema,
+  referralSource: z
+    .string()
+    .max(80)
+    .optional()
+    .transform((s) => (s && s.trim() ? s.trim() : 'Not specified')),
+  website: honeypotSchema,
+  turnstileToken: z.string().min(1).optional(),
+  utmSource: z.string().max(120).optional().transform((s) => (s ? s.trim() : '')),
+})
 
-const RATE_LIMIT_MAX = 10;
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
-const rateLimits = new Map<string, { count: number; resetAt: number }>();
-
-function getClientIp(request: NextRequest): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]!.trim();
-  const real = request.headers.get("x-real-ip");
-  if (real) return real;
-  return "unknown";
-}
-
-function checkRateLimit(ip: string): { ok: boolean; retryAfterSec?: number } {
-  const now = Date.now();
-  const existing = rateLimits.get(ip);
-  if (!existing || existing.resetAt < now) {
-    rateLimits.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return { ok: true };
-  }
-  if (existing.count >= RATE_LIMIT_MAX) {
-    return {
-      ok: false,
-      retryAfterSec: Math.ceil((existing.resetAt - now) / 1000),
-    };
-  }
-  existing.count += 1;
-  return { ok: true };
-}
-
-function cleanString(value: unknown, max = 2000): string {
-  if (typeof value !== "string") return "";
-  return value.trim().slice(0, max);
-}
-
-function validate(raw: RawPayload): {
-  data?: ContactSubmission;
-  error?: string;
-} {
-  const name = cleanString(raw.name, 120);
-  const phone = cleanString(raw.phone, 40);
-  const email = cleanString(raw.email, 160);
-  const address = cleanString(raw.address, 240);
-  const serviceType = cleanString(raw.serviceType, 80);
-  const preferredDate = cleanString(raw.preferredDate, 40);
-  const description = cleanString(raw.description, 4000);
-  const referralSource = cleanString(raw.referralSource, 80) || "Not specified";
-
-  if (!name) return { error: "Name is required." };
-  if (!phone || phone.replace(/\D/g, "").length < 10)
-    return { error: "A valid phone number is required." };
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-    return { error: "A valid email is required." };
-  if (!address) return { error: "Address or city is required." };
-  if (!serviceType) return { error: "Service type is required." };
-  if (!preferredDate) return { error: "Preferred date is required." };
-  if (!description) return { error: "A description of the work is required." };
-
-  return {
-    data: {
-      name,
-      phone,
-      email,
-      address,
-      serviceType,
-      preferredDate,
-      description,
-      referralSource,
-      submittedAt: new Date().toISOString(),
-    },
-  };
-}
+type ContactPayload = z.infer<typeof contactSchema>
 
 function isDevMode(): boolean {
-  return process.env.NEXT_PUBLIC_DEV_MODE === "true";
+  return process.env.NEXT_PUBLIC_DEV_MODE === 'true'
 }
 
-export async function POST(request: NextRequest) {
-  const ip = getClientIp(request);
-  const rate = checkRateLimit(ip);
-  if (!rate.ok) {
-    return NextResponse.json(
-      {
-        error:
-          "Too many requests. Please wait a bit before submitting again, or call us directly.",
-      },
-      {
-        status: 429,
-        headers: rate.retryAfterSec
-          ? { "Retry-After": String(rate.retryAfterSec) }
-          : undefined,
-      },
-    );
-  }
+function jsonError(message: string, status: number, extra?: Record<string, unknown>, headers?: Record<string, string>) {
+  return NextResponse.json({ ok: false, error: message, ...extra }, { status, headers })
+}
 
-  let raw: RawPayload;
+function payloadToSubmission(payload: ContactPayload, submittedAt: string): ContactSubmission {
+  return {
+    name: payload.name,
+    phone: payload.phone,
+    email: payload.email,
+    address: payload.address,
+    serviceType: payload.serviceType,
+    preferredDate: payload.preferredDate,
+    description: payload.description,
+    referralSource: payload.referralSource,
+    submittedAt,
+  }
+}
+
+function payloadToRow(
+  payload: ContactPayload,
+  submittedAt: string,
+  jobId: string,
+): ContactRow {
+  return {
+    submitted_at: submittedAt,
+    name: payload.name,
+    phone: payload.phone,
+    email: payload.email,
+    address: payload.address,
+    service_type: payload.serviceType,
+    preferred_date: payload.preferredDate,
+    description: payload.description,
+    referral_source: payload.referralSource,
+    status: 'New',
+    utm_source: payload.utmSource,
+    job_id: jobId,
+  }
+}
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const ip = extractIp(request)
+  const submittedAt = new Date().toISOString()
+
+  let body: unknown
   try {
-    raw = (await request.json()) as RawPayload;
+    body = await request.json()
   } catch {
-    return NextResponse.json(
-      { error: "Invalid request format." },
-      { status: 400 },
-    );
+    return jsonError('Invalid request format.', 400)
   }
 
-  const { data, error } = validate(raw);
-  if (!data) {
-    return NextResponse.json({ error: error ?? "Invalid input." }, { status: 400 });
+  // Honeypot: bots fill `website`; humans don't see it. Return 200 silently
+  // so the bot thinks it succeeded and is less likely to retry.
+  if (
+    body !== null &&
+    typeof body === 'object' &&
+    'website' in body &&
+    typeof (body as { website?: unknown }).website === 'string' &&
+    ((body as { website: string }).website || '').length > 0
+  ) {
+    logger.info({ ip }, 'contact-form: honeypot tripped — dropping submission')
+    return NextResponse.json({ ok: true })
   }
 
-  const serviceArea = await checkServiceArea(data.address);
+  const parsed = contactSchema.safeParse(body)
+  if (!parsed.success) {
+    return jsonError('Validation failed.', 422, {
+      fieldErrors: fieldErrorsFromZod(parsed.error),
+    })
+  }
+  const payload = parsed.data
+
+  // Rate limit: 5/hr and 20/day per IP. Both must allow.
+  const [hourly, daily] = await Promise.all([
+    checkLimit('contact-form-hour', ip),
+    checkLimit('contact-form-day', ip),
+  ])
+  if (!hourly.success || !daily.success) {
+    const blocking = !hourly.success ? hourly : daily
+    logger.warn(
+      { ip, route: 'contact-form', limit: !hourly.success ? 'hour' : 'day' },
+      'contact-form: rate limited',
+    )
+    return jsonError(
+      'Too many requests. Please wait a bit before submitting again, or call us at (828) 551-9690.',
+      429,
+      undefined,
+      rateLimitHeaders(blocking),
+    )
+  }
+
+  const turnstile = await verifyTurnstileToken(payload.turnstileToken, ip)
+  if (!turnstile.success) {
+    logger.warn(
+      { ip, errorCodes: turnstile.errorCodes },
+      'contact-form: turnstile verification failed',
+    )
+    return jsonError('Verification failed — please try again.', 403)
+  }
+
+  const serviceArea = await checkServiceArea(payload.address)
   if (!serviceArea.inArea) {
     return NextResponse.json({
       ok: false,
       outOfArea: true,
       distanceMiles: Math.round(serviceArea.distanceMiles * 10) / 10,
       radiusMiles: serviceArea.radiusMiles,
-    });
+    })
   }
 
+  const jobId = randomUUID()
+  const submission = payloadToSubmission(payload, submittedAt)
+  const row = payloadToRow(payload, submittedAt, jobId)
+
+  logger.info(
+    {
+      ip,
+      jobId,
+      submittedAt,
+      maskedEmail: maskEmail(payload.email),
+      maskedPhone: maskPhone(payload.phone),
+      serviceType: payload.serviceType,
+      utmSource: payload.utmSource || undefined,
+    },
+    'contact-form: submission accepted',
+  )
+
   if (isDevMode()) {
-    console.log("\n[contact-form] DEV_MODE — submission logged, no APIs called:");
-    console.log(JSON.stringify(data, null, 2));
-    return NextResponse.json({ ok: true, mode: "dev" });
+    logger.info({ submittedAt }, 'contact-form: DEV_MODE active — skipping third-party calls')
+    return NextResponse.json({ ok: true, mode: 'dev' })
   }
 
   try {
-    await sendNotificationEmail(data);
+    await sendNotificationEmail(submission)
   } catch (err) {
-    console.error("[contact-form] email notification failed:", err);
-    return NextResponse.json(
-      {
-        error:
-          "We couldn't send your request right now. Please call (828) 551-9690 or try again in a few minutes.",
-      },
-      { status: 502 },
-    );
+    Sentry.captureException(err, {
+      tags: { route: 'contact-form', step: 'gmail-send' },
+    })
+    logger.error({ err }, 'contact-form: Gmail send failed')
+    return jsonError(
+      "We couldn't send your request right now. Please call (828) 551-9690 or try again in a few minutes.",
+      502,
+    )
   }
 
   const [calendarResult, sheetResult] = await Promise.allSettled([
-    createCalendarEvent(data),
-    appendSheetRow(data),
-  ]);
+    createCalendarEvent(submission),
+    appendContactRow(row),
+  ])
 
-  if (calendarResult.status === "rejected") {
-    console.error(
-      "[contact-form] calendar event failed:",
-      calendarResult.reason,
-    );
+  if (calendarResult.status === 'rejected') {
+    Sentry.captureException(calendarResult.reason, {
+      tags: { route: 'contact-form', step: 'calendar-create' },
+    })
+    logger.error({ err: calendarResult.reason }, 'contact-form: calendar event failed')
   }
-  if (sheetResult.status === "rejected") {
-    console.error("[contact-form] sheet append failed:", sheetResult.reason);
+  if (sheetResult.status === 'rejected') {
+    Sentry.captureException(sheetResult.reason, {
+      tags: { route: 'contact-form', step: 'sheet-append' },
+    })
+    logger.error({ err: sheetResult.reason }, 'contact-form: sheet append failed')
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true })
 }

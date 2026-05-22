@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-};
+  turbopack: {
+    root: __dirname,
+  },
+}
 
-module.exports = nextConfig;
+module.exports = nextConfig

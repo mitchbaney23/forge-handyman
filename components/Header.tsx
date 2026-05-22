@@ -13,6 +13,7 @@ export function Header() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- closing menu on route change is the correct effect
     setOpen(false);
   }, [pathname]);
 

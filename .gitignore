@@ -34,3 +34,13 @@ yarn-error.log*
 
 # TypeScript
 *.tsbuildinfo
+.vercel
+
+# Secrets (no exceptions)
+*.pem
+*.key
+credentials*
+service-account*
+!credentials*.example
+!service-account*.example
+.env*
