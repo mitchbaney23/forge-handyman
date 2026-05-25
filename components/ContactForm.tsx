@@ -16,6 +16,17 @@ import {
   type UrgencyCode,
 } from "@/lib/constants";
 import { Icon } from "@/lib/icons";
+import { compressIfNeeded } from "@/lib/photo/compress";
+
+const MAX_PHOTOS = 6;
+
+type UploadedPhoto = {
+  id: string;
+  url: string;
+  thumbnailUrl: string | null;
+  name: string;
+  previewDataUrl: string;
+};
 
 type Status = "idle" | "submitting" | "success" | "error" | "out-of-area";
 
@@ -144,6 +155,25 @@ export function ContactForm() {
   const turnstileWidgetIdRef = useRef<string | null>(null);
   const addressInputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<GoogleAutocomplete | null>(null);
+  // Tentative job_id generated client-side on first photo upload. Reused
+  // across all photos for the same submission so they group in one Drive
+  // folder. Server validates UUID v4 format on every upload + accepts the
+  // same ID on the contact-form submission.
+  const jobIdRef = useRef<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoErrors, setPhotoErrors] = useState<string[]>([]);
+
+  function ensureJobId(): string {
+    if (jobIdRef.current) return jobIdRef.current;
+    const id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`;
+    jobIdRef.current = id;
+    return id;
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -290,6 +320,73 @@ export function ContactForm() {
       setErrors((e) => ({ ...e, serviceCategories: undefined }));
   };
 
+  const addPhotos = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setPhotoErrors([]);
+    const remaining = MAX_PHOTOS - photos.length;
+    if (remaining <= 0) {
+      setPhotoErrors([`You can attach up to ${MAX_PHOTOS} photos.`]);
+      return;
+    }
+    const toUpload = Array.from(files).slice(0, remaining);
+    const overflow = files.length - toUpload.length;
+    setPhotoUploading(true);
+    const errors: string[] = [];
+    if (overflow > 0) {
+      errors.push(
+        `Only the first ${toUpload.length} photo${toUpload.length === 1 ? "" : "s"} added (max ${MAX_PHOTOS} total).`,
+      );
+    }
+    const jobId = ensureJobId();
+
+    for (const file of toUpload) {
+      try {
+        const compressed = await compressIfNeeded(file);
+        const previewDataUrl = await readAsDataUrl(compressed);
+        const form = new FormData();
+        form.set("jobId", jobId);
+        form.set("file", compressed);
+        const resp = await fetch("/api/upload-photo", {
+          method: "POST",
+          body: form,
+        });
+        const data = (await resp.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+          photo?: {
+            id: string;
+            url: string;
+            thumbnailUrl: string | null;
+            name: string;
+          };
+        };
+        if (!resp.ok || !data.ok || !data.photo) {
+          errors.push(
+            `${file.name}: ${data.error || "upload failed"}`,
+          );
+          continue;
+        }
+        setPhotos((prev) => [
+          ...prev,
+          { ...data.photo!, previewDataUrl },
+        ]);
+      } catch (err) {
+        errors.push(
+          `${file.name}: ${
+            err instanceof Error ? err.message : "unexpected error"
+          }`,
+        );
+      }
+    }
+    setPhotoErrors(errors);
+    setPhotoUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removePhoto = (id: string) => {
+    setPhotos((prev) => prev.filter((p) => p.id !== id));
+  };
+
   const resetTurnstile = () => {
     setTurnstileToken("");
     const ts = window.turnstile;
@@ -339,6 +436,8 @@ export function ContactForm() {
           website: honeypotRef.current?.value ?? "",
           turnstileToken: turnstileToken || undefined,
           utmSource: utmSourceRef.current || undefined,
+          jobId: jobIdRef.current || undefined,
+          photoUrls: photos.map((p) => p.url),
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -361,6 +460,9 @@ export function ContactForm() {
       }
       setStatus("success");
       setState(initial);
+      setPhotos([]);
+      setPhotoErrors([]);
+      jobIdRef.current = "";
       resetTurnstile();
     } catch {
       setStatus("error");
@@ -656,6 +758,82 @@ export function ContactForm() {
               className={inputClass(!!errors.description)}
             />
           </Field>
+
+          <div>
+            <label
+              htmlFor="photoInput"
+              className="mb-1.5 flex items-center gap-1 text-sm font-semibold text-navy"
+            >
+              Photos
+              <span className="ml-1 font-normal text-ink/55">
+                (optional, up to {MAX_PHOTOS})
+              </span>
+            </label>
+            <p className="mb-3 text-xs text-ink/55">
+              A picture is worth a thousand words. Snap whatever helps us
+              understand the work — broken thing, room context, whatever.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {photos.map((photo) => (
+                <div
+                  key={photo.id}
+                  className="group relative aspect-square overflow-hidden rounded-lg border border-navy/15 bg-navy/5"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={photo.previewDataUrl}
+                    alt={photo.name}
+                    className="h-full w-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(photo.id)}
+                    className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                    aria-label={`Remove ${photo.name}`}
+                  >
+                    <Icon name="close" className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              {photos.length < MAX_PHOTOS && (
+                <label
+                  htmlFor="photoInput"
+                  className={`flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-navy/20 bg-white text-ink/55 hover:border-navy/40 hover:text-navy ${
+                    photoUploading ? "pointer-events-none opacity-60" : ""
+                  }`}
+                >
+                  <Icon
+                    name={photoUploading ? "spinner" : "camera"}
+                    className={`h-6 w-6 ${photoUploading ? "animate-spin" : ""}`}
+                  />
+                  <span className="text-xs font-medium">
+                    {photoUploading
+                      ? "Uploading…"
+                      : photos.length === 0
+                        ? "Add photos"
+                        : `Add more (${MAX_PHOTOS - photos.length} left)`}
+                  </span>
+                  <input
+                    ref={fileInputRef}
+                    id="photoInput"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                    multiple
+                    disabled={photoUploading}
+                    onChange={(e) => void addPhotos(e.target.files)}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+            {photoErrors.length > 0 && (
+              <ul className="mt-2 space-y-1 text-xs text-red-700">
+                {photoErrors.map((err, idx) => (
+                  <li key={idx}>{err}</li>
+                ))}
+              </ul>
+            )}
+          </div>
         </FormSection>
 
         <FormSection title="When do you need this?">
@@ -794,6 +972,15 @@ export function ContactForm() {
       </form>
     </>
   );
+}
+
+function readAsDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("File read failed"));
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.readAsDataURL(file);
+  });
 }
 
 function FormSection({
