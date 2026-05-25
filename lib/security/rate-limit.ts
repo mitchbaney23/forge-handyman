@@ -21,6 +21,7 @@ export type LimiterName =
   | 'admin-action'
   | 'webhook-source'
   | 'public-api'
+  | 'photo-upload'
 
 const limiterCache: Partial<Record<LimiterName, Ratelimit>> = {}
 
@@ -39,6 +40,10 @@ function buildLimiter(name: LimiterName): Ratelimit {
       return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(100, '1 m'), prefix: 'rl:webhook', analytics: true })
     case 'public-api':
       return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(30, '1 m'), prefix: 'rl:public', analytics: true })
+    case 'photo-upload':
+      // 30 photo uploads per 15 min per IP — comfortably covers 5 form
+      // submissions with the full 6-photo loadout, plus testing headroom.
+      return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(30, '15 m'), prefix: 'rl:photo', analytics: true })
   }
 }
 

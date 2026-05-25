@@ -29,9 +29,10 @@ function jsonError(message: string, status: number, headers?: Record<string, str
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const ip = extractIp(request)
 
-  // Reuse the contact-form rate limiter — uploads are part of the same
-  // submission session and should be capped at the same per-IP volume.
-  const limit = await checkLimit('contact-form-hour', `photo:${ip}`)
+  // Dedicated photo-upload limiter: 30 per 15 min per IP. Covers 5 form
+  // submissions with full 6-photo loadouts plus retesting headroom, while
+  // still capping abuse / runaway upload loops.
+  const limit = await checkLimit('photo-upload', ip)
   if (!limit.success) {
     return jsonError('Too many uploads. Please wait a bit.', 429, rateLimitHeaders(limit))
   }
