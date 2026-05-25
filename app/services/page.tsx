@@ -94,9 +94,9 @@ export default function ServicesPage() {
                 Request a Free Estimate
                 <Icon name="arrow-right" className="h-4 w-4" />
               </Link>
-              <a href="tel:+18285519690" className="btn-outline">
+              <a href="tel:+15551234567" className="btn-outline">
                 <Icon name="phone" className="h-4 w-4" />
-                Call (828) 551-9690
+                Call (555) 123-4567
               </a>
             </div>
           </div>

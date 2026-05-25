@@ -202,7 +202,7 @@ export function ContactForm() {
     } catch {
       setStatus("error");
       setServerMessage(
-        "Network error — please try again or call (828) 551-9690.",
+        "Network error — please try again or call (555) 123-4567.",
       );
       resetTurnstile();
     }
@@ -229,10 +229,10 @@ export function ContactForm() {
           That said — we occasionally make exceptions for bigger jobs. Give David
           a call at{" "}
           <a
-            href="tel:+18285519690"
+            href="tel:+15551234567"
             className="font-semibold text-amber-forge underline hover:text-navy"
           >
-            (828) 551-9690
+            (555) 123-4567
           </a>{" "}
           and we&rsquo;ll see what we can do.
         </p>
@@ -262,8 +262,8 @@ export function ContactForm() {
         <p className="mt-2 text-sm text-emerald-800">
           David will review your details and get back to you shortly with a free
           estimate. For urgent requests, call us at{" "}
-          <a href="tel:+18285519690" className="font-semibold underline">
-            (828) 551-9690
+          <a href="tel:+15551234567" className="font-semibold underline">
+            (555) 123-4567
           </a>
           .
         </p>

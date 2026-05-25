@@ -6,7 +6,7 @@ import { Icon } from "@/lib/icons";
 export const metadata: Metadata = {
   title: "Book a Job — Contact Forge Handyman Service",
   description:
-    "Book a handyman in Garner, Clayton, or South Raleigh. Fill out the quick form, or call David at (828) 551-9690. Free estimates, one-business-day response.",
+    "Book a handyman in Garner, Clayton, or South Raleigh. Fill out the quick form, or call David at (555) 123-4567. Free estimates, one-business-day response.",
   alternates: { canonical: "/contact" },
 };
 
