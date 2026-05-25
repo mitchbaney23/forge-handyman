@@ -41,6 +41,23 @@ export async function handleCheckoutSessionCompleted(
     }
   }
 
+  // Fallback: when setup_future_usage attaches a card, the customer ID
+  // sometimes isn't yet present on session.customer OR pi.customer at the
+  // time the webhook fires. The PaymentMethod object reliably has it
+  // because the PM is attached to the customer for off-session reuse.
+  if (paymentMethodId && !customerId) {
+    try {
+      const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
+      customerId =
+        typeof pm.customer === 'string' ? pm.customer : pm.customer?.id ?? null
+    } catch (err) {
+      logger.warn(
+        { err, paymentMethodId, sessionId: session.id },
+        'stripe: failed to retrieve payment method for customer fallback',
+      )
+    }
+  }
+
   const updated = await updateRowByJobId(jobId, {
     status: 'Booked',
     deposit_paid_cents: String(session.amount_total ?? 0),
