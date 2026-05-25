@@ -32,8 +32,8 @@ export const authOptions: NextAuthOptions = {
     maxAge: SESSION_MAX_AGE_SECONDS,
   },
   pages: {
-    signIn: '/admin/login',
-    error: '/admin/login',
+    signIn: '/signin',
+    error: '/signin',
   },
   callbacks: {
     async signIn({ user }) {
