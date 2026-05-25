@@ -258,17 +258,6 @@ export const URGENCY_OPTIONS = [
 
 export type UrgencyCode = (typeof URGENCY_OPTIONS)[number]["code"];
 
-export const BUDGET_RANGES = [
-  { code: "under_250", label: "Under $250" },
-  { code: "250_500", label: "$250 – $500" },
-  { code: "500_1k", label: "$500 – $1,000" },
-  { code: "1k_2_5k", label: "$1,000 – $2,500" },
-  { code: "over_2_5k", label: "$2,500+" },
-  { code: "not_sure", label: "Not sure — need a quote" },
-] as const;
-
-export type BudgetRangeCode = (typeof BUDGET_RANGES)[number]["code"];
-
 export const CONTACT_TIMES = [
   { code: "any", label: "Any time" },
   { code: "morning", label: "Morning (8a–12p)" },

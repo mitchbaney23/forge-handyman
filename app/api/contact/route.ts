@@ -10,7 +10,6 @@ import {
   type ContactSubmission,
 } from '@/lib/google'
 import {
-  budgetRangeSchema,
   contactMethodSchema,
   contactTimeSchema,
   propertyTypeSchema,
@@ -56,7 +55,6 @@ const contactSchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format'),
     description: freeTextSchema,
     urgency: urgencySchema,
-    budgetRange: budgetRangeSchema,
     bestContactTime: contactTimeSchema,
     bestContactMethod: contactMethodSchema,
     referralSource: z
@@ -145,7 +143,6 @@ function payloadToSubmission(
     jobId: enriched.jobId,
     propertyType: payload.propertyType,
     urgency: payload.urgency,
-    budgetRange: payload.budgetRange,
     bestContactTime: payload.bestContactTime,
     bestContactMethod: payload.bestContactMethod,
     isReturningCustomer: enriched.isReturningCustomer,
@@ -178,7 +175,6 @@ function payloadToRow(
     service_categories: derived.serviceCategoriesCsv,
     property_type: payload.propertyType,
     urgency: payload.urgency,
-    budget_range: payload.budgetRange,
     best_contact_time: payload.bestContactTime,
     best_contact_method: payload.bestContactMethod,
     is_returning_customer: isReturningCustomer ? 'true' : '',

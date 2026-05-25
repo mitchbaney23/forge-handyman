@@ -16,7 +16,6 @@ export type ContactSubmission = {
   jobId?: string;
   propertyType?: string;
   urgency?: string;
-  budgetRange?: string;
   bestContactTime?: string;
   bestContactMethod?: string;
   isReturningCustomer?: boolean;
@@ -177,7 +176,6 @@ function buildEmailHtml(data: ContactSubmission): string {
                   ${row("Service", data.serviceType)}
                   ${row("Preferred date", data.preferredDate)}
                   ${data.urgency ? row("Urgency", data.urgency) : ""}
-                  ${data.budgetRange ? row("Budget", data.budgetRange) : ""}
                   ${data.bestContactTime ? row("Best contact time", data.bestContactTime) : ""}
                   ${data.bestContactMethod ? row("Best contact method", data.bestContactMethod) : ""}
                   ${row("Referral source", data.referralSource)}
@@ -239,7 +237,6 @@ function buildEmailText(data: ContactSubmission): string {
     `Service: ${data.serviceType}`,
     `Preferred date: ${data.preferredDate}`,
     data.urgency ? `Urgency: ${data.urgency}` : "",
-    data.budgetRange ? `Budget: ${data.budgetRange}` : "",
     data.bestContactTime ? `Best contact time: ${data.bestContactTime}` : "",
     data.bestContactMethod ? `Best contact method: ${data.bestContactMethod}` : "",
     `Referral source: ${data.referralSource}`,

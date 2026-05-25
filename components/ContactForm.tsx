@@ -3,14 +3,12 @@
 import Script from "next/script";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
-  BUDGET_RANGES,
   CONTACT_METHODS,
   CONTACT_TIMES,
   PROPERTY_TYPES,
   REFERRAL_SOURCES,
   SERVICE_CATEGORIES,
   URGENCY_OPTIONS,
-  type BudgetRangeCode,
   type ContactMethodCode,
   type ContactTimeCode,
   type PropertyTypeCode,
@@ -36,7 +34,6 @@ type FormState = {
   description: string;
   preferredDate: string;
   urgency: UrgencyCode | "";
-  budgetRange: BudgetRangeCode | "";
   bestContactTime: ContactTimeCode;
   bestContactMethod: ContactMethodCode;
   referralSource: string;
@@ -53,11 +50,21 @@ const initial: FormState = {
   description: "",
   preferredDate: "",
   urgency: "",
-  budgetRange: "",
   bestContactTime: "any",
   bestContactMethod: "any",
   referralSource: "",
 };
+
+interface GooglePlaceResult {
+  formatted_address?: string;
+  place_id?: string;
+  geometry?: { location?: { lat(): number; lng(): number } };
+}
+
+interface GoogleAutocomplete {
+  addListener: (event: string, callback: () => void) => unknown;
+  getPlace: () => GooglePlaceResult;
+}
 
 declare global {
   interface Window {
@@ -74,10 +81,33 @@ declare global {
       reset: (widgetId?: string) => void;
       remove: (widgetId?: string) => void;
     };
+    google?: {
+      maps?: {
+        places?: {
+          Autocomplete: new (
+            input: HTMLInputElement,
+            opts: {
+              componentRestrictions?: { country: string | string[] };
+              fields?: string[];
+              types?: string[];
+              bounds?: unknown;
+            },
+          ) => GoogleAutocomplete;
+        };
+        LatLngBounds?: new (
+          sw: { lat: number; lng: number },
+          ne: { lat: number; lng: number },
+        ) => unknown;
+        event?: {
+          clearInstanceListeners: (instance: unknown) => void;
+        };
+      };
+    };
   }
 }
 
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
 function validate(state: FormState): FieldErrors {
   const errors: FieldErrors = {};
@@ -96,7 +126,6 @@ function validate(state: FormState): FieldErrors {
       "Pick at least one service, or check “I'm not sure.”";
   if (!state.preferredDate) errors.preferredDate = "Pick a preferred date.";
   if (!state.urgency) errors.urgency = "Pick how urgent this is.";
-  if (!state.budgetRange) errors.budgetRange = "Pick a budget range (or 'Not sure').";
   if (!state.description.trim())
     errors.description = "Tell us a bit about the work.";
   return errors;
@@ -113,12 +142,71 @@ export function ContactForm() {
   const honeypotRef = useRef<HTMLInputElement>(null);
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  const autocompleteRef = useRef<GoogleAutocomplete | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const utm = params.get("utm_source");
     if (utm) utmSourceRef.current = utm.slice(0, 120);
+  }, []);
+
+  // Google Places Autocomplete — attaches to the address input when the
+  // Maps JS API loads. Biases results to central NC (Forge's service area)
+  // but doesn't restrict — customers can still type anything.
+  useEffect(() => {
+    if (!GOOGLE_MAPS_API_KEY) return;
+    if (!addressInputRef.current) return;
+    if (autocompleteRef.current) return;
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const tryAttach = (): boolean => {
+      if (cancelled) return true;
+      const places = window.google?.maps?.places;
+      const Bounds = window.google?.maps?.LatLngBounds;
+      const input = addressInputRef.current;
+      if (!places || !input) return false;
+      // Bias toward Wake/Johnston counties area (Garner-centered).
+      const bounds = Bounds
+        ? new Bounds({ lat: 35.5, lng: -78.85 }, { lat: 36.0, lng: -78.4 })
+        : undefined;
+      const ac = new places.Autocomplete(input, {
+        componentRestrictions: { country: "us" },
+        fields: ["formatted_address", "place_id", "geometry"],
+        types: ["address"],
+        bounds,
+      });
+      ac.addListener("place_changed", () => {
+        const place = ac.getPlace();
+        if (place.formatted_address) {
+          setState((s) => ({ ...s, address: place.formatted_address! }));
+          setErrors((e) => ({ ...e, address: undefined }));
+        }
+      });
+      autocompleteRef.current = ac;
+      return true;
+    };
+
+    if (!tryAttach()) {
+      intervalId = setInterval(() => {
+        if (tryAttach() && intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+      }, 250);
+    }
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+      const ac = autocompleteRef.current;
+      const ev = window.google?.maps?.event;
+      if (ac && ev) ev.clearInstanceListeners(ac);
+      autocompleteRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -245,7 +333,6 @@ export function ContactForm() {
           description: state.description,
           preferredDate: state.preferredDate,
           urgency: state.urgency,
-          budgetRange: state.budgetRange,
           bestContactTime: state.bestContactTime,
           bestContactMethod: state.bestContactMethod,
           referralSource: state.referralSource,
@@ -364,6 +451,14 @@ export function ContactForm() {
           strategy="afterInteractive"
         />
       )}
+      {GOOGLE_MAPS_API_KEY && (
+        <Script
+          src={`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
+            GOOGLE_MAPS_API_KEY,
+          )}&libraries=places&v=weekly&loading=async`}
+          strategy="afterInteractive"
+        />
+      )}
       <form
         onSubmit={onSubmit}
         noValidate
@@ -433,19 +528,25 @@ export function ContactForm() {
         <FormSection title="About the property">
           <Field
             id="address"
-            label="Address or City"
+            label="Address"
             required
             error={errors.address}
           >
             <input
+              ref={addressInputRef}
               id="address"
               name="address"
               autoComplete="street-address"
-              placeholder="123 Main St, Garner, NC"
+              placeholder="Start typing your address…"
               value={state.address}
               onChange={(e) => update("address", e.target.value)}
               className={inputClass(!!errors.address)}
             />
+            {GOOGLE_MAPS_API_KEY && (
+              <p className="mt-1 text-xs text-ink/50">
+                Pick a suggestion to lock in a verified address.
+              </p>
+            )}
           </Field>
           <Field
             id="propertyType"
@@ -557,7 +658,7 @@ export function ContactForm() {
           </Field>
         </FormSection>
 
-        <FormSection title="Timing & budget">
+        <FormSection title="When do you need this?">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               id="preferredDate"
@@ -601,31 +702,6 @@ export function ContactForm() {
               </select>
             </Field>
           </div>
-          <Field
-            id="budgetRange"
-            label="Budget range"
-            required
-            error={errors.budgetRange}
-          >
-            <select
-              id="budgetRange"
-              name="budgetRange"
-              value={state.budgetRange}
-              onChange={(e) =>
-                update("budgetRange", e.target.value as BudgetRangeCode)
-              }
-              className={inputClass(!!errors.budgetRange)}
-            >
-              <option value="" disabled>
-                Select budget…
-              </option>
-              {BUDGET_RANGES.map((opt) => (
-                <option key={opt.code} value={opt.code}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </Field>
         </FormSection>
 
         <FormSection title="How should we reach you?">

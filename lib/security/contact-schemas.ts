@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import {
-  BUDGET_RANGES,
   CONTACT_METHODS,
   CONTACT_TIMES,
   PROPERTY_TYPES,
@@ -18,10 +17,6 @@ export const propertyTypeSchema = z.enum(
 
 export const urgencySchema = z.enum(
   URGENCY_OPTIONS.map((s) => s.code) as [string, ...string[]],
-)
-
-export const budgetRangeSchema = z.enum(
-  BUDGET_RANGES.map((s) => s.code) as [string, ...string[]],
 )
 
 export const contactTimeSchema = z.enum(

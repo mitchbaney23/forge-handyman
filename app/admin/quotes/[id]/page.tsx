@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { QuoteComposer } from "./QuoteComposer";
 import {
-  BUDGET_RANGES,
   CONTACT_METHODS,
   CONTACT_TIMES,
   PROPERTY_TYPES,
@@ -129,10 +128,6 @@ export default async function QuotePage({
           <ContextItem
             label="Urgency"
             value={labelByCode(URGENCY_OPTIONS, row.urgency || "")}
-          />
-          <ContextItem
-            label="Budget range"
-            value={labelByCode(BUDGET_RANGES, row.budget_range || "")}
           />
           <ContextItem
             label="Best contact time"

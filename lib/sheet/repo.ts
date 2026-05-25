@@ -31,7 +31,6 @@ export const SHEET_HEADERS = [
   'service_categories',
   'property_type',
   'urgency',
-  'budget_range',
   'best_contact_time',
   'best_contact_method',
   'photo_urls',
@@ -92,7 +91,6 @@ export interface ContactRow {
   service_categories?: string
   property_type?: string
   urgency?: string
-  budget_range?: string
   best_contact_time?: string
   best_contact_method?: string
   photo_urls?: string

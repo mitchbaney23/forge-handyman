@@ -39,25 +39,24 @@ The 8 specific categories appear as toggle pills on the form. The customer eithe
 | Property type | Single-select dropdown | Yes | Residential / Rental / Commercial / HOA / Other |
 | Services (multi-select) | Pill toggles | Yes (or "not sure") | 8 category options |
 | Urgency | Single-select | Yes | ASAP / 2 weeks / Month / Flexible |
-| Budget range | Single-select | Yes | Under $250 / $250–500 / $500–1k / $1k–2.5k / $2.5k+ / Not sure |
 | Best contact time | Single-select | No (defaults Any) | Any / Morning / Afternoon / Evening |
 | Best contact method | Single-select | No (defaults Any) | Any / Phone / Text / Email |
+| **Address autocomplete** | Google Places Autocomplete attached to address input | (uses existing required validation) | Pulls verified US addresses; biased toward Wake/Johnston counties |
 
-### Sheet schema expansion (24 → 33 columns)
+### Sheet schema expansion (24 → 32 columns)
 
-Added Y–AG:
+Added Y–AF:
 
 | Column | Header |
 |---|---|
 | Y | `service_categories` (CSV of category codes) |
 | Z | `property_type` |
 | AA | `urgency` |
-| AB | `budget_range` |
-| AC | `best_contact_time` |
-| AD | `best_contact_method` |
-| AE | `photo_urls` (reserved for Stage 6b) |
-| AF | `is_returning_customer` (`true` or empty) |
-| AG | `prior_job_count` (integer string) |
+| AB | `best_contact_time` |
+| AC | `best_contact_method` |
+| AD | `photo_urls` (reserved for Stage 6b) |
+| AE | `is_returning_customer` (`true` or empty) |
+| AF | `prior_job_count` (integer string) |
 
 Also fixed an off-by-one in `SHEET_COLUMN_LETTER` generation — old code used `String.fromCharCode(65 + index)` which broke at index 26 (`Z` + 1 = `[`). Now uses a proper base-26 conversion so we can grow past Z to AA, AB, etc. without the column letters breaking.
 
@@ -112,15 +111,22 @@ Both lookups are best-effort — if the sheet read fails for any reason, submiss
 
 ## What Mitch needs to do after merge
 
-1. **Re-run the sheet migration** to add the 9 new columns:
-   ```bash
-   vercel env pull .env.local --environment=production
-   # (Manually paste GOOGLE_PRIVATE_KEY into .env.local if not there — sensitive vars don't pull)
-   npm run setup-sheet
-   ```
-   The script auto-backs up the current sheet to `backup-{timestamp}` and writes the new 33-column header.
-2. **Submit a test form** through the new UI to verify all the new fields land in the right columns.
-3. **Confirm the notification email** has the new "Build Quote →" button and all the new field rows.
+1. **Create a `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` in Google Cloud Console** (for client-side Places Autocomplete):
+   - APIs & Services → Credentials → Create credentials → API key
+   - Restrict the key:
+     - **HTTP referrers**: `https://forgehandyman.com/*` and `https://*.forgehandyman.com/*`
+     - **API restrictions**: enable Maps JavaScript API + Places API
+   - Paste into Vercel as `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (not sensitive, all environments)
+   - Redeploy (Vercel doesn't auto-redeploy on env var changes; `NEXT_PUBLIC_*` is build-time)
+2. **Run the sheet migration via the new admin page**:
+   - Sign in to `/admin`
+   - Click **Maintenance** in the top nav (new link)
+   - Click **Run sheet migration** → confirm
+   - Step-by-step results show backup + header rewrite + Audit tab check
+3. **Submit a test form** through the new UI to verify:
+   - Address autocomplete suggests verified addresses as you type
+   - All new fields land in the right columns
+   - Notification email has the "Build Quote →" button and shows all the new field rows
 
 ### What about existing rows?
 
