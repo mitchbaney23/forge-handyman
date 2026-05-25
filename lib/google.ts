@@ -21,6 +21,7 @@ export type ContactSubmission = {
   isReturningCustomer?: boolean;
   priorJobCount?: number;
   duplicateLast24hCount?: number;
+  photoUrls?: string[];
 };
 
 const SCOPES = [
@@ -185,6 +186,21 @@ function buildEmailHtml(data: ContactSubmission): string {
                   <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;font-weight:600;margin-bottom:8px;">Description of work</div>
                   <div style="padding:14px;background:#F3F4F6;border-radius:6px;white-space:pre-wrap;">${escapeHtml(data.description)}</div>
                 </div>
+                ${
+                  data.photoUrls && data.photoUrls.length > 0
+                    ? `<div style="margin-top:20px;">
+                         <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;font-weight:600;margin-bottom:8px;">Photos (${data.photoUrls.length})</div>
+                         <ul style="margin:0;padding:0;list-style:none;">
+                           ${data.photoUrls
+                             .map(
+                               (url, idx) =>
+                                 `<li style="margin:6px 0;"><a href="${escapeHtml(url)}" style="color:#1B3A5C;text-decoration:underline;">View photo ${idx + 1} in Drive</a></li>`,
+                             )
+                             .join("")}
+                         </ul>
+                       </div>`
+                    : ""
+                }
                 ${
                   showQuoteButton
                     ? `<div style="margin-top:24px;font-size:13px;color:#6b7280;">

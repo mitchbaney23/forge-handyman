@@ -65,6 +65,14 @@ const contactSchema = z
     website: honeypotSchema,
     turnstileToken: z.string().min(1).optional(),
     utmSource: z.string().max(120).optional().transform((s) => (s ? s.trim() : '')),
+    // Optional client-generated job_id (used to group photo uploads in
+    // Drive). Must be UUID v4 format; server falls back to generating
+    // its own if missing/invalid.
+    jobId: z
+      .string()
+      .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+      .optional(),
+    photoUrls: z.array(z.string().url()).max(6).optional().default([]),
   })
   .refine(
     (v) => v.notSure || (v.serviceCategories && v.serviceCategories.length >= 1),
@@ -148,6 +156,7 @@ function payloadToSubmission(
     isReturningCustomer: enriched.isReturningCustomer,
     priorJobCount: enriched.priorJobCount,
     duplicateLast24hCount: enriched.duplicateLast24hCount,
+    photoUrls: payload.photoUrls ?? [],
   }
 }
 
@@ -177,6 +186,7 @@ function payloadToRow(
     urgency: payload.urgency,
     best_contact_time: payload.bestContactTime,
     best_contact_method: payload.bestContactMethod,
+    photo_urls: (payload.photoUrls ?? []).join(','),
     is_returning_customer: isReturningCustomer ? 'true' : '',
     prior_job_count: String(priorJobCount),
   }
@@ -250,7 +260,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     })
   }
 
-  const jobId = randomUUID()
+  // Use the client-provided job_id if valid (so photos uploaded under that
+  // ID match the row we're about to write). Otherwise generate fresh.
+  const jobId = payload.jobId ?? randomUUID()
   const derived = deriveServiceInfo(payload)
 
   // Look up returning-customer info in parallel (cheap; both read the sheet).

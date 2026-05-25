@@ -92,6 +92,7 @@ export default async function JobDetailPage({
               {row.description || "(no description)"}
             </p>
           </Panel>
+          <PhotosPanel csv={row.photo_urls || ""} />
         </div>
 
         <div className="space-y-6">
@@ -163,6 +164,48 @@ function Panel({
         {title}
       </h2>
       <div className="space-y-2">{children}</div>
+    </div>
+  );
+}
+
+function PhotosPanel({ csv }: { csv: string }) {
+  const urls = csv
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return (
+    <div className="rounded-xl border border-navy/10 bg-white p-5 shadow-sm">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/60">
+        Photos
+        <span className="ml-2 font-normal text-ink/40">{urls.length}</span>
+      </h2>
+      {urls.length === 0 ? (
+        <p className="text-sm text-ink/55">
+          Customer didn&rsquo;t attach any photos with the submission.
+        </p>
+      ) : (
+        <div className="grid gap-2 grid-cols-3 sm:grid-cols-4">
+          {urls.map((url, idx) => (
+            <a
+              key={idx}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex aspect-square items-center justify-center rounded-lg border border-navy/15 bg-navy/5 text-xs font-medium text-navy hover:border-navy/40 hover:bg-navy/10"
+              title={`Open photo ${idx + 1} in Drive`}
+            >
+              Photo {idx + 1}
+            </a>
+          ))}
+        </div>
+      )}
+      {urls.length > 0 && (
+        <p className="mt-3 text-xs text-ink/50">
+          Photos open in Google Drive — they live in your{" "}
+          <span className="font-medium">Forge Photos / {csv ? "{job_id}" : ""}</span>{" "}
+          folder.
+        </p>
+      )}
     </div>
   );
 }

@@ -24,7 +24,9 @@ type IconName =
   | "close"
   | "calendar"
   | "dollar"
-  | "handshake";
+  | "handshake"
+  | "camera"
+  | "spinner";
 
 type IconProps = SVGProps<SVGSVGElement> & { name: IconName };
 
@@ -135,6 +137,17 @@ const PATHS: Record<IconName, React.ReactNode> = {
   ),
   handshake: (
     <path d="M3 12 7 8l3 3 3-3 4 4-3 3 1 2-2 2-3-3-3 3-2-2 1-2-3-3z" />
+  ),
+  camera: (
+    <>
+      <path d="M4 8h3l2-2h6l2 2h3v11H4z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </>
+  ),
+  spinner: (
+    <>
+      <path d="M12 3a9 9 0 1 0 9 9" />
+    </>
   ),
 };
 
