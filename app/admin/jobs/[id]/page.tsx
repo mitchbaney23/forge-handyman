@@ -39,7 +39,7 @@ export default async function JobDetailPage({
       </div>
 
       <header className="rounded-xl border border-navy/10 bg-white p-6 shadow-card">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="eyebrow">Job</p>
             <h1 className="mt-1 text-2xl font-semibold text-navy">
@@ -49,7 +49,19 @@ export default async function JobDetailPage({
               {row.service_type} · {formatDate(row.preferred_date)}
             </p>
           </div>
-          <StatusBadge status={row.status} />
+          <div className="flex flex-col items-end gap-3">
+            <StatusBadge status={row.status} />
+            {(row.status === "New" ||
+              row.status === "Quoted" ||
+              row.status === "Pending Follow-Up") && (
+              <Link
+                href={`/admin/quotes/${encodeURIComponent(decoded)}`}
+                className="btn-primary text-sm"
+              >
+                {row.status === "New" ? "Send Quote" : "Re-send Quote"}
+              </Link>
+            )}
+          </div>
         </div>
       </header>
 
