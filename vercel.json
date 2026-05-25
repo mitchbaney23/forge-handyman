@@ -3,5 +3,11 @@
   "framework": "nextjs",
   "buildCommand": "next build",
   "devCommand": "next dev",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "crons": [
+    {
+      "path": "/api/cron/backup-sheet",
+      "schedule": "0 7 * * *"
+    }
+  ]
 }
