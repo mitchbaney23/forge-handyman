@@ -65,25 +65,59 @@ function escapeUrl(value: string): string {
   return encodeURIComponent(value);
 }
 
+// Prefer NEXTAUTH_URL (server-side, reliably canonical) over
+// NEXT_PUBLIC_SITE_URL (which may have been set to a Vercel deployment URL).
+// Fall back to the hardcoded canonical domain.
 function getSiteUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "https://forgehandyman.com";
+  const candidates = [
+    process.env.NEXTAUTH_URL,
+    process.env.NEXT_PUBLIC_SITE_URL,
+  ].filter(
+    (value): value is string =>
+      typeof value === "string" &&
+      value.length > 0 &&
+      // Reject Vercel preview/deployment URLs — those aren't the canonical
+      // domain even if someone accidentally set the env var to one.
+      !/vercel\.app$/i.test(value),
+  );
+  return candidates[0] ?? "https://forgehandyman.com";
 }
 
 // Best-effort city extraction from a US-style street address.
-// "123 Main St, Garner, NC 27529" -> "Garner"
-// Returns empty string if nothing reasonable can be parsed.
+// Handles both 3-part and 4-part formats Google Places returns:
+//   "123 Main St, Garner, NC 27529"        -> "Garner"
+//   "123 Main St, Clayton, NC 27520, USA"  -> "Clayton"
 function extractCityFromAddress(address: string): string {
   if (!address) return "";
   const parts = address
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+  // Strip a trailing country segment if present so the city-index math
+  // works for both "{street, city, state-zip}" and "{street, city, state-zip, country}".
+  while (
+    parts.length > 0 &&
+    /^(USA|U\.S\.A\.|United States|US|U\.S\.)$/i.test(parts[parts.length - 1])
+  ) {
+    parts.pop();
+  }
   if (parts.length === 0) return "";
-  // Try the second-to-last part (typical "street, city, state zip" pattern)
+  // Typical pattern after country strip: {street, city, state-zip}
   if (parts.length >= 3) return parts[parts.length - 2];
   if (parts.length === 2) return parts[1];
   // Single token (e.g., "Clayton") — return as-is
   return parts[0];
+}
+
+// MIME-encode a header value per RFC 2047 if it contains non-ASCII.
+// Without this, em dash / curly quotes / etc. land as Latin-1 mojibake in
+// Gmail's inbox preview (e.g., "—" rendered as "Ã¢Â€Â").
+function encodeMimeHeader(value: string): string {
+  if (!value) return value;
+  // Pure ASCII — pass through.
+  if (!/[^\u0000-\u007F]/.test(value)) return value;
+  const base64 = Buffer.from(value, "utf-8").toString("base64");
+  return `=?UTF-8?B?${base64}?=`;
 }
 
 function buildQuoteUrl(data: ContactSubmission): string {
@@ -264,7 +298,7 @@ function encodeRfc2822(message: {
     `To: ${message.to}`,
     `From: ${message.from}`,
     `Reply-To: ${message.replyTo}`,
-    `Subject: ${message.subject}`,
+    `Subject: ${encodeMimeHeader(message.subject)}`,
     "MIME-Version: 1.0",
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     "",
