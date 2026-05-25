@@ -1,19 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 
-function generateNonce(): string {
-  const arr = new Uint8Array(16)
-  crypto.getRandomValues(arr)
-  return Buffer.from(arr).toString('base64')
-}
-
-function buildCsp(nonce: string, isDev: boolean): string {
+function buildCsp(isDev: boolean): string {
   const directives: Record<string, string[]> = {
     'default-src': ["'self'"],
     'script-src': [
       "'self'",
-      `'nonce-${nonce}'`,
-      "'strict-dynamic'",
+      "'unsafe-inline'",
       'https://js.stripe.com',
       'https://challenges.cloudflare.com',
     ],
@@ -78,15 +71,10 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const nonce = generateNonce()
   const isDev = process.env.NODE_ENV !== 'production'
-  const csp = buildCsp(nonce, isDev)
+  const csp = buildCsp(isDev)
 
-  const requestHeaders = new Headers(req.headers)
-  requestHeaders.set('x-nonce', nonce)
-  requestHeaders.set('x-csp', csp)
-
-  const response = NextResponse.next({ request: { headers: requestHeaders } })
+  const response = NextResponse.next()
 
   response.headers.set('Content-Security-Policy', csp)
   response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload')
