@@ -3,11 +3,19 @@ import { NextResponse, type NextRequest } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { z } from 'zod'
 import { checkServiceArea } from '@/lib/geocoding'
+import { SERVICE_LABEL_BY_CODE, type ServiceCategoryCode } from '@/lib/constants'
 import {
   createCalendarEvent,
   sendNotificationEmail,
   type ContactSubmission,
 } from '@/lib/google'
+import {
+  contactMethodSchema,
+  contactTimeSchema,
+  propertyTypeSchema,
+  serviceCategoriesArraySchema,
+  urgencySchema,
+} from '@/lib/security/contact-schemas'
 import { logger, maskEmail, maskPhone } from '@/lib/security/logger'
 import {
   checkLimit,
@@ -24,59 +32,132 @@ import {
   phoneSchema,
   shortTextSchema,
 } from '@/lib/security/zod'
+import {
+  countDuplicateLeadsLast24h,
+  findPriorJobsByEmail,
+} from '@/lib/sheet/queries'
 import { appendContactRow, type ContactRow } from '@/lib/sheet/repo'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const contactSchema = z.object({
-  name: nameSchema,
-  phone: phoneSchema,
-  email: emailSchema,
-  address: shortTextSchema,
-  serviceType: shortTextSchema.refine((s) => s.length <= 80, 'Service type too long'),
-  preferredDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format'),
-  description: freeTextSchema,
-  referralSource: z
-    .string()
-    .max(80)
-    .optional()
-    .transform((s) => (s && s.trim() ? s.trim() : 'Not specified')),
-  website: honeypotSchema,
-  turnstileToken: z.string().min(1).optional(),
-  utmSource: z.string().max(120).optional().transform((s) => (s ? s.trim() : '')),
-})
+const contactSchema = z
+  .object({
+    name: nameSchema,
+    phone: phoneSchema,
+    email: emailSchema,
+    address: shortTextSchema,
+    serviceCategories: serviceCategoriesArraySchema.optional().default([]),
+    notSure: z.boolean().optional().default(false),
+    propertyType: propertyTypeSchema,
+    preferredDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format'),
+    description: freeTextSchema,
+    urgency: urgencySchema,
+    bestContactTime: contactTimeSchema,
+    bestContactMethod: contactMethodSchema,
+    referralSource: z
+      .string()
+      .max(80)
+      .optional()
+      .transform((s) => (s && s.trim() ? s.trim() : 'Not specified')),
+    website: honeypotSchema,
+    turnstileToken: z.string().min(1).optional(),
+    utmSource: z.string().max(120).optional().transform((s) => (s ? s.trim() : '')),
+  })
+  .refine(
+    (v) => v.notSure || (v.serviceCategories && v.serviceCategories.length >= 1),
+    {
+      message: "Pick at least one service, or check 'I'm not sure'",
+      path: ['serviceCategories'],
+    },
+  )
 
 type ContactPayload = z.infer<typeof contactSchema>
+
+interface DerivedServiceInfo {
+  serviceType: string // 'multiple' / 'other' / one of the 8 category codes
+  serviceTypeLabel: string // human label for the email subject
+  serviceCategoriesCsv: string // comma-separated codes, or '' for 'other'
+}
+
+function deriveServiceInfo(payload: ContactPayload): DerivedServiceInfo {
+  if (payload.notSure) {
+    return {
+      serviceType: 'other',
+      serviceTypeLabel: SERVICE_LABEL_BY_CODE.other,
+      serviceCategoriesCsv: '',
+    }
+  }
+  const codes = payload.serviceCategories ?? []
+  if (codes.length === 1) {
+    const code = codes[0] as ServiceCategoryCode
+    return {
+      serviceType: code,
+      serviceTypeLabel: SERVICE_LABEL_BY_CODE[code] ?? code,
+      serviceCategoriesCsv: code,
+    }
+  }
+  return {
+    serviceType: 'multiple',
+    serviceTypeLabel: SERVICE_LABEL_BY_CODE.multiple,
+    serviceCategoriesCsv: codes.join(','),
+  }
+}
 
 function isDevMode(): boolean {
   return process.env.NEXT_PUBLIC_DEV_MODE === 'true'
 }
 
-function jsonError(message: string, status: number, extra?: Record<string, unknown>, headers?: Record<string, string>) {
+function jsonError(
+  message: string,
+  status: number,
+  extra?: Record<string, unknown>,
+  headers?: Record<string, string>,
+) {
   return NextResponse.json({ ok: false, error: message, ...extra }, { status, headers })
 }
 
-function payloadToSubmission(payload: ContactPayload, submittedAt: string): ContactSubmission {
+function payloadToSubmission(
+  payload: ContactPayload,
+  derived: DerivedServiceInfo,
+  submittedAt: string,
+  enriched: {
+    jobId: string
+    isReturningCustomer: boolean
+    priorJobCount: number
+    duplicateLast24hCount: number
+  },
+): ContactSubmission {
   return {
     name: payload.name,
     phone: payload.phone,
     email: payload.email,
     address: payload.address,
-    serviceType: payload.serviceType,
+    serviceType: derived.serviceTypeLabel,
     preferredDate: payload.preferredDate,
     description: payload.description,
     referralSource: payload.referralSource,
     submittedAt,
+    jobId: enriched.jobId,
+    propertyType: payload.propertyType,
+    urgency: payload.urgency,
+    bestContactTime: payload.bestContactTime,
+    bestContactMethod: payload.bestContactMethod,
+    isReturningCustomer: enriched.isReturningCustomer,
+    priorJobCount: enriched.priorJobCount,
+    duplicateLast24hCount: enriched.duplicateLast24hCount,
   }
 }
 
 function payloadToRow(
   payload: ContactPayload,
+  derived: DerivedServiceInfo,
   submittedAt: string,
   jobId: string,
+  isReturningCustomer: boolean,
+  priorJobCount: number,
 ): ContactRow {
   return {
     submitted_at: submittedAt,
@@ -84,13 +165,20 @@ function payloadToRow(
     phone: payload.phone,
     email: payload.email,
     address: payload.address,
-    service_type: payload.serviceType,
+    service_type: derived.serviceType,
     preferred_date: payload.preferredDate,
     description: payload.description,
     referral_source: payload.referralSource,
     status: 'New',
     utm_source: payload.utmSource,
     job_id: jobId,
+    service_categories: derived.serviceCategoriesCsv,
+    property_type: payload.propertyType,
+    urgency: payload.urgency,
+    best_contact_time: payload.bestContactTime,
+    best_contact_method: payload.bestContactMethod,
+    is_returning_customer: isReturningCustomer ? 'true' : '',
+    prior_job_count: String(priorJobCount),
   }
 }
 
@@ -105,8 +193,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return jsonError('Invalid request format.', 400)
   }
 
-  // Honeypot: bots fill `website`; humans don't see it. Return 200 silently
-  // so the bot thinks it succeeded and is less likely to retry.
+  // Honeypot: bots fill `website`; humans don't see it.
   if (
     body !== null &&
     typeof body === 'object' &&
@@ -126,7 +213,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   const payload = parsed.data
 
-  // Rate limit: 5/hr and 20/day per IP. Both must allow.
   const [hourly, daily] = await Promise.all([
     checkLimit('contact-form-hour', ip),
     checkLimit('contact-form-day', ip),
@@ -165,8 +251,41 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const jobId = randomUUID()
-  const submission = payloadToSubmission(payload, submittedAt)
-  const row = payloadToRow(payload, submittedAt, jobId)
+  const derived = deriveServiceInfo(payload)
+
+  // Look up returning-customer info in parallel (cheap; both read the sheet).
+  let isReturningCustomer = false
+  let priorJobCount = 0
+  let duplicateLast24hCount = 0
+  if (!isDevMode()) {
+    try {
+      const [prior, dupCount] = await Promise.all([
+        findPriorJobsByEmail(payload.email, jobId),
+        countDuplicateLeadsLast24h(payload.email, jobId),
+      ])
+      priorJobCount = prior.count
+      isReturningCustomer = prior.count > 0
+      duplicateLast24hCount = dupCount
+    } catch (err) {
+      // Don't block submission if the lookup fails — log it.
+      logger.warn({ err }, 'contact-form: prior-customer lookup failed')
+    }
+  }
+
+  const submission = payloadToSubmission(payload, derived, submittedAt, {
+    jobId,
+    isReturningCustomer,
+    priorJobCount,
+    duplicateLast24hCount,
+  })
+  const row = payloadToRow(
+    payload,
+    derived,
+    submittedAt,
+    jobId,
+    isReturningCustomer,
+    priorJobCount,
+  )
 
   logger.info(
     {
@@ -175,8 +294,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       submittedAt,
       maskedEmail: maskEmail(payload.email),
       maskedPhone: maskPhone(payload.phone),
-      serviceType: payload.serviceType,
+      serviceType: derived.serviceType,
       utmSource: payload.utmSource || undefined,
+      isReturningCustomer,
+      priorJobCount,
+      duplicateLast24h: duplicateLast24hCount,
     },
     'contact-form: submission accepted',
   )

@@ -28,13 +28,33 @@ export const SHEET_HEADERS = [
   'stripe_payment_method_id',
   'deposit_paid_cents',
   'balance_owed_cents',
+  'service_categories',
+  'property_type',
+  'urgency',
+  'best_contact_time',
+  'best_contact_method',
+  'photo_urls',
+  'is_returning_customer',
+  'prior_job_count',
 ] as const
 
 export type SheetColumn = (typeof SHEET_HEADERS)[number]
 
+// Convert a zero-based column index to A1-notation letter(s).
+// 0→A, 25→Z, 26→AA, 27→AB, ... 51→AZ, 52→BA, ...
+export function indexToColumnLetter(index: number): string {
+  let n = index
+  let result = ''
+  while (n >= 0) {
+    result = String.fromCharCode(65 + (n % 26)) + result
+    n = Math.floor(n / 26) - 1
+  }
+  return result
+}
+
 export const SHEET_COLUMN_LETTER: Record<SheetColumn, string> = SHEET_HEADERS.reduce(
   (acc, name, index) => {
-    acc[name] = String.fromCharCode(65 + index)
+    acc[name] = indexToColumnLetter(index)
     return acc
   },
   {} as Record<SheetColumn, string>,
@@ -68,6 +88,14 @@ export interface ContactRow {
   stripe_payment_method_id?: string
   deposit_paid_cents?: string
   balance_owed_cents?: string
+  service_categories?: string
+  property_type?: string
+  urgency?: string
+  best_contact_time?: string
+  best_contact_method?: string
+  photo_urls?: string
+  is_returning_customer?: string
+  prior_job_count?: string
 }
 
 export type ContactRowPartial = Partial<ContactRow>
