@@ -56,6 +56,44 @@ export const ACTIVE_STATUSES = new Set(['Booked', 'In Progress'])
 export const COMPLETED_STATUSES = new Set(['Complete'])
 export const QUOTED_STATUSES = new Set(['Quoted', 'Pending Follow-Up'])
 
+export interface PriorJobsSummary {
+  count: number
+  rows: JobRow[]
+}
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000
+
+export async function findPriorJobsByEmail(
+  email: string,
+  excludeJobId?: string,
+): Promise<PriorJobsSummary> {
+  if (!email) return { count: 0, rows: [] }
+  const normalized = email.trim().toLowerCase()
+  const all = await listJobs()
+  const matches = all.filter(
+    (row) =>
+      (row.email || '').trim().toLowerCase() === normalized &&
+      (!excludeJobId || row.job_id !== excludeJobId),
+  )
+  return { count: matches.length, rows: matches }
+}
+
+export async function countDuplicateLeadsLast24h(
+  email: string,
+  exceptJobId: string,
+): Promise<number> {
+  if (!email) return 0
+  const normalized = email.trim().toLowerCase()
+  const cutoff = Date.now() - ONE_DAY_MS
+  const all = await listJobs()
+  return all.filter((row) => {
+    if (row.job_id === exceptJobId) return false
+    if ((row.email || '').trim().toLowerCase() !== normalized) return false
+    const submittedAt = row.submitted_at ? new Date(row.submitted_at).getTime() : 0
+    return submittedAt >= cutoff
+  }).length
+}
+
 export function groupJobsForOverview(jobs: JobRow[]): {
   needsTriage: JobRow[]
   today: JobRow[]

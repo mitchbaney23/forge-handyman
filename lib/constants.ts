@@ -197,13 +197,92 @@ export const REFERRAL_SOURCES = [
   "Other",
 ];
 
-export const SERVICE_OPTIONS = [
-  "General Repair",
-  "Carpentry",
-  "Painting",
-  "Assembly / Installation",
-  "Deck / Fence",
-  "Pressure Washing",
-  "Drywall",
-  "Other",
+// Service categories — locked 10-option taxonomy from Amendment §21.1.
+// Internal code is stored in the sheet; label is shown to customers.
+export type ServiceCategoryCode =
+  | "mounting"
+  | "plumbing"
+  | "electrical"
+  | "drywall_paint"
+  | "doors_windows"
+  | "carpentry"
+  | "exterior"
+  | "maintenance"
+  | "multiple"
+  | "other";
+
+export const SERVICE_CATEGORIES: {
+  code: ServiceCategoryCode;
+  label: string;
+}[] = [
+  { code: "mounting", label: "Mounting & assembly (TVs, shelves, furniture)" },
+  { code: "plumbing", label: "Plumbing repair or fixture install" },
+  { code: "electrical", label: "Electrical repair or fixture install" },
+  { code: "drywall_paint", label: "Drywall, painting, or trim" },
+  { code: "doors_windows", label: "Doors, windows, or hardware" },
+  { code: "carpentry", label: "Carpentry, deck, or fence work" },
+  { code: "exterior", label: "Outdoor or exterior work" },
+  { code: "maintenance", label: "General repair or maintenance" },
 ];
+
+// Codes selectable as the only choice (single-select) when user says
+// they need "multiple things" or "not sure." These are NOT in the
+// SERVICE_CATEGORIES list because they shouldn't appear as checkbox
+// options — they're auto-set based on what the customer picks.
+export const SERVICE_CATEGORY_CODES = SERVICE_CATEGORIES.map((s) => s.code);
+
+export const SERVICE_LABEL_BY_CODE: Record<ServiceCategoryCode, string> = {
+  ...Object.fromEntries(
+    SERVICE_CATEGORIES.map((s) => [s.code, s.label]),
+  ),
+  multiple: "Multiple things (a punch-list)",
+  other: "Not sure / something else",
+} as Record<ServiceCategoryCode, string>;
+
+export const PROPERTY_TYPES = [
+  { code: "residential", label: "Residential (my home)" },
+  { code: "rental", label: "Rental I own" },
+  { code: "commercial", label: "Commercial property" },
+  { code: "hoa", label: "HOA common area" },
+  { code: "other", label: "Other" },
+] as const;
+
+export type PropertyTypeCode = (typeof PROPERTY_TYPES)[number]["code"];
+
+export const URGENCY_OPTIONS = [
+  { code: "asap", label: "As soon as possible" },
+  { code: "two_weeks", label: "Within 2 weeks" },
+  { code: "month", label: "Within a month" },
+  { code: "flexible", label: "Flexible — anytime" },
+] as const;
+
+export type UrgencyCode = (typeof URGENCY_OPTIONS)[number]["code"];
+
+export const BUDGET_RANGES = [
+  { code: "under_250", label: "Under $250" },
+  { code: "250_500", label: "$250 – $500" },
+  { code: "500_1k", label: "$500 – $1,000" },
+  { code: "1k_2_5k", label: "$1,000 – $2,500" },
+  { code: "over_2_5k", label: "$2,500+" },
+  { code: "not_sure", label: "Not sure — need a quote" },
+] as const;
+
+export type BudgetRangeCode = (typeof BUDGET_RANGES)[number]["code"];
+
+export const CONTACT_TIMES = [
+  { code: "any", label: "Any time" },
+  { code: "morning", label: "Morning (8a–12p)" },
+  { code: "afternoon", label: "Afternoon (12p–5p)" },
+  { code: "evening", label: "Evening (5p–8p)" },
+] as const;
+
+export type ContactTimeCode = (typeof CONTACT_TIMES)[number]["code"];
+
+export const CONTACT_METHODS = [
+  { code: "any", label: "Any" },
+  { code: "phone", label: "Phone call" },
+  { code: "text", label: "Text message" },
+  { code: "email", label: "Email" },
+] as const;
+
+export type ContactMethodCode = (typeof CONTACT_METHODS)[number]["code"];

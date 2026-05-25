@@ -11,6 +11,17 @@ export type ContactSubmission = {
   description: string;
   referralSource: string;
   submittedAt: string;
+  // Optional context (Stage 6a): present on new-form submissions; absent
+  // on legacy calls so existing callers continue to work.
+  jobId?: string;
+  propertyType?: string;
+  urgency?: string;
+  budgetRange?: string;
+  bestContactTime?: string;
+  bestContactMethod?: string;
+  isReturningCustomer?: boolean;
+  priorJobCount?: number;
+  duplicateLast24hCount?: number;
 };
 
 const SCOPES = [
@@ -51,13 +62,67 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#039;");
 }
 
+function escapeUrl(value: string): string {
+  return encodeURIComponent(value);
+}
+
+function getSiteUrl(): string {
+  return process.env.NEXT_PUBLIC_SITE_URL ?? "https://forgehandyman.com";
+}
+
+// Best-effort city extraction from a US-style street address.
+// "123 Main St, Garner, NC 27529" -> "Garner"
+// Returns empty string if nothing reasonable can be parsed.
+function extractCityFromAddress(address: string): string {
+  if (!address) return "";
+  const parts = address
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return "";
+  // Try the second-to-last part (typical "street, city, state zip" pattern)
+  if (parts.length >= 3) return parts[parts.length - 2];
+  if (parts.length === 2) return parts[1];
+  // Single token (e.g., "Clayton") — return as-is
+  return parts[0];
+}
+
+function buildQuoteUrl(data: ContactSubmission): string {
+  if (!data.jobId) return `${getSiteUrl()}/admin`;
+  return `${getSiteUrl()}/admin/quotes/${escapeUrl(data.jobId)}`;
+}
+
+function buildJobUrl(data: ContactSubmission): string {
+  if (!data.jobId) return `${getSiteUrl()}/admin`;
+  return `${getSiteUrl()}/admin/jobs/${escapeUrl(data.jobId)}`;
+}
+
+function buildMapsUrl(address: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${escapeUrl(address)}`;
+}
+
 function buildEmailHtml(data: ContactSubmission): string {
   const row = (label: string, value: string) => `
     <tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#4b5563;font-weight:600;width:180px;">${label}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#4b5563;font-weight:600;width:160px;">${label}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#1f2937;">${escapeHtml(value) || "&mdash;"}</td>
     </tr>
   `;
+
+  const quoteUrl = buildQuoteUrl(data);
+  const jobUrl = buildJobUrl(data);
+  const mapsUrl = buildMapsUrl(data.address);
+  const showQuoteButton = Boolean(data.jobId);
+  const returningBadge =
+    data.isReturningCustomer && (data.priorJobCount ?? 0) > 0
+      ? `<span style="display:inline-block;margin-left:8px;padding:2px 8px;background:#FEF3C7;color:#92400E;font-size:11px;font-weight:700;border-radius:4px;text-transform:uppercase;letter-spacing:0.5px;">Returning · ${data.priorJobCount} prior</span>`
+      : "";
+  const duplicateBanner =
+    (data.duplicateLast24hCount ?? 0) > 0
+      ? `<div style="padding:12px 16px;background:#FEF3C7;border-left:4px solid #D97706;border-radius:4px;margin-bottom:16px;font-size:13px;color:#92400E;">
+           <strong>Heads up:</strong> this customer also submitted ${data.duplicateLast24hCount} time(s) in the last 24 hours.
+         </div>`
+      : "";
 
   return `<!DOCTYPE html>
 <html>
@@ -69,34 +134,76 @@ function buildEmailHtml(data: ContactSubmission): string {
             <tr>
               <td style="background:#1B3A5C;padding:24px 28px;color:#ffffff;">
                 <div style="font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#F59E0B;">Forge Handyman Service</div>
-                <div style="font-size:22px;font-weight:700;margin-top:6px;">New Job Request</div>
+                <div style="font-size:22px;font-weight:700;margin-top:6px;">New lead${returningBadge}</div>
               </td>
             </tr>
             <tr>
               <td style="padding:24px 28px;">
-                <div style="padding:16px;background:#FFF7ED;border-left:4px solid #D97706;border-radius:4px;margin-bottom:20px;">
+                ${duplicateBanner}
+                ${
+                  showQuoteButton
+                    ? `<div style="text-align:center;margin:8px 0 24px;">
+                         <a href="${quoteUrl}" style="display:inline-block;background:#D97706;color:#ffffff;padding:16px 36px;border-radius:8px;text-decoration:none;font-weight:700;font-size:16px;min-height:44px;">
+                           Build Quote &rarr;
+                         </a>
+                       </div>`
+                    : ""
+                }
+                <div style="padding:14px;background:#FFF7ED;border-left:4px solid #D97706;border-radius:4px;margin-bottom:20px;">
                   <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#9A3412;font-weight:600;">Call back at</div>
                   <a href="tel:${escapeHtml(data.phone)}" style="font-size:22px;font-weight:700;color:#1B3A5C;text-decoration:none;">${escapeHtml(data.phone)}</a>
                 </div>
                 <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
                   ${row("Name", data.name)}
-                  ${row("Phone", data.phone)}
-                  ${row("Email", data.email)}
-                  ${row("Address", data.address)}
+                  <tr>
+                    <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#4b5563;font-weight:600;width:160px;">Phone</td>
+                    <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#1f2937;">
+                      <a href="tel:${escapeHtml(data.phone)}" style="color:#1B3A5C;text-decoration:underline;">${escapeHtml(data.phone)}</a>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#4b5563;font-weight:600;width:160px;">Email</td>
+                    <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#1f2937;">
+                      <a href="mailto:${escapeHtml(data.email)}" style="color:#1B3A5C;text-decoration:underline;">${escapeHtml(data.email)}</a>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#4b5563;font-weight:600;width:160px;">Address</td>
+                    <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#1f2937;">
+                      <a href="${mapsUrl}" target="_blank" style="color:#1B3A5C;text-decoration:underline;">${escapeHtml(data.address)}</a>
+                    </td>
+                  </tr>
+                  ${data.propertyType ? row("Property type", data.propertyType) : ""}
                   ${row("Service", data.serviceType)}
-                  ${row("Preferred Date", data.preferredDate)}
-                  ${row("Referral Source", data.referralSource)}
+                  ${row("Preferred date", data.preferredDate)}
+                  ${data.urgency ? row("Urgency", data.urgency) : ""}
+                  ${data.budgetRange ? row("Budget", data.budgetRange) : ""}
+                  ${data.bestContactTime ? row("Best contact time", data.bestContactTime) : ""}
+                  ${data.bestContactMethod ? row("Best contact method", data.bestContactMethod) : ""}
+                  ${row("Referral source", data.referralSource)}
                   ${row("Submitted", data.submittedAt)}
                 </table>
                 <div style="margin-top:20px;">
-                  <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;font-weight:600;margin-bottom:8px;">Description of Work</div>
+                  <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;font-weight:600;margin-bottom:8px;">Description of work</div>
                   <div style="padding:14px;background:#F3F4F6;border-radius:6px;white-space:pre-wrap;">${escapeHtml(data.description)}</div>
+                </div>
+                ${
+                  showQuoteButton
+                    ? `<div style="margin-top:24px;font-size:13px;color:#6b7280;">
+                         <a href="${jobUrl}" style="color:#1B3A5C;text-decoration:underline;">View lead in admin</a>
+                         &nbsp;·&nbsp;
+                         <a href="mailto:${escapeHtml(data.email)}?subject=${escapeUrl("Re: Your Forge Handyman request")}" style="color:#1B3A5C;text-decoration:underline;">Reply to customer</a>
+                       </div>`
+                    : ""
+                }
+                <div style="margin-top:16px;font-size:11px;color:#9CA3AF;font-style:italic;">
+                  First-touch SLA: respond within 4 hours.
                 </div>
               </td>
             </tr>
             <tr>
               <td style="background:#F3F4F6;padding:16px 28px;font-size:12px;color:#6b7280;text-align:center;">
-                Submitted via forgehandyman.com contact form
+                Forge Handyman Service · Garner, Clayton &amp; South Raleigh, NC
               </td>
             </tr>
           </table>
@@ -108,23 +215,43 @@ function buildEmailHtml(data: ContactSubmission): string {
 }
 
 function buildEmailText(data: ContactSubmission): string {
+  const quoteUrl = buildQuoteUrl(data);
+  const showLink = Boolean(data.jobId);
+  const dupLine =
+    (data.duplicateLast24hCount ?? 0) > 0
+      ? [`HEADS UP: customer also submitted ${data.duplicateLast24hCount} time(s) in the last 24 hours.`, ""]
+      : [];
+  const returningLine = data.isReturningCustomer
+    ? [`Returning customer · ${data.priorJobCount} prior job(s).`, ""]
+    : [];
+
   return [
-    "New Job Request — Forge Handyman Service",
+    "NEW FORGE LEAD",
     "",
+    ...returningLine,
+    ...dupLine,
+    ...(showLink ? [`Build Quote: ${quoteUrl}`, ""] : []),
     `Name: ${data.name}`,
     `Phone: ${data.phone}`,
     `Email: ${data.email}`,
     `Address: ${data.address}`,
+    data.propertyType ? `Property type: ${data.propertyType}` : "",
     `Service: ${data.serviceType}`,
-    `Preferred Date: ${data.preferredDate}`,
-    `Referral Source: ${data.referralSource}`,
+    `Preferred date: ${data.preferredDate}`,
+    data.urgency ? `Urgency: ${data.urgency}` : "",
+    data.budgetRange ? `Budget: ${data.budgetRange}` : "",
+    data.bestContactTime ? `Best contact time: ${data.bestContactTime}` : "",
+    data.bestContactMethod ? `Best contact method: ${data.bestContactMethod}` : "",
+    `Referral source: ${data.referralSource}`,
     `Submitted: ${data.submittedAt}`,
     "",
-    "Description of Work:",
+    "Description of work:",
     data.description,
     "",
-    "— Submitted via forgehandyman.com",
-  ].join("\n");
+    "— Forge",
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
 }
 
 function encodeRfc2822(message: {
@@ -171,11 +298,24 @@ export async function sendNotificationEmail(data: ContactSubmission): Promise<vo
   const gmail = google.gmail({ version: "v1", auth });
   const businessEmail = getBusinessEmail();
 
+  const firstName = (data.name || "Customer").split(/\s+/)[0] || "Customer";
+  const cityGuess = extractCityFromAddress(data.address);
+  const cityFragment = cityGuess ? ` in ${cityGuess}` : "";
+  const duplicateCount = data.duplicateLast24hCount ?? 0;
+  const ordinalPrefix =
+    duplicateCount === 1
+      ? "[2nd] "
+      : duplicateCount === 2
+        ? "[3rd] "
+        : duplicateCount >= 3
+          ? `[${duplicateCount + 1}th] `
+          : "";
+
   const raw = encodeRfc2822({
     to: businessEmail,
     from: businessEmail,
     replyTo: data.email || businessEmail,
-    subject: `New Job Request: ${data.serviceType} — ${data.name}`,
+    subject: `${ordinalPrefix}New lead: ${firstName} — ${data.serviceType}${cityFragment}`,
     html: buildEmailHtml(data),
     text: buildEmailText(data),
   });

@@ -2,7 +2,21 @@
 
 import Script from "next/script";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { REFERRAL_SOURCES, SERVICE_OPTIONS } from "@/lib/constants";
+import {
+  BUDGET_RANGES,
+  CONTACT_METHODS,
+  CONTACT_TIMES,
+  PROPERTY_TYPES,
+  REFERRAL_SOURCES,
+  SERVICE_CATEGORIES,
+  URGENCY_OPTIONS,
+  type BudgetRangeCode,
+  type ContactMethodCode,
+  type ContactTimeCode,
+  type PropertyTypeCode,
+  type ServiceCategoryCode,
+  type UrgencyCode,
+} from "@/lib/constants";
 import { Icon } from "@/lib/icons";
 
 type Status = "idle" | "submitting" | "success" | "error" | "out-of-area";
@@ -16,9 +30,15 @@ type FormState = {
   phone: string;
   email: string;
   address: string;
-  serviceType: string;
-  preferredDate: string;
+  propertyType: PropertyTypeCode | "";
+  serviceCategories: ServiceCategoryCode[];
+  notSure: boolean;
   description: string;
+  preferredDate: string;
+  urgency: UrgencyCode | "";
+  budgetRange: BudgetRangeCode | "";
+  bestContactTime: ContactTimeCode;
+  bestContactMethod: ContactMethodCode;
   referralSource: string;
 };
 
@@ -27,9 +47,15 @@ const initial: FormState = {
   phone: "",
   email: "",
   address: "",
-  serviceType: "",
-  preferredDate: "",
+  propertyType: "",
+  serviceCategories: [],
+  notSure: false,
   description: "",
+  preferredDate: "",
+  urgency: "",
+  budgetRange: "",
+  bestContactTime: "any",
+  bestContactMethod: "any",
   referralSource: "",
 };
 
@@ -64,8 +90,13 @@ function validate(state: FormState): FieldErrors {
     errors.email = "Please enter a valid email address.";
   if (!state.address.trim())
     errors.address = "Please share your address or city.";
-  if (!state.serviceType) errors.serviceType = "Select a service.";
+  if (!state.propertyType) errors.propertyType = "Select a property type.";
+  if (!state.notSure && state.serviceCategories.length === 0)
+    errors.serviceCategories =
+      "Pick at least one service, or check “I'm not sure.”";
   if (!state.preferredDate) errors.preferredDate = "Pick a preferred date.";
+  if (!state.urgency) errors.urgency = "Pick how urgent this is.";
+  if (!state.budgetRange) errors.budgetRange = "Pick a budget range (or 'Not sure').";
   if (!state.description.trim())
     errors.description = "Tell us a bit about the work.";
   return errors;
@@ -143,6 +174,34 @@ export function ContactForm() {
     if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
   };
 
+  const toggleCategory = (code: ServiceCategoryCode) => {
+    setState((s) => {
+      const has = s.serviceCategories.includes(code);
+      const next = has
+        ? s.serviceCategories.filter((c) => c !== code)
+        : [...s.serviceCategories, code];
+      // If user picks a category, clear "I'm not sure"
+      return {
+        ...s,
+        serviceCategories: next,
+        notSure: next.length > 0 ? false : s.notSure,
+      };
+    });
+    if (errors.serviceCategories)
+      setErrors((e) => ({ ...e, serviceCategories: undefined }));
+  };
+
+  const toggleNotSure = () => {
+    setState((s) => ({
+      ...s,
+      notSure: !s.notSure,
+      // Clear category selections when picking "not sure"
+      serviceCategories: !s.notSure ? [] : s.serviceCategories,
+    }));
+    if (errors.serviceCategories)
+      setErrors((e) => ({ ...e, serviceCategories: undefined }));
+  };
+
   const resetTurnstile = () => {
     setTurnstileToken("");
     const ts = window.turnstile;
@@ -155,6 +214,10 @@ export function ContactForm() {
     const nextErrors = validate(state);
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
+      // Scroll to first error
+      const firstErrorKey = Object.keys(nextErrors)[0];
+      const el = document.getElementById(firstErrorKey);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 
@@ -172,7 +235,20 @@ export function ContactForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...state,
+          name: state.name,
+          phone: state.phone,
+          email: state.email,
+          address: state.address,
+          propertyType: state.propertyType,
+          serviceCategories: state.serviceCategories,
+          notSure: state.notSure,
+          description: state.description,
+          preferredDate: state.preferredDate,
+          urgency: state.urgency,
+          budgetRange: state.budgetRange,
+          bestContactTime: state.bestContactTime,
+          bestContactMethod: state.bestContactMethod,
+          referralSource: state.referralSource,
           website: honeypotRef.current?.value ?? "",
           turnstileToken: turnstileToken || undefined,
           utmSource: utmSourceRef.current || undefined,
@@ -291,9 +367,9 @@ export function ContactForm() {
       <form
         onSubmit={onSubmit}
         noValidate
-        className="space-y-5 rounded-xl border border-navy/10 bg-white p-6 shadow-card sm:p-8"
+        className="space-y-6 rounded-xl border border-navy/10 bg-white p-6 shadow-card sm:p-8"
       >
-        {/* Honeypot — visually and assistively hidden, bots fill it. */}
+        {/* Honeypot */}
         <div
           aria-hidden="true"
           style={{
@@ -316,135 +392,302 @@ export function ContactForm() {
           />
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field id="name" label="Name" required error={errors.name}>
+        <FormSection title="About you">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field id="name" label="Name" required error={errors.name}>
+              <input
+                id="name"
+                name="name"
+                autoComplete="name"
+                value={state.name}
+                onChange={(e) => update("name", e.target.value)}
+                className={inputClass(!!errors.name)}
+              />
+            </Field>
+            <Field id="phone" label="Phone" required error={errors.phone}>
+              <input
+                id="phone"
+                name="phone"
+                type="tel"
+                autoComplete="tel"
+                placeholder="(555) 555-5555"
+                value={state.phone}
+                onChange={(e) => update("phone", e.target.value)}
+                className={inputClass(!!errors.phone)}
+              />
+            </Field>
+          </div>
+          <Field id="email" label="Email" required error={errors.email}>
             <input
-              id="name"
-              name="name"
-              autoComplete="name"
-              value={state.name}
-              onChange={(e) => update("name", e.target.value)}
-              className={inputClass(!!errors.name)}
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              value={state.email}
+              onChange={(e) => update("email", e.target.value)}
+              className={inputClass(!!errors.email)}
             />
           </Field>
-          <Field id="phone" label="Phone" required error={errors.phone}>
-            <input
-              id="phone"
-              name="phone"
-              type="tel"
-              autoComplete="tel"
-              placeholder="(555) 555-5555"
-              value={state.phone}
-              onChange={(e) => update("phone", e.target.value)}
-              className={inputClass(!!errors.phone)}
-            />
-          </Field>
-        </div>
+        </FormSection>
 
-        <Field id="email" label="Email" required error={errors.email}>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            value={state.email}
-            onChange={(e) => update("email", e.target.value)}
-            className={inputClass(!!errors.email)}
-          />
-        </Field>
-
-        <Field
-          id="address"
-          label="Address or City"
-          required
-          error={errors.address}
-        >
-          <input
-            id="address"
-            name="address"
-            autoComplete="street-address"
-            placeholder="123 Main St, Garner, NC"
-            value={state.address}
-            onChange={(e) => update("address", e.target.value)}
-            className={inputClass(!!errors.address)}
-          />
-        </Field>
-
-        <div className="grid gap-5 sm:grid-cols-2">
+        <FormSection title="About the property">
           <Field
-            id="serviceType"
-            label="Service Needed"
+            id="address"
+            label="Address or City"
             required
-            error={errors.serviceType}
+            error={errors.address}
+          >
+            <input
+              id="address"
+              name="address"
+              autoComplete="street-address"
+              placeholder="123 Main St, Garner, NC"
+              value={state.address}
+              onChange={(e) => update("address", e.target.value)}
+              className={inputClass(!!errors.address)}
+            />
+          </Field>
+          <Field
+            id="propertyType"
+            label="Property type"
+            required
+            error={errors.propertyType}
           >
             <select
-              id="serviceType"
-              name="serviceType"
-              value={state.serviceType}
-              onChange={(e) => update("serviceType", e.target.value)}
-              className={inputClass(!!errors.serviceType)}
+              id="propertyType"
+              name="propertyType"
+              value={state.propertyType}
+              onChange={(e) =>
+                update("propertyType", e.target.value as PropertyTypeCode)
+              }
+              className={inputClass(!!errors.propertyType)}
             >
               <option value="" disabled>
-                Select a service…
+                Select property type…
               </option>
-              {SERVICE_OPTIONS.map((service) => (
-                <option key={service} value={service}>
-                  {service}
+              {PROPERTY_TYPES.map((opt) => (
+                <option key={opt.code} value={opt.code}>
+                  {opt.label}
                 </option>
               ))}
             </select>
           </Field>
+        </FormSection>
+
+        <FormSection title="What do you need help with?">
+          <div>
+            <label
+              htmlFor="serviceCategories"
+              className="mb-2 flex items-center gap-1 text-sm font-semibold text-navy"
+            >
+              Services
+              <span className="text-amber-forge">*</span>
+              <span className="ml-1 font-normal text-ink/55">(pick all that apply)</span>
+            </label>
+            <div
+              id="serviceCategories"
+              role="group"
+              aria-labelledby="serviceCategoriesLabel"
+              className="grid gap-2 sm:grid-cols-2"
+            >
+              {SERVICE_CATEGORIES.map((opt) => {
+                const isSelected = state.serviceCategories.includes(opt.code);
+                return (
+                  <button
+                    key={opt.code}
+                    type="button"
+                    onClick={() => toggleCategory(opt.code)}
+                    aria-pressed={isSelected}
+                    className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
+                      isSelected
+                        ? "border-amber-forge bg-amber-forge/10 text-navy"
+                        : "border-navy/15 bg-white text-ink/80 hover:border-navy/40"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className={`flex h-4 w-4 items-center justify-center rounded border ${
+                          isSelected
+                            ? "border-amber-forge bg-amber-forge text-white"
+                            : "border-navy/30 bg-white"
+                        }`}
+                      >
+                        {isSelected && (
+                          <Icon name="check" className="h-3 w-3" />
+                        )}
+                      </span>
+                      <span className="font-medium">{opt.label}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-sm text-ink/80">
+              <input
+                type="checkbox"
+                checked={state.notSure}
+                onChange={toggleNotSure}
+                className="h-4 w-4 rounded border-navy/30 text-amber-forge focus:ring-amber-forge/40"
+              />
+              I&rsquo;m not sure what category fits — just talk to me
+            </label>
+            {errors.serviceCategories && (
+              <p className="mt-1.5 text-xs text-red-600" role="alert">
+                {errors.serviceCategories}
+              </p>
+            )}
+          </div>
+
           <Field
-            id="preferredDate"
-            label="Preferred Date"
+            id="description"
+            label="Description of work"
             required
-            error={errors.preferredDate}
+            error={errors.description}
           >
-            <input
-              id="preferredDate"
-              name="preferredDate"
-              type="date"
-              value={state.preferredDate}
-              min={new Date().toISOString().split("T")[0]}
-              onChange={(e) => update("preferredDate", e.target.value)}
-              className={inputClass(!!errors.preferredDate)}
+            <textarea
+              id="description"
+              name="description"
+              rows={5}
+              placeholder="Tell us what needs doing. Be as specific as you like — the more detail, the better the estimate."
+              value={state.description}
+              onChange={(e) => update("description", e.target.value)}
+              className={inputClass(!!errors.description)}
             />
           </Field>
-        </div>
+        </FormSection>
 
-        <Field
-          id="description"
-          label="Description of Work"
-          required
-          error={errors.description}
-        >
-          <textarea
-            id="description"
-            name="description"
-            rows={5}
-            placeholder="Tell us what needs doing. Be as specific as you like — the more detail, the better the estimate."
-            value={state.description}
-            onChange={(e) => update("description", e.target.value)}
-            className={inputClass(!!errors.description)}
-          />
-        </Field>
-
-        <Field id="referralSource" label="How did you hear about us?">
-          <select
-            id="referralSource"
-            name="referralSource"
-            value={state.referralSource}
-            onChange={(e) => update("referralSource", e.target.value)}
-            className={inputClass(false)}
+        <FormSection title="Timing & budget">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              id="preferredDate"
+              label="Preferred date"
+              required
+              error={errors.preferredDate}
+            >
+              <input
+                id="preferredDate"
+                name="preferredDate"
+                type="date"
+                value={state.preferredDate}
+                min={new Date().toISOString().split("T")[0]}
+                onChange={(e) => update("preferredDate", e.target.value)}
+                className={inputClass(!!errors.preferredDate)}
+              />
+            </Field>
+            <Field
+              id="urgency"
+              label="Urgency"
+              required
+              error={errors.urgency}
+            >
+              <select
+                id="urgency"
+                name="urgency"
+                value={state.urgency}
+                onChange={(e) =>
+                  update("urgency", e.target.value as UrgencyCode)
+                }
+                className={inputClass(!!errors.urgency)}
+              >
+                <option value="" disabled>
+                  Select urgency…
+                </option>
+                {URGENCY_OPTIONS.map((opt) => (
+                  <option key={opt.code} value={opt.code}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <Field
+            id="budgetRange"
+            label="Budget range"
+            required
+            error={errors.budgetRange}
           >
-            <option value="">Prefer not to say</option>
-            {REFERRAL_SOURCES.map((source) => (
-              <option key={source} value={source}>
-                {source}
+            <select
+              id="budgetRange"
+              name="budgetRange"
+              value={state.budgetRange}
+              onChange={(e) =>
+                update("budgetRange", e.target.value as BudgetRangeCode)
+              }
+              className={inputClass(!!errors.budgetRange)}
+            >
+              <option value="" disabled>
+                Select budget…
               </option>
-            ))}
-          </select>
-        </Field>
+              {BUDGET_RANGES.map((opt) => (
+                <option key={opt.code} value={opt.code}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </FormSection>
+
+        <FormSection title="How should we reach you?">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field id="bestContactTime" label="Best time to reach you">
+              <select
+                id="bestContactTime"
+                name="bestContactTime"
+                value={state.bestContactTime}
+                onChange={(e) =>
+                  update(
+                    "bestContactTime",
+                    e.target.value as ContactTimeCode,
+                  )
+                }
+                className={inputClass(false)}
+              >
+                {CONTACT_TIMES.map((opt) => (
+                  <option key={opt.code} value={opt.code}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field id="bestContactMethod" label="Preferred contact method">
+              <select
+                id="bestContactMethod"
+                name="bestContactMethod"
+                value={state.bestContactMethod}
+                onChange={(e) =>
+                  update(
+                    "bestContactMethod",
+                    e.target.value as ContactMethodCode,
+                  )
+                }
+                className={inputClass(false)}
+              >
+                {CONTACT_METHODS.map((opt) => (
+                  <option key={opt.code} value={opt.code}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <Field id="referralSource" label="How did you hear about us?">
+            <select
+              id="referralSource"
+              name="referralSource"
+              value={state.referralSource}
+              onChange={(e) => update("referralSource", e.target.value)}
+              className={inputClass(false)}
+            >
+              <option value="">Prefer not to say</option>
+              {REFERRAL_SOURCES.map((source) => (
+                <option key={source} value={source}>
+                  {source}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </FormSection>
 
         {TURNSTILE_SITE_KEY && (
           <div className="flex justify-center" ref={turnstileContainerRef} />
@@ -474,6 +717,23 @@ export function ContactForm() {
         </p>
       </form>
     </>
+  );
+}
+
+function FormSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <fieldset className="space-y-4 border-t border-navy/10 pt-5 first:border-t-0 first:pt-0">
+      <legend className="float-left text-xs font-semibold uppercase tracking-[0.18em] text-amber-forge">
+        {title}
+      </legend>
+      <div className="clear-both pt-2 space-y-4">{children}</div>
+    </fieldset>
   );
 }
 
