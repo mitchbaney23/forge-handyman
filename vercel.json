@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/backup-sheet",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/send-review-requests",
+      "schedule": "30 * * * *"
     }
   ]
 }
