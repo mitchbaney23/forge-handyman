@@ -443,10 +443,49 @@ export function ContactForm() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         setStatus("error");
-        setServerMessage(
-          data?.error ||
-            "We couldn't submit your request. Please try again or call us directly.",
-        );
+        // Surface per-field errors from the server if present so the customer
+        // can see exactly which input is being rejected.
+        if (
+          data?.fieldErrors &&
+          typeof data.fieldErrors === "object" &&
+          !Array.isArray(data.fieldErrors)
+        ) {
+          const incoming = data.fieldErrors as Record<string, string>;
+          const mapped: FieldErrors = {};
+          for (const [key, message] of Object.entries(incoming)) {
+            if (typeof message !== "string") continue;
+            // Top-level field names (e.g., "phone") map 1:1 to FormState keys.
+            // Array paths (e.g., "serviceCategories.0") get attributed to
+            // the parent array field.
+            const root = key.split(".")[0] as keyof FormState;
+            if (root in initial && !mapped[root]) {
+              mapped[root] = message;
+            }
+          }
+          if (Object.keys(mapped).length > 0) {
+            setErrors(mapped);
+            const firstKey = Object.keys(mapped)[0];
+            const el = document.getElementById(firstKey);
+            el?.scrollIntoView({ behavior: "smooth", block: "center" });
+            const fieldList = Object.entries(mapped)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join(" · ");
+            setServerMessage(
+              `Please fix the highlighted field${
+                Object.keys(mapped).length === 1 ? "" : "s"
+              } — ${fieldList}`,
+            );
+          } else {
+            setServerMessage(
+              `Validation failed. Server said: ${JSON.stringify(incoming)}`,
+            );
+          }
+        } else {
+          setServerMessage(
+            data?.error ||
+              "We couldn't submit your request. Please try again or call us directly.",
+          );
+        }
         resetTurnstile();
         return;
       }
