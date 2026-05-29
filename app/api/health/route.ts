@@ -82,10 +82,13 @@ async function checkSheets(): Promise<HealthCheck> {
         detail: "Required env vars missing",
       };
     }
+    // Use the same scope the rest of the app authorized in Workspace DWD
+    // (`spreadsheets`), not the narrower `spreadsheets.readonly` — Workspace
+    // DWD requires exact-match scope; broader doesn't imply narrower.
     const auth = new google.auth.JWT({
       email: clientEmail,
       key: privateKey,
-      scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
       subject: businessEmail,
     });
     const sheets = google.sheets({ version: "v4", auth });
