@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import {
+  dispatchToDavid,
   markComplete,
   recordFirstTouch,
   updateJobStatus,
@@ -58,6 +59,14 @@ export function JobActions({
     });
   };
 
+  const handleDispatch = () => {
+    setFeedback(null);
+    startTransition(async () => {
+      const res = await dispatchToDavid(jobId);
+      setFeedback(res);
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -93,6 +102,14 @@ export function JobActions({
             Record first touch
           </button>
         )}
+        <button
+          type="button"
+          disabled={pending}
+          onClick={handleDispatch}
+          className="rounded-lg border border-navy/15 bg-white px-4 py-2 text-sm font-medium text-navy hover:border-navy hover:bg-navy hover:text-white disabled:opacity-50"
+        >
+          Re-dispatch to David
+        </button>
         {currentStatus !== "Complete" && (
           <button
             type="button"

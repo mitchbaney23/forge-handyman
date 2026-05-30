@@ -22,6 +22,7 @@ export type LimiterName =
   | 'webhook-source'
   | 'public-api'
   | 'photo-upload'
+  | 'telegram-webhook'
 
 const limiterCache: Partial<Record<LimiterName, Ratelimit>> = {}
 
@@ -44,6 +45,10 @@ function buildLimiter(name: LimiterName): Ratelimit {
       // 30 photo uploads per 15 min per IP — comfortably covers 5 form
       // submissions with the full 6-photo loadout, plus testing headroom.
       return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(30, '15 m'), prefix: 'rl:photo', analytics: true })
+    case 'telegram-webhook':
+      // Telegram callback volume is tiny (David tapping buttons); a generous
+      // cap that still stops a runaway loop if Telegram retries aggressively.
+      return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(60, '1 m'), prefix: 'rl:tg', analytics: true })
   }
 }
 

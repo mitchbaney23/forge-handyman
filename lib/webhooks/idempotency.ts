@@ -15,7 +15,7 @@ function getRedis(): Redis {
 
 const TTL_SECONDS = 24 * 60 * 60
 
-export type WebhookSource = 'stripe' | 'twilio' | 'make' | 'internal'
+export type WebhookSource = 'stripe' | 'twilio' | 'make' | 'internal' | 'telegram'
 
 export interface IdempotencyResult {
   isFirst: boolean

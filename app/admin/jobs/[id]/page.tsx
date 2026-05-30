@@ -104,6 +104,23 @@ export default async function JobDetailPage({
               firstTouchSentAt={row.first_touch_sent_at || ""}
             />
           </Panel>
+          <Panel title="Field dispatch">
+            <Detail
+              label="Status"
+              value={row.dispatch_status || "Not dispatched"}
+            />
+            {row.dispatch_decision && (
+              <Detail label="David's call" value={row.dispatch_decision} />
+            )}
+            <Detail
+              label="Decided"
+              value={
+                row.dispatch_decided_at
+                  ? new Date(row.dispatch_decided_at).toLocaleString()
+                  : "—"
+              }
+            />
+          </Panel>
           <Panel title="Payment">
             <Detail
               label="Deposit paid"

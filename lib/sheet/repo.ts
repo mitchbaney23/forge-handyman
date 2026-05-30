@@ -36,6 +36,10 @@ export const SHEET_HEADERS = [
   'photo_urls',
   'is_returning_customer',
   'prior_job_count',
+  'dispatch_status',
+  'dispatch_decision',
+  'dispatch_decided_at',
+  'telegram_message_id',
 ] as const
 
 export type SheetColumn = (typeof SHEET_HEADERS)[number]
@@ -96,6 +100,13 @@ export interface ContactRow {
   photo_urls?: string
   is_returning_customer?: string
   prior_job_count?: string
+  // Field-dispatch (Stage 12): David's assignment state, SEPARATE from the
+  // customer/billing `status`. dispatch_status: Dispatched / Approved /
+  // Declined / Needs Sub. dispatch_decision mirrors his tap for the audit.
+  dispatch_status?: string
+  dispatch_decision?: string
+  dispatch_decided_at?: string
+  telegram_message_id?: string
 }
 
 export type ContactRowPartial = Partial<ContactRow>
