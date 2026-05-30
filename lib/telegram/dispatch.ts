@@ -150,3 +150,31 @@ export async function dispatchJobToDavid(row: ContactRow): Promise<DispatchResul
   );
   return { ok: true, messageId: sent.message_id };
 }
+
+/**
+ * Sends Mitch an informational copy of a new lead — same job card, but with
+ * NO action buttons (David owns the Approve/Decline/Sub-out decision). Gives
+ * the owner real-time visibility on Telegram alongside the existing email.
+ * Best-effort.
+ */
+export async function notifyMitchNewLead(row: ContactRow): Promise<DispatchResult> {
+  const mitchChatId = process.env.TELEGRAM_MITCH_CHAT_ID;
+  if (!mitchChatId) {
+    logger.warn("telegram-dispatch: TELEGRAM_MITCH_CHAT_ID not set — skipping Mitch FYI");
+    return { ok: false, reason: "no-chat-id" };
+  }
+  if (!row.job_id) {
+    return { ok: false, reason: "no-job-id" };
+  }
+  const text = `📋 <b>New lead in</b> — sent to David for approval.\n\n${buildDispatchMessage(row)}`;
+  const sent = await sendMessage(mitchChatId, text); // no keyboard — FYI only
+  if (!sent) {
+    logger.warn({ jobId: row.job_id }, "telegram-dispatch: Mitch FYI send failed");
+    return { ok: false, reason: "send-failed" };
+  }
+  logger.info(
+    { jobId: row.job_id, messageId: sent.message_id },
+    "telegram-dispatch: new-lead FYI sent to Mitch",
+  );
+  return { ok: true, messageId: sent.message_id };
+}

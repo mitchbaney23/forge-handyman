@@ -37,7 +37,7 @@ import {
   findPriorJobsByEmail,
 } from '@/lib/sheet/queries'
 import { appendContactRow, updateRowByJobId, type ContactRow } from '@/lib/sheet/repo'
-import { dispatchJobToDavid } from '@/lib/telegram/dispatch'
+import { dispatchJobToDavid, notifyMitchNewLead } from '@/lib/telegram/dispatch'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -389,6 +389,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         tags: { route: 'contact-form', step: 'telegram-dispatch' },
       })
       logger.error({ err, jobId }, 'contact-form: telegram dispatch failed')
+    }
+
+    // FYI copy to Mitch (no buttons) — separate best-effort so a failure
+    // here doesn't affect David's dispatch or the customer response.
+    try {
+      await notifyMitchNewLead(row)
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { route: 'contact-form', step: 'telegram-mitch-fyi' },
+      })
+      logger.error({ err, jobId }, 'contact-form: Mitch FYI failed')
     }
   }
 
