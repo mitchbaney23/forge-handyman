@@ -4,8 +4,9 @@ import { TrustBar } from "@/components/TrustBar";
 import { ServiceCard } from "@/components/ServiceCard";
 import { TestimonialCard } from "@/components/TestimonialCard";
 import { CTABanner } from "@/components/CTABanner";
+import { Reveal } from "@/components/Reveal";
 import { SERVICES, TESTIMONIALS, BUSINESS } from "@/lib/constants";
-import { Icon } from "@/lib/icons";
+import { Icon, type IconName } from "@/lib/icons";
 
 export default function HomePage() {
   return (
@@ -13,126 +14,147 @@ export default function HomePage() {
       <Hero />
       <TrustBar />
 
-      <Section
-        eyebrow="What We Do"
-        heading="Services for Every Room and Every Season"
-        subheading="One call, one craftsman, and your list gets shorter. Here's what we handle most."
-      >
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {SERVICES.map((service) => (
-            <ServiceCard key={service.key} service={service} />
-          ))}
-        </div>
-        <div className="mt-10 text-center">
-          <Link
-            href="/services"
-            className="btn-outline"
-          >
-            See all services
-            <Icon name="arrow-right" className="h-4 w-4" />
-          </Link>
-        </div>
-      </Section>
-
-      <section className="bg-white">
+      {/* Services — shop-ticket cards */}
+      <section className="bg-paper">
         <div className="container-page section">
-          <div className="mx-auto max-w-2xl text-center">
-            <p className="eyebrow">Why Forge</p>
-            <h2 className="mt-3 text-3xl font-bold sm:text-4xl">
-              A Real Craftsman, Not a Franchise Technician
+          <Reveal className="mx-auto max-w-2xl text-center">
+            <p className="eyebrow">What We Do</p>
+            <h2 className="mt-3 font-display text-3xl font-bold sm:text-4xl">
+              Services for every room &amp;{" "}
+              <span className="ink-underline">every season</span>
             </h2>
-            <p className="mt-4 text-base text-ink/75">
-              Forge Handyman Service is owned and operated by David Baney — a
-              lifelong craftsman who treats your home like it&rsquo;s his own.
+            <p className="mt-4 text-base text-ink-2">
+              One call, one craftsman, and your list gets shorter. Here&rsquo;s
+              what we handle most.
             </p>
+          </Reveal>
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {SERVICES.map((service, i) => (
+              <Reveal key={service.key} delay={i * 80}>
+                <ServiceCard service={service} index={i} />
+              </Reveal>
+            ))}
           </div>
-          <div className="mt-12 grid gap-6 md:grid-cols-3">
-            <FeatureBlock
-              icon="hammer"
-              title="40 Years of Experience"
-              body="David brings decades of hands-on mechanical and maintenance skill to every job. You get a craftsman — not a random technician dispatched from a call center."
-            />
-            <FeatureBlock
-              icon="dollar"
-              title="Honest, Upfront Pricing"
-              body="Free estimates in writing. No surprise charges, no 'while we're in there' upsells. We quote the work and we stick to it."
-            />
-            <FeatureBlock
-              icon="calendar"
-              title="Easy Online Booking"
-              body="Book online in 60 seconds. You'll get a confirmation and a response within one business day — no endless phone tag."
-            />
+          <div className="mt-10 text-center">
+            <Link href="/services" className="btn-navy">
+              See all services
+              <Icon name="arrow-right" className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       </section>
 
-      <section className="bg-cream">
+      {/* Why Forge */}
+      <section className="bg-card">
         <div className="container-page section">
-          <div className="mx-auto max-w-2xl text-center">
-            <p className="eyebrow">How It Works</p>
-            <h2 className="mt-3 text-3xl font-bold sm:text-4xl">
-              Three Simple Steps
-            </h2>
-          </div>
-          <ol className="mt-12 grid gap-6 md:grid-cols-3">
-            {[
-              {
-                n: "1",
-                title: "Tell Us What You Need",
-                body: "Fill out a quick form or give us a call. Share what needs doing and when you'd like it done.",
-              },
-              {
-                n: "2",
-                title: "Get a Free Estimate",
-                body: "We'll review your request and get back to you with a clear, written estimate — usually same day.",
-              },
-              {
-                n: "3",
-                title: "We Get It Done",
-                body: "We show up on time, do the work right, clean up when we're done, and only invoice for what we quoted.",
-              },
-            ].map((step) => (
-              <li
-                key={step.n}
-                className="relative rounded-xl border border-navy/10 bg-white p-6 shadow-card"
+          <div className="grid items-center gap-[58px] lg:grid-cols-[0.92fr_1.08fr]">
+            <Reveal className="mx-auto w-full max-w-[380px] lg:max-w-none">
+              <div
+                className="relative flex aspect-[4/5] flex-col items-center justify-center gap-3.5 rounded-lg border-2 border-ink text-ink-3 shadow-ticket"
+                style={{
+                  backgroundImage:
+                    "repeating-linear-gradient(135deg,rgba(36,33,27,.045) 0 16px,transparent 16px 32px),linear-gradient(160deg,#E7DCC5,#dccfb2)",
+                }}
               >
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-forge text-xl font-bold text-white">
-                  {step.n}
-                </div>
-                <h3 className="mt-5 text-lg font-semibold text-navy">
-                  {step.title}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-ink/75">
-                  {step.body}
+                <Icon name="hammer" className="h-14 w-14 opacity-50" />
+                <span className="text-[12px] font-bold uppercase tracking-[0.12em]">
+                  David Baney
+                </span>
+                {/* 40 Years badge */}
+                <span className="absolute right-2 top-6 flex h-24 w-24 rotate-[8deg] flex-col items-center justify-center rounded-full border-[3px] border-card bg-orange text-center text-white shadow-[0_8px_20px_rgba(36,33,27,.25)] lg:-right-4">
+                  <span className="font-display text-3xl font-bold leading-none">
+                    40
+                  </span>
+                  <span className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.08em]">
+                    Years
+                  </span>
+                </span>
+              </div>
+            </Reveal>
+            <div>
+              <Reveal>
+                <p className="eyebrow">Why Forge</p>
+                <h2 className="mt-3 font-display text-3xl font-bold sm:text-4xl">
+                  A real craftsman, not a franchise technician
+                </h2>
+                <p className="mt-4 text-base text-ink-2">
+                  Forge Handyman Service is owned and operated by David Baney — a
+                  lifelong craftsman who treats your home like it&rsquo;s his own.
                 </p>
-              </li>
+              </Reveal>
+              <div className="mt-8">
+                {FEATURES.map((f, i) => (
+                  <Reveal key={f.title} delay={i * 80}>
+                    <FeatureBlock {...f} />
+                  </Reveal>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works — blueprint */}
+      <section className="blueprint border-y-2 border-ink">
+        <div className="container-page section relative">
+          <Reveal className="mx-auto max-w-2xl text-center">
+            <p className="eyebrow text-ember">How It Works</p>
+            <h2 className="mt-3 font-display text-3xl font-bold text-paper sm:text-4xl">
+              Three simple steps
+            </h2>
+          </Reveal>
+          <ol className="mt-12 grid gap-[22px] md:grid-cols-3">
+            {STEPS.map((step, i) => (
+              <Reveal as="li" key={step.n} delay={i * 80}>
+                <div className="relative h-full rounded-[7px] border-[1.5px] border-paper/20 bg-paper/[0.05] p-[30px_26px]">
+                  <div className="flex h-[50px] w-[50px] items-center justify-center rounded-full border-2 border-card bg-orange font-display text-[22px] font-bold text-white">
+                    {step.n}
+                  </div>
+                  <h3 className="mt-[18px] font-display text-[21px] font-bold text-paper">
+                    {step.title}
+                  </h3>
+                  <p className="mt-2 text-[15px] leading-relaxed text-paper/[0.72]">
+                    {step.body}
+                  </p>
+                  {i < STEPS.length - 1 && (
+                    <span className="absolute -right-[22px] top-[54px] z-10 hidden text-ember md:block">
+                      <Icon name="arrow-right" className="h-6 w-6" />
+                    </span>
+                  )}
+                </div>
+              </Reveal>
             ))}
           </ol>
         </div>
       </section>
 
-      <section className="bg-white">
+      {/* Service Area strip */}
+      <section className="bg-card">
         <div className="container-page py-10 sm:py-12">
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-navy/10 bg-cream px-6 py-5 text-center sm:flex-row sm:justify-center sm:gap-4 sm:text-left">
-            <Icon name="map-pin" className="h-5 w-5 text-amber-forge" />
-            <p className="text-sm font-semibold text-navy sm:text-base">
+          <Reveal className="flex flex-col items-center justify-center gap-3.5 rounded-lg border-2 border-dashed border-ink bg-card px-6 py-[22px] text-center sm:flex-row">
+            <Icon name="map-pin" className="h-[22px] w-[22px] flex-none text-orange" />
+            <p className="font-display text-[clamp(17px,2.2vw,22px)] font-bold text-ink">
               {BUSINESS.serviceAreaLine}
             </p>
-          </div>
+          </Reveal>
         </div>
       </section>
 
-      <section className="bg-cream">
+      {/* Testimonials */}
+      <section className="bg-paper">
         <div className="container-page section">
-          <div className="mx-auto max-w-2xl text-center">
+          <Reveal className="mx-auto max-w-2xl text-center">
             <p className="eyebrow">What Our Neighbors Say</p>
-            <h2 className="mt-3 text-3xl font-bold sm:text-4xl">
-              Trusted by Homeowners Across the Triangle
+            <h2 className="mt-3 font-display text-3xl font-bold sm:text-4xl">
+              Trusted by homeowners across{" "}
+              <span className="ink-underline">the Triangle</span>
             </h2>
-          </div>
-          <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-            {TESTIMONIALS.map((t) => (
-              <TestimonialCard key={t.name} {...t} />
+          </Reveal>
+          <div className="mt-12 grid gap-[22px] md:grid-cols-2">
+            {TESTIMONIALS.map((t, i) => (
+              <Reveal key={t.name} delay={i * 80}>
+                <TestimonialCard {...t} />
+              </Reveal>
             ))}
           </div>
         </div>
@@ -143,48 +165,60 @@ export default function HomePage() {
   );
 }
 
-function Section({
-  eyebrow,
-  heading,
-  subheading,
-  children,
-}: {
-  eyebrow: string;
-  heading: string;
-  subheading: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="bg-cream">
-      <div className="container-page section">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="eyebrow">{eyebrow}</p>
-          <h2 className="mt-3 text-3xl font-bold sm:text-4xl">{heading}</h2>
-          <p className="mt-4 text-base text-ink/75">{subheading}</p>
-        </div>
-        <div className="mt-12">{children}</div>
-      </div>
-    </section>
-  );
-}
+const FEATURES: { icon: IconName; title: string; body: string }[] = [
+  {
+    icon: "hammer",
+    title: "40 Years of Experience",
+    body: "David brings decades of hands-on mechanical and maintenance skill to every job. You get a craftsman — not a random technician dispatched from a call center.",
+  },
+  {
+    icon: "dollar",
+    title: "Honest, Upfront Pricing",
+    body: "Free estimates in writing. No surprise charges, no 'while we're in there' upsells. We quote the work and we stick to it.",
+  },
+  {
+    icon: "calendar",
+    title: "Easy Online Booking",
+    body: "Book online in 60 seconds. You'll get a confirmation and a response within one business day — no endless phone tag.",
+  },
+];
+
+const STEPS = [
+  {
+    n: "1",
+    title: "Tell Us What You Need",
+    body: "Fill out a quick form or give us a call. Share what needs doing and when you'd like it done.",
+  },
+  {
+    n: "2",
+    title: "Get a Free Estimate",
+    body: "We'll review your request and get back to you with a clear, written estimate — usually same day.",
+  },
+  {
+    n: "3",
+    title: "We Get It Done",
+    body: "We show up on time, do the work right, clean up when we're done, and only invoice for what we quoted.",
+  },
+];
 
 function FeatureBlock({
   icon,
   title,
   body,
 }: {
-  icon: "hammer" | "dollar" | "calendar";
+  icon: IconName;
   title: string;
   body: string;
 }) {
   return (
-    <div className="rounded-xl border border-navy/10 bg-cream p-7">
-      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-navy text-white">
-        <Icon name={icon} className="h-6 w-6" />
+    <div className="flex gap-[18px] border-t-[1.5px] border-dashed border-line py-[22px] first:border-t-0 first:pt-1">
+      <div className="flex h-[50px] w-[50px] flex-none items-center justify-center rounded-[7px] bg-ink text-ember">
+        <Icon name={icon} className="h-[25px] w-[25px]" />
       </div>
-      <h3 className="mt-5 text-xl font-semibold text-navy">{title}</h3>
-      <p className="mt-3 text-sm leading-relaxed text-ink/75">{body}</p>
+      <div>
+        <h3 className="font-display text-xl font-bold">{title}</h3>
+        <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">{body}</p>
+      </div>
     </div>
   );
 }
-

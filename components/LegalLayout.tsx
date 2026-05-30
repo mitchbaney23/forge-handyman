@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PageHeader } from "@/components/PageHeader";
 
 export function LegalLayout({
   eyebrow,
@@ -13,20 +14,12 @@ export function LegalLayout({
 }) {
   return (
     <>
-      <section className="texture-navy text-white">
-        <div className="container-page py-12 sm:py-16">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-forge-light">
-            {eyebrow}
-          </p>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            {title}
-          </h1>
-          <p className="mt-3 text-sm text-white/70">Last updated: {lastUpdated}</p>
-        </div>
-      </section>
+      <PageHeader stamp={eyebrow} title={title}>
+        <span className="text-[15px] text-ink-3">Last updated: {lastUpdated}</span>
+      </PageHeader>
       <section className="section-tight">
         <div className="container-page">
-          <div className="mx-auto max-w-3xl text-[15px] [&_a]:text-amber-forge [&_a]:underline hover:[&_a]:text-navy [&_h2]:mb-3 [&_h2]:mt-9 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-navy [&_li]:mb-1.5 [&_p]:mb-4 [&_p]:leading-relaxed [&_p]:text-ink/80 [&_ul]:mb-4 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:text-ink/80 first:[&_h2]:mt-0">
+          <div className="mx-auto max-w-[780px] [&_a]:text-orange [&_a]:underline [&_a]:underline-offset-[3px] [&_h2:first-of-type]:mt-6 [&_h2:first-of-type]:border-t-0 [&_h2:first-of-type]:pt-0 [&_h2]:mt-[38px] [&_h2]:border-t-2 [&_h2]:border-dashed [&_h2]:border-line [&_h2]:pt-[22px] [&_h2]:font-display [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:text-ink [&_h3]:mt-[22px] [&_h3]:font-display [&_h3]:text-lg [&_h3]:font-bold [&_li]:mt-2 [&_li]:text-base [&_li]:text-ink-2 [&_p]:mt-3.5 [&_p]:text-base [&_p]:leading-[1.7] [&_p]:text-ink-2 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-[22px]">
             {children}
           </div>
         </div>

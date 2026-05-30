@@ -1,22 +1,23 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Oswald } from "next/font/google";
+import { Libre_Franklin, Zilla_Slab } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { MobileCTA } from "@/components/MobileCTA";
 import { BUSINESS } from "@/lib/constants";
 
-const inter = Inter({
+const franklin = Libre_Franklin({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-inter",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-franklin",
 });
 
-const oswald = Oswald({
+const zilla = Zilla_Slab({
   subsets: ["latin"],
   weight: ["500", "600", "700"],
   display: "swap",
-  variable: "--font-oswald",
+  variable: "--font-zilla",
 });
 
 const siteUrl = BUSINESS.siteUrl;
@@ -68,7 +69,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1B3A5C",
+  themeColor: "#EFE7D5",
   width: "device-width",
   initialScale: 1,
 };
@@ -112,7 +113,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${oswald.variable}`}>
+    <html lang="en" className={`${franklin.variable} ${zilla.variable}`}>
       <body className="flex min-h-screen flex-col scroll-safe font-sans">
         <Header />
         <main id="main" className="flex-1">

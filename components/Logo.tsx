@@ -25,13 +25,13 @@ export function Logo({ variant = "dark" }: LogoProps) {
       />
       <span className="flex flex-col leading-[0.95]">
         <span
-          className="font-display text-2xl font-bold tracking-[0.02em] text-brand-orange sm:text-[1.6rem] md:text-3xl"
+          className="font-display text-2xl font-bold tracking-[0.02em] text-orange sm:text-[1.6rem] md:text-3xl"
         >
           FORGE
         </span>
         <span
-          className={`font-display text-[0.62rem] font-semibold uppercase tracking-[0.14em] sm:text-[0.7rem] md:text-[0.78rem] ${
-            isLight ? "text-white" : "text-navy"
+          className={`font-sans text-[0.62rem] font-bold uppercase tracking-[0.16em] sm:text-[0.7rem] md:text-[0.78rem] ${
+            isLight ? "text-paper" : "text-ink"
           }`}
         >
           Handyman Service

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ServiceCard } from "@/components/ServiceCard";
 import { CTABanner } from "@/components/CTABanner";
+import { PageHeader } from "@/components/PageHeader";
+import { Reveal } from "@/components/Reveal";
 import { SERVICES } from "@/lib/constants";
 import type { ServiceCategory } from "@/lib/constants";
 import { Icon } from "@/lib/icons";
@@ -38,25 +40,25 @@ export default function ServicesPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Services"
-        title="Everything Your Home Needs — One Craftsman"
-        subtitle="We don't list prices on the site because every job is different. What we promise: a free, honest estimate and no surprises once we're on site."
-      />
+        stamp="Services"
+        title="Everything your home needs — one craftsman"
+      >
+        We don&rsquo;t list prices on the site because every job is different.
+        What we promise: a free, honest estimate and no surprises once
+        we&rsquo;re on site.
+      </PageHeader>
 
-      <section className="bg-white">
+      <section className="bg-paper">
         <div className="container-page section space-y-16">
           {CATEGORY_ORDER.map((category) => {
             const services = SERVICES.filter((s) => s.category === category);
             return (
-              <div key={category}>
-                <div className="flex flex-col gap-2 border-b border-navy/10 pb-5 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <p className="eyebrow">{category}</p>
-                    <h2 className="mt-2 text-2xl font-bold sm:text-3xl">
-                      {category}
-                    </h2>
-                  </div>
-                  <p className="max-w-lg text-sm text-ink/70">
+              <Reveal key={category}>
+                <div className="flex flex-col gap-2 border-b-2 border-ink pb-4 sm:flex-row sm:items-end sm:justify-between">
+                  <h2 className="font-display text-[clamp(24px,3vw,32px)] font-bold">
+                    {category}
+                  </h2>
+                  <p className="max-w-[48ch] text-[14.5px] text-ink-2">
                     {CATEGORY_BLURBS[category]}
                   </p>
                 </div>
@@ -69,27 +71,27 @@ export default function ServicesPage() {
                     />
                   ))}
                 </div>
-              </div>
+              </Reveal>
             );
           })}
         </div>
       </section>
 
-      <section className="bg-cream">
+      <section className="bg-card">
         <div className="container-page section-tight">
-          <div className="mx-auto flex max-w-3xl flex-col items-center rounded-2xl border border-navy/10 bg-white p-8 text-center shadow-card sm:p-12">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-forge/15 text-amber-forge">
-              <Icon name="handshake" className="h-6 w-6" />
+          <Reveal className="mx-auto flex max-w-[760px] flex-col items-center rounded-xl border-2 border-dashed border-ink bg-card p-11 text-center">
+            <div className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-orange/[0.12] text-orange">
+              <Icon name="handshake" className="h-[26px] w-[26px]" />
             </div>
-            <h3 className="mt-5 text-2xl font-bold sm:text-3xl">
+            <h3 className="mt-[18px] font-display text-[clamp(24px,3vw,32px)] font-bold">
               Not sure if we can help? Just ask.
             </h3>
-            <p className="mt-3 max-w-xl text-base text-ink/75">
+            <p className="mx-auto mt-3 max-w-[48ch] text-base text-ink-2">
               If it&rsquo;s broken, leaking, loose, or just on your list —
               there&rsquo;s a good chance we handle it. Send us the details and
               we&rsquo;ll tell you straight.
             </p>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-6 flex flex-col gap-3.5 sm:flex-row">
               <Link href="/contact" className="btn-primary">
                 Request a Free Estimate
                 <Icon name="arrow-right" className="h-4 w-4" />
@@ -99,40 +101,14 @@ export default function ServicesPage() {
                 Call (555) 123-4567
               </a>
             </div>
-          </div>
+          </Reveal>
         </div>
       </section>
 
       <CTABanner
-        heading="Got a Project in Mind?"
+        heading="Got a project in mind?"
         subheading="Tell us what you're working on. We'll tell you honestly whether we can help — and what it'll cost."
       />
     </>
-  );
-}
-
-function PageHeader({
-  eyebrow,
-  title,
-  subtitle,
-}: {
-  eyebrow: string;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <section className="texture-navy text-white">
-      <div className="container-page py-16 sm:py-20 lg:py-24">
-        <div className="max-w-3xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-forge-light">
-            {eyebrow}
-          </p>
-          <h1 className="mt-3 text-4xl font-bold tracking-tight text-white sm:text-5xl">
-            {title}
-          </h1>
-          <p className="mt-5 text-lg text-white/80">{subtitle}</p>
-        </div>
-      </div>
-    </section>
   );
 }

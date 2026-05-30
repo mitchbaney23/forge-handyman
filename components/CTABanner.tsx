@@ -8,34 +8,36 @@ type Props = {
 };
 
 export function CTABanner({
-  heading = "Ready to Cross It Off Your List?",
+  heading = "Got a list? Let's knock it out.",
   subheading = "Tell us what needs doing. We'll get back to you with a free estimate — usually same day.",
 }: Props) {
   return (
-    <section className="relative overflow-hidden bg-navy text-white">
+    <section className="relative overflow-hidden border-t-2 border-ink bg-orange text-white">
       <div
         aria-hidden="true"
-        className="absolute inset-0 bg-gradient-to-r from-navy via-navy-600 to-steel opacity-90"
+        className="absolute inset-0 opacity-[0.14]"
+        style={{
+          backgroundImage:
+            "linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)",
+          backgroundSize: "34px 34px",
+        }}
       />
-      <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-amber-forge/20 blur-3xl" aria-hidden="true" />
-      <div className="container-page relative py-14 lg:py-16">
-        <div className="flex flex-col items-start justify-between gap-8 lg:flex-row lg:items-center">
-          <div className="max-w-xl">
-            <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-              {heading}
-            </h2>
-            <p className="mt-3 text-base text-white/80">{subheading}</p>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <Link href="/contact" className="btn-primary text-base">
-              Book a Job
-              <Icon name="arrow-right" className="h-4 w-4" />
-            </Link>
-            <a href={BUSINESS.phoneHref} className="btn-secondary text-base">
-              <Icon name="phone" className="h-4 w-4" />
-              {BUSINESS.phone}
-            </a>
-          </div>
+      <div className="container-page relative py-20 text-center lg:py-24">
+        <h2 className="mx-auto max-w-3xl font-display text-[clamp(34px,5vw,58px)] font-bold text-white">
+          {heading}
+        </h2>
+        <p className="mx-auto mt-4 max-w-[38ch] text-lg text-white/[0.92]">
+          {subheading}
+        </p>
+        <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+          <Link href="/contact" className="btn-white text-base">
+            Book a Job
+            <Icon name="arrow-right" className="h-4 w-4" />
+          </Link>
+          <a href={BUSINESS.phoneHref} className="btn-ink text-base">
+            <Icon name="phone" className="h-4 w-4" />
+            {BUSINESS.phone}
+          </a>
         </div>
       </div>
     </section>

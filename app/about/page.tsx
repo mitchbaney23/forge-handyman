@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CTABanner } from "@/components/CTABanner";
+import { Reveal } from "@/components/Reveal";
 import { BUSINESS, VALUES } from "@/lib/constants";
-import { Icon } from "@/lib/icons";
+import { Icon, type IconName } from "@/lib/icons";
 
 export const metadata: Metadata = {
   title: "About David Baney — 40 Years of Craftsmanship",
@@ -11,197 +12,229 @@ export const metadata: Metadata = {
   alternates: { canonical: "/about" },
 };
 
+const FACTS: { icon: IconName; term: string; def: React.ReactNode }[] = [
+  {
+    icon: "hammer",
+    term: "40+ Years Experience",
+    def: "Hands-on craftsmanship, not franchise training.",
+  },
+  {
+    icon: "home",
+    term: "Locally Owned",
+    def: "Family-run, based right here in Garner, NC.",
+  },
+  {
+    icon: "shield",
+    term: "Licensed & Insured",
+    def: "Full coverage for your home and our work.",
+  },
+  {
+    icon: "phone",
+    term: "One Point of Contact",
+    def: (
+      <>
+        Call{" "}
+        <a href={BUSINESS.phoneHref} className="font-semibold hover:text-orange">
+          {BUSINESS.phone}
+        </a>{" "}
+        and talk to someone real.
+      </>
+    ),
+  },
+];
+
+const DIFF = [
+  {
+    title: "We show up on time",
+    body: "If we say 9 AM, we're there at 9 AM. If something changes, you hear it from us first — not from a missed appointment.",
+  },
+  {
+    title: "We treat your home with respect",
+    body: "Drop cloths, shoe covers, and clean-up when we're done. You shouldn't have to clean up after the handyman.",
+  },
+  {
+    title: "We tell you the truth",
+    body: "Even when that means recommending less work, or pointing out that something doesn't actually need fixing yet.",
+  },
+  {
+    title: "We're not going anywhere",
+    body: "We live here. If something isn't right a week later, we're a phone call away — not a disconnected number.",
+  },
+];
+
 export default function AboutPage() {
   return (
     <>
-      <section className="texture-navy text-white">
-        <div className="container-page py-16 sm:py-20 lg:py-24">
-          <div className="grid gap-10 lg:grid-cols-5 lg:items-center">
-            <div className="lg:col-span-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-forge-light">
-                About Forge
-              </p>
-              <h1 className="mt-3 text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
-                A Craftsman Your Neighbor Would Recommend
-              </h1>
-              <p className="mt-5 text-lg text-white/80">
-                Forge Handyman Service is a family-run business rooted in four
-                decades of hands-on craftsmanship and a simple idea: show up on
-                time, do the work right, and treat every home like it&rsquo;s
-                your own.
-              </p>
+      {/* Hero */}
+      <section className="relative overflow-hidden border-b-2 border-ink bg-card">
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-paper-dots opacity-50"
+          style={{ backgroundSize: "5px 5px" }}
+        />
+        <div className="container-page relative grid items-center gap-12 py-16 lg:grid-cols-[1.4fr_1fr]">
+          <Reveal>
+            <span className="stamp">About Forge</span>
+            <h1 className="mt-[18px] font-display text-[clamp(38px,5vw,58px)] font-bold leading-[1.02]">
+              A craftsman your neighbor would recommend
+            </h1>
+            <p className="mt-4 max-w-[60ch] text-lg text-ink-2">
+              Forge Handyman Service is a family-run business rooted in four
+              decades of hands-on craftsmanship and a simple idea: show up on
+              time, do the work right, and treat every home like it&rsquo;s your
+              own.
+            </p>
+          </Reveal>
+          <Reveal delay={120} className="mx-auto w-full max-w-[360px] lg:max-w-none">
+            <div
+              className="relative flex aspect-[4/5] flex-col items-center justify-center gap-2.5 rounded-[10px] border-2 border-ink p-6 text-center text-ink-3 shadow-ticket"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(135deg,rgba(36,33,27,.045) 0 16px,transparent 16px 32px),linear-gradient(160deg,#E7DCC5,#dccfb2)",
+              }}
+            >
+              <span className="flex h-24 w-24 items-center justify-center rounded-full bg-orange text-white">
+                <Icon name="hammer" className="h-[42px] w-[42px]" />
+              </span>
+              <span className="mt-1 font-display text-lg font-bold text-ink">
+                David Baney
+              </span>
+              <span className="text-[11px] uppercase tracking-[0.18em] text-ink-3">
+                Owner &amp; Craftsman
+              </span>
+              <span className="absolute -right-4 top-6 flex h-[92px] w-[92px] rotate-[8deg] flex-col items-center justify-center rounded-full border-[3px] border-card bg-orange text-center text-white shadow-[0_8px_20px_rgba(36,33,27,.25)]">
+                <span className="font-display text-3xl font-bold leading-none">
+                  40
+                </span>
+                <span className="text-[9px] font-bold uppercase tracking-[0.08em]">
+                  Years
+                </span>
+              </span>
             </div>
-            <div className="lg:col-span-2">
-              <div
-                className="aspect-[4/5] overflow-hidden rounded-2xl border border-white/15 bg-white/5 shadow-xl"
-                aria-label="Portrait of David Baney"
-              >
-                <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center text-white/70">
-                  {/* <img src="/david-baney.jpg" alt="David Baney, owner of Forge Handyman Service" className="h-full w-full object-cover" /> */}
-                  <div className="flex h-24 w-24 items-center justify-center rounded-full bg-amber-forge/20 text-amber-forge-light">
-                    <Icon name="hammer" className="h-10 w-10" />
-                  </div>
-                  <p className="mt-4 text-sm font-semibold text-white">
-                    David Baney
-                  </p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.18em] text-white/50">
-                    Owner &amp; Craftsman
-                  </p>
-                  <p className="mt-4 max-w-[18ch] text-xs text-white/50">
-                    (Photo coming soon — real headshot goes here)
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+          </Reveal>
         </div>
       </section>
 
-      <section className="bg-white">
-        <div className="container-page section grid gap-12 lg:grid-cols-3">
-          <div className="lg:col-span-2">
+      {/* Story + Fast Facts */}
+      <section className="bg-paper">
+        <div className="container-page section grid gap-12 lg:grid-cols-[1.7fr_1fr]">
+          <Reveal>
             <p className="eyebrow">Our Story</p>
-            <h2 className="mt-3 text-3xl font-bold sm:text-4xl">
+            <h2 className="mt-3 font-display text-[clamp(28px,3.6vw,40px)] font-bold">
               Forty years of fixing, building, and doing it right
             </h2>
-            <div className="prose-ink mt-6 space-y-5 text-base">
+            <div className="mt-6 space-y-[18px] text-[16.5px] leading-relaxed text-ink-2">
               <p>
                 David Baney has been building and fixing things for over 40
                 years. Long before this was a business, it was a way of life —
-                the kind of lifelong, hands-on work where you learn by doing,
-                and you do a lot of it.
+                the kind of lifelong, hands-on work where you learn by doing, and
+                you do a lot of it.
               </p>
               <p>
-                Forge Handyman Service was started with one goal: bring that
-                kind of craftsmanship back to the homeowner. Not a call-center
-                dispatcher, not a rotating crew of technicians you&rsquo;ve
-                never met — just a real person who shows up to your home,
-                listens to what you need, and does the job right the first
-                time.
+                Forge Handyman Service was started with one goal: bring that kind
+                of craftsmanship back to the homeowner. Not a call-center
+                dispatcher, not a rotating crew of technicians you&rsquo;ve never
+                met — just a real person who shows up to your home, listens to
+                what you need, and does the job right the first time.
               </p>
               <p>
                 Behind the scenes, David&rsquo;s son Mitch Baney handles the
-                business side of things — scheduling, estimates, and making
-                sure every customer has a smooth experience from the first
-                email to the final walk-through. It&rsquo;s a family operation
-                in every sense.
+                business side of things — scheduling, estimates, and making sure
+                every customer has a smooth experience from the first email to
+                the final walk-through. It&rsquo;s a family operation in every
+                sense.
               </p>
               <p>
                 Forge Handyman Service is part of a growing family of local
-                ventures built around the same principle: do honest work for
-                your neighbors, and the business takes care of itself.
+                ventures built around the same principle: do honest work for your
+                neighbors, and the business takes care of itself.
               </p>
             </div>
-          </div>
+          </Reveal>
 
-          <aside className="space-y-5">
-            <div className="rounded-xl border border-navy/10 bg-cream p-6">
+          <Reveal delay={120}>
+            <div className="rounded-[9px] border-2 border-ink bg-card p-6 shadow-card">
               <p className="eyebrow">The Fast Facts</p>
-              <dl className="mt-4 space-y-4 text-sm">
-                <div className="flex items-start gap-3">
-                  <Icon name="hammer" className="mt-0.5 h-5 w-5 text-amber-forge" />
-                  <div>
-                    <dt className="font-semibold text-navy">40+ Years Experience</dt>
-                    <dd className="text-ink/70">Hands-on craftsmanship, not franchise training.</dd>
+              <dl className="mt-4">
+                {FACTS.map((f) => (
+                  <div
+                    key={f.term}
+                    className="flex gap-3 border-t-[1.5px] border-dashed border-line py-3.5 first:border-t-0 first:pt-1"
+                  >
+                    <Icon
+                      name={f.icon}
+                      className="mt-0.5 h-[22px] w-[22px] flex-none text-orange"
+                    />
+                    <div>
+                      <dt className="font-display text-base font-bold">
+                        {f.term}
+                      </dt>
+                      <dd className="mt-0.5 text-[13.5px] text-ink-2">{f.def}</dd>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Icon name="home" className="mt-0.5 h-5 w-5 text-amber-forge" />
-                  <div>
-                    <dt className="font-semibold text-navy">Locally Owned</dt>
-                    <dd className="text-ink/70">Family-run, based right here in Garner, NC.</dd>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Icon name="shield" className="mt-0.5 h-5 w-5 text-amber-forge" />
-                  <div>
-                    <dt className="font-semibold text-navy">Licensed &amp; Insured</dt>
-                    <dd className="text-ink/70">Full coverage for your home and our work.</dd>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Icon name="phone" className="mt-0.5 h-5 w-5 text-amber-forge" />
-                  <div>
-                    <dt className="font-semibold text-navy">One Point of Contact</dt>
-                    <dd className="text-ink/70">
-                      Call <a href={BUSINESS.phoneHref} className="font-semibold text-navy hover:text-amber-forge">{BUSINESS.phone}</a> and talk to someone real.
-                    </dd>
-                  </div>
-                </div>
+                ))}
               </dl>
             </div>
-          </aside>
+          </Reveal>
         </div>
       </section>
 
-      <section className="bg-cream">
+      {/* Values */}
+      <section className="bg-card">
         <div className="container-page section">
-          <div className="mx-auto max-w-2xl text-center">
+          <Reveal className="mx-auto max-w-2xl text-center">
             <p className="eyebrow">Our Values</p>
-            <h2 className="mt-3 text-3xl font-bold sm:text-4xl">
-              The Four Things We Never Compromise On
+            <h2 className="mt-3 font-display text-[clamp(28px,3.6vw,40px)] font-bold">
+              The four things we never compromise on
             </h2>
-          </div>
-          <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-            {VALUES.map((value) => (
-              <div
-                key={value.title}
-                className="rounded-xl border border-navy/10 bg-white p-6 shadow-card"
-              >
-                <h3 className="text-lg font-semibold text-navy">{value.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-ink/75">
-                  {value.body}
-                </p>
-              </div>
+          </Reveal>
+          <div className="mt-12 grid gap-[18px] sm:grid-cols-2 lg:grid-cols-4">
+            {VALUES.map((value, i) => (
+              <Reveal key={value.title} delay={i * 80}>
+                <div className="h-full rounded-lg border-2 border-ink bg-card p-6 shadow-card">
+                  <div className="flex h-[38px] w-[38px] items-center justify-center rounded-[7px] bg-ink font-display text-lg font-bold text-ember">
+                    {i + 1}
+                  </div>
+                  <h3 className="mt-3.5 font-display text-[19px] font-bold">
+                    {value.title}
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-ink-2">
+                    {value.body}
+                  </p>
+                </div>
+              </Reveal>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="bg-white">
+      {/* Why we're different */}
+      <section className="bg-paper">
         <div className="container-page section">
-          <div className="mx-auto max-w-3xl">
-            <p className="eyebrow text-center">Why We&rsquo;re Different</p>
-            <h2 className="mt-3 text-center text-3xl font-bold sm:text-4xl">
+          <Reveal className="mx-auto max-w-2xl text-center">
+            <p className="eyebrow">Why We&rsquo;re Different</p>
+            <h2 className="mt-3 font-display text-[clamp(28px,3.6vw,40px)] font-bold">
               Personal service, start to finish
             </h2>
-            <ul className="mt-10 space-y-4">
-              {[
-                {
-                  title: "We show up on time",
-                  body: "If we say 9 AM, we're there at 9 AM. If something changes, you hear it from us first — not from a missed appointment.",
-                },
-                {
-                  title: "We treat your home with respect",
-                  body: "Drop cloths, shoe covers, and clean-up when we're done. You shouldn't have to clean up after the handyman.",
-                },
-                {
-                  title: "We tell you the truth",
-                  body: "Even when that means recommending less work, or pointing out that something doesn't actually need fixing yet.",
-                },
-                {
-                  title: "We're not going anywhere",
-                  body: "We live here. If something isn't right a week later, we're a phone call away — not a disconnected number.",
-                },
-              ].map((item) => (
-                <li
-                  key={item.title}
-                  className="flex gap-4 rounded-xl border border-navy/10 bg-cream p-5"
-                >
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-amber-forge text-white">
-                    <Icon name="check" className="h-5 w-5" />
+          </Reveal>
+          <div className="mx-auto mt-10 max-w-[760px]">
+            {DIFF.map((item, i) => (
+              <Reveal key={item.title} delay={i * 70}>
+                <div className="mt-3.5 flex gap-4 rounded-lg border-2 border-ink bg-card p-5 shadow-card first:mt-0">
+                  <div className="flex h-[42px] w-[42px] flex-none items-center justify-center rounded-lg bg-orange text-white">
+                    <Icon name="check" className="h-[21px] w-[21px]" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-navy">
+                    <h3 className="font-display text-lg font-bold">
                       {item.title}
                     </h3>
-                    <p className="mt-1 text-sm leading-relaxed text-ink/75">
+                    <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-2">
                       {item.body}
                     </p>
                   </div>
-                </li>
-              ))}
-            </ul>
+                </div>
+              </Reveal>
+            ))}
             <div className="mt-10 text-center">
               <Link href="/contact" className="btn-primary">
                 Book with David
@@ -213,7 +246,7 @@ export default function AboutPage() {
       </section>
 
       <CTABanner
-        heading="Meet the Craftsman in Your Driveway"
+        heading="Meet the craftsman in your driveway"
         subheading="Book a job with Forge and see the difference a 40-year veteran makes."
       />
     </>

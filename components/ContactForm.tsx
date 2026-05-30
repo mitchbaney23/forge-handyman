@@ -523,14 +523,14 @@ export function ContactForm() {
 
   if (status === "out-of-area" && outOfArea) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-forge text-white">
-          <Icon name="map-pin" className="h-6 w-6" />
+      <div className="rounded-[10px] border-2 border-ink bg-[#F6EEDD] p-[30px] text-center shadow-ticket">
+        <div className="mx-auto flex h-[52px] w-[52px] items-center justify-center rounded-full bg-orange text-white">
+          <Icon name="map-pin" className="h-[26px] w-[26px]" />
         </div>
-        <h3 className="mt-4 text-xl font-semibold text-navy">
+        <h3 className="mt-4 font-display text-2xl font-bold">
           You&rsquo;re just outside our service area
         </h3>
-        <p className="mt-2 text-sm text-ink/80">
+        <p className="mx-auto mt-2.5 max-w-[46ch] text-[15px] text-ink-2">
           Your address looks to be about{" "}
           <span className="font-semibold">
             {outOfArea.distanceMiles} miles
@@ -538,12 +538,12 @@ export function ContactForm() {
           from Garner, and we currently keep bookings within roughly{" "}
           {outOfArea.radiusMiles} miles so we can stay local and responsive.
         </p>
-        <p className="mt-3 text-sm text-ink/80">
+        <p className="mx-auto mt-3 max-w-[46ch] text-[15px] text-ink-2">
           That said — we occasionally make exceptions for bigger jobs. Give David
           a call at{" "}
           <a
             href="tel:+15551234567"
-            className="font-semibold text-amber-forge underline hover:text-navy"
+            className="font-semibold text-orange underline underline-offset-[3px]"
           >
             (555) 123-4567
           </a>{" "}
@@ -555,7 +555,7 @@ export function ContactForm() {
             setStatus("idle");
             setOutOfArea(null);
           }}
-          className="mt-5 text-sm font-semibold text-navy hover:text-amber-forge"
+          className="mt-[18px] font-sans text-sm font-bold text-orange"
         >
           Update my address
         </button>
@@ -565,17 +565,20 @@ export function ContactForm() {
 
   if (status === "success") {
     return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-8 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white">
-          <Icon name="check" className="h-6 w-6" />
+      <div className="rounded-[10px] border-2 border-ink bg-teal-bg p-[30px] text-center shadow-ticket">
+        <div className="mx-auto flex h-[52px] w-[52px] items-center justify-center rounded-full bg-teal text-white">
+          <Icon name="check" className="h-[26px] w-[26px]" />
         </div>
-        <h3 className="mt-4 text-xl font-semibold text-emerald-900">
+        <h3 className="mt-4 font-display text-2xl font-bold text-[#1d4039]">
           Request received — thank you!
         </h3>
-        <p className="mt-2 text-sm text-emerald-800">
+        <p className="mx-auto mt-2.5 max-w-[46ch] text-[15px] text-ink-2">
           David will review your details and get back to you shortly with a free
           estimate. For urgent requests, call us at{" "}
-          <a href="tel:+15551234567" className="font-semibold underline">
+          <a
+            href="tel:+15551234567"
+            className="font-semibold text-orange underline underline-offset-[3px]"
+          >
             (555) 123-4567
           </a>
           .
@@ -583,7 +586,7 @@ export function ContactForm() {
         <button
           type="button"
           onClick={() => setStatus("idle")}
-          className="mt-5 text-sm font-semibold text-emerald-700 hover:text-emerald-900"
+          className="mt-[18px] font-sans text-sm font-bold text-orange"
         >
           Submit another request
         </button>
@@ -612,8 +615,17 @@ export function ContactForm() {
       <form
         onSubmit={onSubmit}
         noValidate
-        className="space-y-6 rounded-xl border border-navy/10 bg-white p-6 shadow-card sm:p-8"
+        className="overflow-hidden rounded-[10px] border-2 border-ink bg-card shadow-ticket"
       >
+        <div className="flex items-center justify-between bg-ink px-[26px] py-[18px] text-paper">
+          <span className="font-display text-lg font-bold">
+            Work Order Request
+          </span>
+          <span className="font-sans text-[12px] font-bold tracking-[0.14em] text-ember">
+            FREE ESTIMATE
+          </span>
+        </div>
+        <div className="px-[26px] pb-7 pt-2">
         {/* Honeypot */}
         <div
           aria-hidden="true"
@@ -637,7 +649,7 @@ export function ContactForm() {
           />
         </div>
 
-        <FormSection title="About you">
+        <FormSection n={1} title="About you">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field id="name" label="Name" required error={errors.name}>
               <input
@@ -675,7 +687,7 @@ export function ContactForm() {
           </Field>
         </FormSection>
 
-        <FormSection title="About the property">
+        <FormSection n={2} title="About the property">
           <Field
             id="address"
             label="Address"
@@ -725,21 +737,23 @@ export function ContactForm() {
           </Field>
         </FormSection>
 
-        <FormSection title="What do you need help with?">
+        <FormSection n={3} title="What do you need help with?">
           <div>
             <label
               htmlFor="serviceCategories"
-              className="mb-2 flex items-center gap-1 text-sm font-semibold text-navy"
+              className="mb-2 flex items-center gap-1.5 text-[13.5px] font-bold text-ink"
             >
               Services
-              <span className="text-amber-forge">*</span>
-              <span className="ml-1 font-normal text-ink/55">(pick all that apply)</span>
+              <span className="text-orange">*</span>
+              <span className="ml-1 font-medium text-ink-3">
+                (pick all that apply)
+              </span>
             </label>
             <div
               id="serviceCategories"
               role="group"
               aria-labelledby="serviceCategoriesLabel"
-              className="grid gap-2 sm:grid-cols-2"
+              className="grid gap-2.5 sm:grid-cols-2"
             >
               {SERVICE_CATEGORIES.map((opt) => {
                 const isSelected = state.serviceCategories.includes(opt.code);
@@ -749,42 +763,41 @@ export function ContactForm() {
                     type="button"
                     onClick={() => toggleCategory(opt.code)}
                     aria-pressed={isSelected}
-                    className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
+                    className={`flex items-center gap-2.5 rounded-[6px] border-2 px-3.5 py-3 text-left text-sm font-medium transition-colors ${
                       isSelected
-                        ? "border-amber-forge bg-amber-forge/10 text-navy"
-                        : "border-navy/15 bg-white text-ink/80 hover:border-navy/40"
+                        ? "border-orange bg-orange/[0.07] text-ink"
+                        : "border-line bg-white text-ink-2 hover:border-ink-3"
                     }`}
                   >
-                    <span className="flex items-center gap-2">
-                      <span
-                        aria-hidden="true"
-                        className={`flex h-4 w-4 items-center justify-center rounded border ${
-                          isSelected
-                            ? "border-amber-forge bg-amber-forge text-white"
-                            : "border-navy/30 bg-white"
-                        }`}
-                      >
-                        {isSelected && (
-                          <Icon name="check" className="h-3 w-3" />
-                        )}
-                      </span>
-                      <span className="font-medium">{opt.label}</span>
+                    <span
+                      aria-hidden="true"
+                      className={`flex h-[18px] w-[18px] flex-none items-center justify-center rounded-[4px] border-2 ${
+                        isSelected
+                          ? "border-orange bg-orange text-white"
+                          : "border-line bg-white"
+                      }`}
+                    >
+                      {isSelected && <Icon name="check" className="h-3 w-3" />}
                     </span>
+                    <span>{opt.label}</span>
                   </button>
                 );
               })}
             </div>
-            <label className="mt-3 flex items-center gap-2 text-sm text-ink/80">
+            <label className="mt-3 flex items-center gap-2.5 text-sm text-ink-2">
               <input
                 type="checkbox"
                 checked={state.notSure}
                 onChange={toggleNotSure}
-                className="h-4 w-4 rounded border-navy/30 text-amber-forge focus:ring-amber-forge/40"
+                className="h-[17px] w-[17px] rounded border-line accent-orange"
               />
               I&rsquo;m not sure what category fits — just talk to me
             </label>
             {errors.serviceCategories && (
-              <p className="mt-1.5 text-xs text-red-600" role="alert">
+              <p
+                className="mt-1.5 text-[12.5px] font-semibold text-red"
+                role="alert"
+              >
                 {errors.serviceCategories}
               </p>
             )}
@@ -810,22 +823,22 @@ export function ContactForm() {
           <div>
             <label
               htmlFor="photoInput"
-              className="mb-1.5 flex items-center gap-1 text-sm font-semibold text-navy"
+              className="mb-1.5 flex items-center gap-1.5 text-[13.5px] font-bold text-ink"
             >
               Photos
-              <span className="ml-1 font-normal text-ink/55">
+              <span className="ml-1 font-medium text-ink-3">
                 (optional, up to {MAX_PHOTOS})
               </span>
             </label>
-            <p className="mb-3 text-xs text-ink/55">
+            <p className="mb-3 text-[12.5px] text-ink-3">
               A picture is worth a thousand words. Snap whatever helps us
               understand the work — broken thing, room context, whatever.
             </p>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
               {photos.map((photo) => (
                 <div
                   key={photo.id}
-                  className="group relative aspect-square overflow-hidden rounded-lg border border-navy/15 bg-navy/5"
+                  className="group relative aspect-square overflow-hidden rounded-[7px] border-2 border-line bg-paper-2"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -836,25 +849,25 @@ export function ContactForm() {
                   <button
                     type="button"
                     onClick={() => removePhoto(photo.id)}
-                    className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                    className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-ink/[0.78] text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
                     aria-label={`Remove ${photo.name}`}
                   >
-                    <Icon name="close" className="h-3 w-3" />
+                    <Icon name="close" className="h-3.5 w-3.5" />
                   </button>
                 </div>
               ))}
               {photos.length < MAX_PHOTOS && (
                 <label
                   htmlFor="photoInput"
-                  className={`flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-navy/20 bg-white text-ink/55 hover:border-navy/40 hover:text-navy ${
+                  className={`flex aspect-square cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[7px] border-2 border-dashed border-line bg-white text-ink-3 hover:border-ink-3 hover:text-ink ${
                     photoUploading ? "pointer-events-none opacity-60" : ""
                   }`}
                 >
                   <Icon
                     name={photoUploading ? "spinner" : "camera"}
-                    className={`h-6 w-6 ${photoUploading ? "animate-spin" : ""}`}
+                    className={`h-[26px] w-[26px] ${photoUploading ? "animate-spin" : ""}`}
                   />
-                  <span className="text-xs font-medium">
+                  <span className="text-xs font-semibold">
                     {photoUploading
                       ? "Uploading…"
                       : photos.length === 0
@@ -875,7 +888,7 @@ export function ContactForm() {
               )}
             </div>
             {photoErrors.length > 0 && (
-              <ul className="mt-2 space-y-1 text-xs text-red-700">
+              <ul className="mt-2 space-y-1 text-[12.5px] font-semibold text-red">
                 {photoErrors.map((err, idx) => (
                   <li key={idx}>{err}</li>
                 ))}
@@ -884,7 +897,7 @@ export function ContactForm() {
           </div>
         </FormSection>
 
-        <FormSection title="When do you need this?">
+        <FormSection n={4} title="When do you need this?">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               id="preferredDate"
@@ -930,7 +943,7 @@ export function ContactForm() {
           </div>
         </FormSection>
 
-        <FormSection title="How should we reach you?">
+        <FormSection n={5} title="How should we reach you?">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field id="bestContactTime" label="Best time to reach you">
               <select
@@ -991,32 +1004,38 @@ export function ContactForm() {
           </Field>
         </FormSection>
 
-        {TURNSTILE_SITE_KEY && (
-          <div className="flex justify-center" ref={turnstileContainerRef} />
-        )}
-
-        {status === "error" && serverMessage && (
-          <div
-            role="alert"
-            className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-          >
-            {serverMessage}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={status === "submitting"}
-          className="btn-primary w-full text-base"
-        >
-          {status === "submitting" ? "Sending…" : "Request a Free Estimate"}
-          {status !== "submitting" && (
-            <Icon name="arrow-right" className="h-4 w-4" />
+        <div className="mt-6 space-y-4">
+          {TURNSTILE_SITE_KEY && (
+            <div
+              className="mx-auto flex max-w-[320px] justify-center"
+              ref={turnstileContainerRef}
+            />
           )}
-        </button>
-        <p className="text-center text-xs text-ink/55">
-          We&rsquo;ll respond within one business day. No spam, ever.
-        </p>
+
+          {status === "error" && serverMessage && (
+            <div
+              role="alert"
+              className="rounded-[5px] border-2 border-red bg-red-bg p-3 text-sm font-medium text-red"
+            >
+              {serverMessage}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={status === "submitting"}
+            className="btn-primary w-full text-base"
+          >
+            {status === "submitting" ? "Sending…" : "Send My Request"}
+            {status !== "submitting" && (
+              <Icon name="arrow-right" className="h-4 w-4" />
+            )}
+          </button>
+          <p className="text-center text-[12.5px] text-ink-3">
+            We&rsquo;ll respond within one business day. No spam, ever.
+          </p>
+        </div>
+        </div>
       </form>
     </>
   );
@@ -1032,30 +1051,33 @@ function readAsDataUrl(file: Blob): Promise<string> {
 }
 
 function FormSection({
+  n,
   title,
   children,
 }: {
+  n: number;
   title: string;
   children: React.ReactNode;
 }) {
   return (
-    <fieldset className="space-y-4 border-t border-navy/10 pt-5 first:border-t-0 first:pt-0">
-      <legend className="float-left text-xs font-semibold uppercase tracking-[0.18em] text-amber-forge">
-        {title}
+    <fieldset className="border-b-2 border-dashed border-line py-6 last:border-b-0">
+      <legend className="mb-[18px] flex items-center gap-3">
+        <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full bg-orange font-display text-[15px] font-bold text-white">
+          {n}
+        </span>
+        <span className="font-display text-xl font-bold text-ink">{title}</span>
       </legend>
-      <div className="clear-both pt-2 space-y-4">{children}</div>
+      <div className="space-y-4">{children}</div>
     </fieldset>
   );
 }
 
 function inputClass(hasError: boolean) {
   return [
-    "block w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm text-ink",
-    "placeholder:text-ink/40",
-    "focus:outline-none focus:ring-2 focus:ring-offset-1",
-    hasError
-      ? "border-red-300 focus:border-red-400 focus:ring-red-200"
-      : "border-navy/15 focus:border-navy focus:ring-amber-forge/40",
+    "block w-full rounded-[5px] border-2 bg-white px-3.5 py-3 text-[15px] text-ink",
+    "placeholder:text-ink-3/60",
+    "focus:outline-none focus:border-orange focus:shadow-[0_0_0_3px_rgba(191,87,0,0.14)]",
+    hasError ? "border-red" : "border-line",
   ].join(" ");
 }
 
@@ -1076,14 +1098,14 @@ function Field({
     <div>
       <label
         htmlFor={id}
-        className="mb-1.5 flex items-center gap-1 text-sm font-semibold text-navy"
+        className="mb-[7px] flex items-center gap-1.5 text-[13.5px] font-bold text-ink"
       >
         {label}
-        {required && <span className="text-amber-forge">*</span>}
+        {required && <span className="text-orange">*</span>}
       </label>
       {children}
       {error && (
-        <p className="mt-1.5 text-xs text-red-600" role="alert">
+        <p className="mt-1.5 text-[12.5px] font-semibold text-red" role="alert">
           {error}
         </p>
       )}

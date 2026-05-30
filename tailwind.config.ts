@@ -37,30 +37,21 @@ const config: Config = {
           "orange-light": "#E07420",
           ink: "#1E1E1E",
         },
-        ink: "#1F2937",
         cream: "#F8F9FA",
+        // "The Workshop" palette — warm kraft-paper direction.
+        paper: { DEFAULT: "#EFE7D5", 2: "#E7DCC5" }, // page bg / deeper kraft
+        card: "#FBF6EA", // raised surfaces
+        ink: { DEFAULT: "#24211B", 2: "#433D32", 3: "#6B6353" }, // text: strong / mid / muted
+        orange: { DEFAULT: "#BF5700", 2: "#D8650A" }, // logo-accurate primary + hover
+        rust: "#9E3C0B", // hard-shadow / deep accent
+        ember: "#E27A20", // warm highlight (icons on dark)
+        teal: { DEFAULT: "#2E5D55", bg: "#E4ECE8" }, // positive accent + success bg
+        red: { DEFAULT: "#B23B2E", bg: "#F6E5DF" }, // form error state
+        line: { DEFAULT: "#CDBF9F", 2: "#DCD0B5" }, // hairlines / dashed seams
       },
       fontFamily: {
-        sans: [
-          "var(--font-inter)",
-          "Inter",
-          "ui-sans-serif",
-          "system-ui",
-          "-apple-system",
-          "Segoe UI",
-          "Roboto",
-          "Helvetica Neue",
-          "Arial",
-          "sans-serif",
-        ],
-        display: [
-          "var(--font-oswald)",
-          "Oswald",
-          "Impact",
-          "ui-sans-serif",
-          "system-ui",
-          "sans-serif",
-        ],
+        sans: ["var(--font-franklin)", "system-ui", "sans-serif"],
+        display: ["var(--font-zilla)", "Georgia", "serif"],
       },
       container: {
         center: true,
@@ -77,13 +68,18 @@ const config: Config = {
         },
       },
       boxShadow: {
-        card: "0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(27,58,92,0.06)",
-        "card-hover":
-          "0 1px 3px rgba(0,0,0,0.08), 0 10px 28px rgba(27,58,92,0.12)",
+        // Hard offset shadows — no blur, like a printed sticker.
+        card: "4px 4px 0 rgba(36,33,27,.10)",
+        "card-hover": "8px 8px 0 rgba(191,87,0,.22)",
+        ticket: "8px 8px 0 rgba(36,33,27,.14)",
+        btn: "0 3px 0 #9E3C0B",
+        "btn-ink": "0 3px 0 #000",
       },
       backgroundImage: {
         "hero-gradient":
           "linear-gradient(135deg, #1B3A5C 0%, #234B77 55%, #4A6FA5 100%)",
+        "paper-dots":
+          "radial-gradient(rgba(36,33,27,.035) 1px, transparent 1.3px)",
       },
     },
   },

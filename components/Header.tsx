@@ -33,29 +33,27 @@ export function Header() {
 
   return (
     <header
-      className={`sticky top-0 z-50 w-full transition-colors ${
-        scrolled
-          ? "border-b border-navy/10 bg-white/95 backdrop-blur"
-          : "bg-white"
+      className={`sticky top-0 z-50 w-full border-b-2 border-ink bg-paper transition-shadow ${
+        scrolled ? "shadow-[0_8px_24px_rgba(36,33,27,.12)]" : ""
       }`}
     >
-      <div className="hidden w-full bg-navy text-xs text-white/80 md:block">
-        <div className="container-page flex h-9 items-center justify-between">
+      <div className="hidden w-full bg-ink text-xs text-paper md:block">
+        <div className="container-page flex h-10 items-center justify-between">
           <span className="flex items-center gap-2">
-            <Icon name="map-pin" className="h-3.5 w-3.5 text-amber-forge-light" />
+            <Icon name="map-pin" className="h-3.5 w-3.5 text-ember" />
             Serving Garner, Clayton & South Raleigh, NC
           </span>
           <span className="flex items-center gap-5">
-            <a href={BUSINESS.phoneHref} className="hover:text-amber-forge-light">
+            <a href={BUSINESS.phoneHref} className="hover:text-ember">
               {BUSINESS.phone}
             </a>
-            <a href={BUSINESS.emailHref} className="hover:text-amber-forge-light">
+            <a href={BUSINESS.emailHref} className="hover:text-ember">
               {BUSINESS.email}
             </a>
           </span>
         </div>
       </div>
-      <div className="container-page flex h-16 items-center justify-between md:h-20">
+      <div className="container-page flex h-16 items-center justify-between md:h-[74px]">
         <Logo />
         <nav className="hidden items-center gap-1 md:flex" aria-label="Primary">
           {NAV_LINKS.map((link) => {
@@ -67,10 +65,8 @@ export function Header() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  active
-                    ? "text-amber-forge"
-                    : "text-ink/80 hover:text-navy"
+                className={`rounded-md px-3 py-2 text-[14.5px] font-semibold transition-colors ${
+                  active ? "text-orange" : "text-ink-2 hover:text-orange"
                 }`}
               >
                 {link.label}
@@ -84,7 +80,7 @@ export function Header() {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-navy/15 text-navy md:hidden"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-[3px] border-2 border-ink text-ink md:hidden"
           aria-expanded={open}
           aria-controls="mobile-menu"
           aria-label={open ? "Close menu" : "Open menu"}
@@ -96,9 +92,9 @@ export function Header() {
       {open && (
         <div
           id="mobile-menu"
-          className="fixed inset-x-0 top-16 z-40 border-t border-navy/10 bg-white shadow-lg md:hidden"
+          className="fixed inset-x-0 top-16 z-40 border-l-2 border-ink bg-card shadow-lg md:hidden"
         >
-          <nav className="container-page flex flex-col py-4" aria-label="Mobile">
+          <nav className="container-page flex flex-col py-2" aria-label="Mobile">
             {NAV_LINKS.map((link) => {
               const active =
                 link.href === "/"
@@ -108,17 +104,15 @@ export function Header() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`rounded-lg px-3 py-3 text-base font-medium ${
-                    active
-                      ? "bg-navy/5 text-amber-forge"
-                      : "text-ink/80"
+                  className={`border-b border-line px-3 py-4 font-display text-[21px] ${
+                    active ? "text-orange" : "text-ink"
                   }`}
                 >
                   {link.label}
                 </Link>
               );
             })}
-            <div className="mt-3 flex flex-col gap-2 border-t border-navy/10 pt-4">
+            <div className="mt-4 flex flex-col gap-2 pt-2">
               <a href={BUSINESS.phoneHref} className="btn-outline">
                 <Icon name="phone" className="h-4 w-4" />
                 {BUSINESS.phone}
