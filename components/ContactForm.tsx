@@ -443,6 +443,15 @@ export function ContactForm() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         setStatus("error");
+        // Maintenance kill switch — friendly, distinct from a generic error.
+        if (data?.maintenance) {
+          setServerMessage(
+            data?.error ||
+              "We're updating our booking system right now. Please call us at (555) 123-4567.",
+          );
+          resetTurnstile();
+          return;
+        }
         // Surface per-field errors from the server if present so the customer
         // can see exactly which input is being rejected.
         if (

@@ -84,7 +84,15 @@ export function Footer() {
 
         <div className="mt-12 flex flex-col gap-3 border-t border-white/15 pt-6 text-xs text-white/55 sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} Forge Handyman Service. All rights reserved.</p>
-          <p>Licensed &amp; Insured · Part of the Forge family of local ventures.</p>
+          <div className="flex items-center gap-4">
+            <Link href="/privacy" className="hover:text-amber-forge-light">
+              Privacy
+            </Link>
+            <Link href="/terms" className="hover:text-amber-forge-light">
+              Terms
+            </Link>
+            <span className="hidden sm:inline">Licensed &amp; Insured</span>
+          </div>
         </div>
       </div>
     </footer>

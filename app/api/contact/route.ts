@@ -118,6 +118,10 @@ function isDevMode(): boolean {
   return process.env.NEXT_PUBLIC_DEV_MODE === 'true'
 }
 
+function isContactFormDisabled(): boolean {
+  return process.env.CONTACT_FORM_DISABLED === 'true'
+}
+
 function jsonError(
   message: string,
   status: number,
@@ -195,6 +199,18 @@ function payloadToRow(
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const ip = extractIp(request)
   const submittedAt = new Date().toISOString()
+
+  // Kill switch: when CONTACT_FORM_DISABLED=true, refuse submissions with a
+  // friendly maintenance message before doing any work. The `maintenance`
+  // flag lets the client render a distinct notice (not a generic error).
+  if (isContactFormDisabled()) {
+    logger.info({ ip }, 'contact-form: submission rejected — CONTACT_FORM_DISABLED')
+    return jsonError(
+      "We're updating our booking system right now. Please call us at (555) 123-4567 and we'll get you taken care of.",
+      503,
+      { maintenance: true },
+    )
+  }
 
   let body: unknown
   try {
