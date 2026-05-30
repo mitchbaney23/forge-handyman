@@ -29,6 +29,12 @@ function jsonError(message: string, status: number, headers?: Record<string, str
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const ip = extractIp(request)
 
+  // Mirror the contact-form kill switch — no point accepting photo uploads
+  // when the form itself is disabled for maintenance.
+  if (process.env.CONTACT_FORM_DISABLED === 'true') {
+    return jsonError('Uploads are temporarily unavailable.', 503)
+  }
+
   // Dedicated photo-upload limiter: 30 per 15 min per IP. Covers 5 form
   // submissions with full 6-photo loadouts plus retesting headroom, while
   // still capping abuse / runaway upload loops.

@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import * as Sentry from "@sentry/nextjs";
 import { authOptions, isAllowlistedEmail } from "@/lib/auth";
 import { buildUnsubscribeUrl } from "@/lib/automation/unsubscribe";
+import { BUSINESS } from "@/lib/constants";
 import { logger, maskEmail } from "@/lib/security/logger";
 import { checkLimit } from "@/lib/security/rate-limit";
 import { appendAuditRow } from "@/lib/sheet/audit-log";
@@ -106,6 +107,7 @@ function textToHtml(plainText: string, unsubscribeUrl: string): string {
           </td></tr>
           <tr><td style="background:#F3F4F6;padding:16px 28px;font-size:11px;color:#6b7280;text-align:center;line-height:1.5;">
             Forge Handyman Service · Garner, Clayton &amp; South Raleigh, NC<br/>
+            ${escapeHtml(BUSINESS.mailingAddress)}<br/>
             <a href="${unsubscribeUrl}" style="color:#6b7280;text-decoration:underline;">Unsubscribe from follow-ups</a>
           </td></tr>
         </table>
