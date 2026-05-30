@@ -9,6 +9,7 @@ import { checkLimit } from "@/lib/security/rate-limit";
 import { appendAuditRow } from "@/lib/sheet/audit-log";
 import { findRowByJobId, updateRowByJobId } from "@/lib/sheet/repo";
 import { chargeBalance, type ChargeBalanceResult } from "@/lib/stripe/charges";
+import { dispatchJobToDavid } from "@/lib/telegram/dispatch";
 
 export type ActionResult =
   | { ok: true; message?: string }
@@ -70,6 +71,51 @@ export async function updateJobStatus(
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
   return { ok: true, message: `Status set to ${newStatus}.` };
+}
+
+export async function dispatchToDavid(jobId: string): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdmin(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  const found = await findRowByJobId(jobId);
+  if (!found) return { ok: false, error: "Job not found" };
+
+  try {
+    const result = await dispatchJobToDavid(found.row);
+    if (!result.ok) {
+      return {
+        ok: false,
+        error:
+          result.reason === "no-chat-id"
+            ? "David's Telegram chat ID isn't configured yet."
+            : "Couldn't send the Telegram message — check the bot config.",
+      };
+    }
+    await updateRowByJobId(jobId, {
+      dispatch_status: "Dispatched",
+      dispatch_decision: "",
+      dispatch_decided_at: "",
+      telegram_message_id: result.messageId ? String(result.messageId) : "",
+    });
+    await appendAuditRow({
+      actor: auth.email,
+      action: "dispatch.sent",
+      target: jobId,
+      after: JSON.stringify({ messageId: result.messageId }),
+      notes: "Manual re-dispatch from admin.",
+    });
+    logger.info({ jobId, actor: auth.email }, "admin: re-dispatched to David");
+    revalidatePath(`/admin/jobs/${jobId}`);
+    return { ok: true, message: "Sent to David's Telegram." };
+  } catch (err) {
+    Sentry.captureException(err, {
+      tags: { route: "admin", action: "dispatchToDavid" },
+    });
+    logger.error({ err, jobId }, "admin: dispatchToDavid threw");
+    return { ok: false, error: "Dispatch failed — see Sentry." };
+  }
 }
 
 export async function recordFirstTouch(jobId: string): Promise<ActionResult> {

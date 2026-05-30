@@ -36,7 +36,8 @@ import {
   countDuplicateLeadsLast24h,
   findPriorJobsByEmail,
 } from '@/lib/sheet/queries'
-import { appendContactRow, type ContactRow } from '@/lib/sheet/repo'
+import { appendContactRow, updateRowByJobId, type ContactRow } from '@/lib/sheet/repo'
+import { dispatchJobToDavid } from '@/lib/telegram/dispatch'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -365,6 +366,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       tags: { route: 'contact-form', step: 'sheet-append' },
     })
     logger.error({ err: sheetResult.reason }, 'contact-form: sheet append failed')
+  }
+
+  // Best-effort: dispatch the job to David's Telegram with Approve/Decline/
+  // Sub-out buttons. Only runs for in-area, non-dev submissions (we're already
+  // past both gates here). Never blocks the customer response. Skipped when
+  // DISPATCH_DISABLED=true or the sheet append failed (no row to update).
+  if (
+    process.env.DISPATCH_DISABLED !== 'true' &&
+    sheetResult.status === 'fulfilled'
+  ) {
+    try {
+      const result = await dispatchJobToDavid(row)
+      if (result.ok) {
+        await updateRowByJobId(jobId, {
+          dispatch_status: 'Dispatched',
+          telegram_message_id: result.messageId ? String(result.messageId) : '',
+        })
+      }
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { route: 'contact-form', step: 'telegram-dispatch' },
+      })
+      logger.error({ err, jobId }, 'contact-form: telegram dispatch failed')
+    }
   }
 
   return NextResponse.json({ ok: true })
