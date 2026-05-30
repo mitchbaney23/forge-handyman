@@ -136,17 +136,6 @@ const STEPS: {
   },
 ];
 
-interface GooglePlaceResult {
-  formatted_address?: string;
-  place_id?: string;
-  geometry?: { location?: { lat(): number; lng(): number } };
-}
-
-interface GoogleAutocomplete {
-  addListener: (event: string, callback: () => void) => unknown;
-  getPlace: () => GooglePlaceResult;
-}
-
 interface GoogleGeocoderResult {
   formatted_address?: string;
 }
@@ -156,6 +145,22 @@ interface GoogleGeocoder {
     request: { location: { lat: number; lng: number } },
     callback: (results: GoogleGeocoderResult[] | null, status: string) => void,
   ) => void;
+}
+
+// Modern Places API (New) — replaces the deprecated places.Autocomplete widget.
+interface GooglePlace {
+  formattedAddress?: string | null;
+  fetchFields: (request: { fields: string[] }) => Promise<unknown>;
+}
+
+interface GooglePlacePrediction {
+  placeId?: string;
+  text?: { toString(): string };
+  toPlace: () => GooglePlace;
+}
+
+interface GooglePlaceSuggestion {
+  placePrediction?: GooglePlacePrediction;
 }
 
 declare global {
@@ -176,24 +181,16 @@ declare global {
     google?: {
       maps?: {
         places?: {
-          Autocomplete: new (
-            input: HTMLInputElement,
-            opts: {
-              componentRestrictions?: { country: string | string[] };
-              fields?: string[];
-              types?: string[];
-              bounds?: unknown;
-            },
-          ) => GoogleAutocomplete;
+          AutocompleteSuggestion?: {
+            fetchAutocompleteSuggestions: (request: {
+              input: string;
+              sessionToken?: unknown;
+              includedRegionCodes?: string[];
+            }) => Promise<{ suggestions: GooglePlaceSuggestion[] }>;
+          };
+          AutocompleteSessionToken?: new () => unknown;
         };
         Geocoder?: new () => GoogleGeocoder;
-        LatLngBounds?: new (
-          sw: { lat: number; lng: number },
-          ne: { lat: number; lng: number },
-        ) => unknown;
-        event?: {
-          clearInstanceListeners: (instance: unknown) => void;
-        };
       };
     };
   }
@@ -243,8 +240,13 @@ export function ContactForm() {
   const honeypotRef = useRef<HTMLInputElement>(null);
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
-  const addressInputRef = useRef<HTMLInputElement>(null);
-  const autocompleteRef = useRef<GoogleAutocomplete | null>(null);
+  // Address autocomplete (Places API New — replaces deprecated Autocomplete).
+  const [addrSuggestions, setAddrSuggestions] = useState<
+    { id: string; text: string; prediction: GooglePlacePrediction }[]
+  >([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const sessionTokenRef = useRef<unknown>(null);
+  const addrDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Tentative job_id generated client-side on first photo upload. Reused
   // across all photos for the same submission so they group in one Drive
   // folder. Server validates UUID v4 format on every upload + accepts the
@@ -270,68 +272,6 @@ export function ContactForm() {
     const params = new URLSearchParams(window.location.search);
     const utm = params.get("utm_source");
     if (utm) utmSourceRef.current = utm.slice(0, 120);
-  }, []);
-
-  // Google Places Autocomplete — attaches to the address input when the
-  // Maps JS API loads. Biases results to central NC (Forge's service area)
-  // but doesn't restrict — customers can still type anything.
-  // NOTE: the address input lives on a wizard panel that is HIDDEN
-  // (display:none) until its step. Because all panels stay MOUNTED (we never
-  // conditionally render them), addressInputRef.current exists at mount and
-  // this one-shot effect attaches successfully. Do not switch panels to
-  // conditional rendering — it would null this ref and break autocomplete.
-  useEffect(() => {
-    if (!GOOGLE_MAPS_API_KEY) return;
-    if (!addressInputRef.current) return;
-    if (autocompleteRef.current) return;
-
-    let cancelled = false;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    const tryAttach = (): boolean => {
-      if (cancelled) return true;
-      const places = window.google?.maps?.places;
-      const Bounds = window.google?.maps?.LatLngBounds;
-      const input = addressInputRef.current;
-      if (!places || !input) return false;
-      // Bias toward Wake/Johnston counties area (Garner-centered).
-      const bounds = Bounds
-        ? new Bounds({ lat: 35.5, lng: -78.85 }, { lat: 36.0, lng: -78.4 })
-        : undefined;
-      const ac = new places.Autocomplete(input, {
-        componentRestrictions: { country: "us" },
-        fields: ["formatted_address", "place_id", "geometry"],
-        types: ["address"],
-        bounds,
-      });
-      ac.addListener("place_changed", () => {
-        const place = ac.getPlace();
-        if (place.formatted_address) {
-          setState((s) => ({ ...s, address: place.formatted_address! }));
-          setErrors((e) => ({ ...e, address: undefined }));
-        }
-      });
-      autocompleteRef.current = ac;
-      return true;
-    };
-
-    if (!tryAttach()) {
-      intervalId = setInterval(() => {
-        if (tryAttach() && intervalId) {
-          clearInterval(intervalId);
-          intervalId = null;
-        }
-      }, 250);
-    }
-
-    return () => {
-      cancelled = true;
-      if (intervalId) clearInterval(intervalId);
-      const ac = autocompleteRef.current;
-      const ev = window.google?.maps?.event;
-      if (ac && ev) ev.clearInstanceListeners(ac);
-      autocompleteRef.current = null;
-    };
   }, []);
 
   // Turnstile — renders into the container on the FINAL panel. Like the
@@ -420,6 +360,72 @@ export function ContactForm() {
       setErrors((e) => ({ ...e, serviceCategories: undefined }));
   };
 
+  // ----- address autocomplete (Places API New) -----
+  // Defensive: any failure (API not loaded / not enabled / network) silently
+  // falls back to plain typing — the server geocodes whatever string is sent.
+  const fetchAddressSuggestions = async (value: string) => {
+    if (!GOOGLE_MAPS_API_KEY || value.trim().length < 3) {
+      setAddrSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    try {
+      const places = window.google?.maps?.places;
+      if (!places?.AutocompleteSuggestion) return;
+      if (!sessionTokenRef.current && places.AutocompleteSessionToken) {
+        sessionTokenRef.current = new places.AutocompleteSessionToken();
+      }
+      const { suggestions } =
+        await places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input: value,
+          sessionToken: sessionTokenRef.current ?? undefined,
+          includedRegionCodes: ["us"],
+        });
+      const list = (suggestions ?? [])
+        .map((s) => s.placePrediction)
+        .filter((p): p is GooglePlacePrediction => Boolean(p))
+        .slice(0, 5)
+        .map((p, i) => ({
+          id: p.placeId ?? String(i),
+          text: p.text?.toString() ?? "",
+          prediction: p,
+        }))
+        .filter((item) => item.text);
+      setAddrSuggestions(list);
+      setShowSuggestions(list.length > 0);
+    } catch {
+      setAddrSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const onAddressChange = (value: string) => {
+    update("address", value);
+    if (addrDebounceRef.current) clearTimeout(addrDebounceRef.current);
+    addrDebounceRef.current = setTimeout(
+      () => void fetchAddressSuggestions(value),
+      250,
+    );
+  };
+
+  const selectSuggestion = async (item: {
+    text: string;
+    prediction: GooglePlacePrediction;
+  }) => {
+    setShowSuggestions(false);
+    setAddrSuggestions([]);
+    let address = item.text;
+    try {
+      const place = item.prediction.toPlace();
+      await place.fetchFields({ fields: ["formattedAddress"] });
+      if (place.formattedAddress) address = place.formattedAddress;
+    } catch {
+      // keep the prediction text
+    }
+    update("address", address);
+    sessionTokenRef.current = null; // start a fresh session after a selection
+  };
+
   // ----- wizard navigation -----
   const isLastStep = step === STEPS.length - 1;
 
@@ -487,6 +493,7 @@ export function ContactForm() {
           (results, gStatus) => {
             if (gStatus === "OK" && results && results[0]?.formatted_address) {
               update("address", results[0].formatted_address);
+              setShowSuggestions(false);
               setGeoStatus("idle");
             } else {
               setGeoStatus("error");
@@ -974,16 +981,49 @@ export function ContactForm() {
             <div hidden={step !== 2} className="panel-enter space-y-5">
               <Field id="address" label="Address" required error={errors.address}>
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <input
-                    ref={addressInputRef}
-                    id="address"
-                    name="address"
-                    autoComplete="street-address"
-                    placeholder="Start typing your address…"
-                    value={state.address}
-                    onChange={(e) => update("address", e.target.value)}
-                    className={inputClass(!!errors.address)}
-                  />
+                  <div className="relative flex-1">
+                    <input
+                      id="address"
+                      name="address"
+                      autoComplete="off"
+                      placeholder="Start typing your address…"
+                      value={state.address}
+                      onChange={(e) => onAddressChange(e.target.value)}
+                      onFocus={() =>
+                        setShowSuggestions(addrSuggestions.length > 0)
+                      }
+                      onBlur={() =>
+                        setTimeout(() => setShowSuggestions(false), 150)
+                      }
+                      role="combobox"
+                      aria-expanded={showSuggestions}
+                      aria-autocomplete="list"
+                      className={inputClass(!!errors.address)}
+                    />
+                    {showSuggestions && addrSuggestions.length > 0 && (
+                      <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-[7px] border-2 border-ink bg-card shadow-card">
+                        {addrSuggestions.map((item) => (
+                          <li key={item.id}>
+                            <button
+                              type="button"
+                              // onMouseDown (not onClick) so it fires before the input's blur
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                void selectSuggestion(item);
+                              }}
+                              className="flex w-full items-center gap-2.5 border-b border-dashed border-line px-3.5 py-2.5 text-left text-[14px] text-ink-2 last:border-b-0 hover:bg-orange/[0.07] hover:text-ink"
+                            >
+                              <Icon
+                                name="map-pin"
+                                className="h-4 w-4 flex-none text-orange"
+                              />
+                              <span className="truncate">{item.text}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={handleUseLocation}

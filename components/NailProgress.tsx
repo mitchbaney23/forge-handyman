@@ -64,40 +64,36 @@ export function NailProgress({ step, totalSteps, done = false }: Props) {
           strokeLinecap="round"
         />
 
-        {/* hammer (jabs down on each advance) */}
+        {/* claw hammer (jabs down on each advance) */}
         <g
           key={`${step}-${done}`}
           className={`nail-hammer ${step > 0 || done ? "striking" : ""}`}
         >
-          {/* handle */}
+          {/* wood handle */}
           <rect
-            x="143"
-            y="0"
-            width="9"
-            height="26"
-            rx="3"
+            x="150"
+            y="-14"
+            width="11"
+            height="36"
+            rx="4.5"
             fill="#9C6B3F"
             stroke="#24211B"
             strokeWidth="2.5"
+            transform="rotate(22 155 4)"
           />
-          {/* head */}
-          <rect
-            x="104"
-            y="20"
-            width="52"
-            height="18"
-            rx="3"
+          {/* metal head: claw on the left, flat striking face on the right */}
+          <path
+            d="M151 14
+               L162 17 Q166 18 166 22 L166 30 Q166 34 162 35 L151 38
+               L126 38
+               Q116 46 104 42 Q110 36 116 34
+               Q108 33 103 37 Q104 29 114 27
+               Q120 26 126 27
+               L151 14 Z"
             fill="#BF5700"
             stroke="#24211B"
             strokeWidth="2.5"
-          />
-          {/* claw */}
-          <path
-            d="M104 24c-9 2-9 10 0 12"
-            fill="none"
-            stroke="#24211B"
-            strokeWidth="2.5"
-            strokeLinecap="round"
+            strokeLinejoin="round"
           />
         </g>
       </svg>
