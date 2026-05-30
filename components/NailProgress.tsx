@@ -64,37 +64,23 @@ export function NailProgress({ step, totalSteps, done = false }: Props) {
           strokeLinecap="round"
         />
 
-        {/* claw hammer (jabs down on each advance) */}
+        {/* claw hammer (jabs down on each advance).
+            Shape: Phosphor "hammer" (fill weight), MIT-licensed — recolored to
+            the Workshop palette and rotated to strike the nail. (Sourced via the
+            vector-assets skill so it reads as a hammer at every size.) */}
         <g
           key={`${step}-${done}`}
           className={`nail-hammer ${step > 0 || done ? "striking" : ""}`}
         >
-          {/* wood handle */}
-          <rect
-            x="150"
-            y="-14"
-            width="11"
-            height="36"
-            rx="4.5"
-            fill="#9C6B3F"
-            stroke="#24211B"
-            strokeWidth="2.5"
-            transform="rotate(22 155 4)"
-          />
-          {/* metal head: claw on the left, flat striking face on the right */}
-          <path
-            d="M151 14
-               L162 17 Q166 18 166 22 L166 30 Q166 34 162 35 L151 38
-               L126 38
-               Q116 46 104 42 Q110 36 116 34
-               Q108 33 103 37 Q104 29 114 27
-               Q120 26 126 27
-               L151 14 Z"
-            fill="#BF5700"
-            stroke="#24211B"
-            strokeWidth="2.5"
-            strokeLinejoin="round"
-          />
+          <g transform="translate(132 22) rotate(-14) scale(0.2) translate(-128 -128)">
+            <path
+              fill="#BF5700"
+              stroke="#24211B"
+              strokeWidth="10"
+              strokeLinejoin="round"
+              d="M251.34,112,183.88,44.08a96.1,96.1,0,0,0-135.77,0l-.09.09L34.25,58.4A8,8,0,0,0,45.74,69.53L59.47,55.35a79.92,79.92,0,0,1,18.71-13.9L124.68,88l-96,96a16,16,0,0,0,0,22.63l20.69,20.69a16,16,0,0,0,22.63,0l96-96,32,32a16,16,0,0,0,22.63,0l28.69-28.69A16,16,0,0,0,251.34,112Zm-89,2.33L140,136.67,119.31,116l22.35-22.35a8,8,0,0,0,0-11.32L94.32,35a80,80,0,0,1,78.23,20.41l44.22,44.51L188,128.66l-14.34-14.34A8,8,0,0,0,162.34,114.32Zm49,37.66-12-12L228,111.25l12,12Z"
+            />
+          </g>
         </g>
       </svg>
       <span className="font-sans text-[12px] font-bold uppercase tracking-[0.14em] text-ink-3">
