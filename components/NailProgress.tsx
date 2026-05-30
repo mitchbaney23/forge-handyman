@@ -72,7 +72,7 @@ export function NailProgress({ step, totalSteps, done = false }: Props) {
           key={`${step}-${done}`}
           className={`nail-hammer ${step > 0 || done ? "striking" : ""}`}
         >
-          <g transform="translate(130 28) rotate(215) scale(0.19) translate(-128 -128)">
+          <g transform="translate(124 26) rotate(95) scale(0.19) translate(-128 -128)">
             <path
               fill="#BF5700"
               stroke="#24211B"
