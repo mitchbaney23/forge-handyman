@@ -209,7 +209,7 @@ function buildEmailHtml(data: ContactSubmission): string {
                   </tr>
                   ${data.propertyType ? row("Property type", data.propertyType) : ""}
                   ${row("Service", data.serviceType)}
-                  ${row("Preferred date", data.preferredDate)}
+                  ${data.preferredDate ? row("Preferred date", data.preferredDate) : ""}
                   ${data.urgency ? row("Urgency", data.urgency) : ""}
                   ${data.bestContactTime ? row("Best contact time", data.bestContactTime) : ""}
                   ${data.bestContactMethod ? row("Best contact method", data.bestContactMethod) : ""}
@@ -285,7 +285,7 @@ function buildEmailText(data: ContactSubmission): string {
     `Address: ${data.address}`,
     data.propertyType ? `Property type: ${data.propertyType}` : "",
     `Service: ${data.serviceType}`,
-    `Preferred date: ${data.preferredDate}`,
+    data.preferredDate ? `Preferred date: ${data.preferredDate}` : "",
     data.urgency ? `Urgency: ${data.urgency}` : "",
     data.bestContactTime ? `Best contact time: ${data.bestContactTime}` : "",
     data.bestContactMethod ? `Best contact method: ${data.bestContactMethod}` : "",

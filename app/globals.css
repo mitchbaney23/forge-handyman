@@ -168,3 +168,58 @@
     }
   }
 }
+
+/* ---- booking wizard: panel transition + nail-driving hammer ---- */
+.panel-enter {
+  animation: panelIn 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes panelIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* nail sinks smoothly toward flush as steps complete */
+.nail-sink {
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* hammer jabs down to strike on each Next / on submit */
+.nail-hammer {
+  transform-box: fill-box;
+  transform-origin: 50% 90%;
+}
+.nail-hammer.striking {
+  animation: hammer-tap 0.45s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+@keyframes hammer-tap {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+  35% {
+    transform: translateY(6px) rotate(4deg);
+  }
+  55% {
+    transform: translateY(2px) rotate(1deg);
+  }
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-enter {
+    animation: none;
+  }
+  .nail-sink {
+    transition: none;
+  }
+  .nail-hammer.striking {
+    animation: none;
+  }
+}

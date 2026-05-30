@@ -20,6 +20,7 @@ type IconName =
   | "map-pin"
   | "check"
   | "arrow-right"
+  | "arrow-left"
   | "menu"
   | "close"
   | "calendar"
@@ -121,6 +122,7 @@ const PATHS: Record<IconName, React.ReactNode> = {
   ),
   check: <path d="m5 12 5 5 9-10" />,
   "arrow-right": <path d="M5 12h14m-6-6 6 6-6 6" />,
+  "arrow-left": <path d="M19 12H5m6 6-6-6 6-6" />,
   menu: <path d="M4 6h16M4 12h16M4 18h16" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,
   calendar: (

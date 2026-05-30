@@ -15,10 +15,40 @@ import {
   type ServiceCategoryCode,
   type UrgencyCode,
 } from "@/lib/constants";
-import { Icon } from "@/lib/icons";
+import { Icon, type IconName } from "@/lib/icons";
+import { NailProgress } from "@/components/NailProgress";
 import { compressIfNeeded } from "@/lib/photo/compress";
 
 const MAX_PHOTOS = 6;
+
+// Map service-category codes → existing glyphs in lib/icons.tsx.
+const SERVICE_ICONS: Record<ServiceCategoryCode, IconName> = {
+  mounting: "box",
+  plumbing: "wrench",
+  electrical: "lightbulb",
+  drywall_paint: "brush",
+  doors_windows: "panel",
+  carpentry: "saw",
+  exterior: "fence",
+  maintenance: "hammer",
+  multiple: "box",
+  other: "handshake",
+};
+
+const PROPERTY_ICONS: Record<PropertyTypeCode, IconName> = {
+  residential: "home",
+  rental: "tag",
+  commercial: "box",
+  hoa: "shield",
+  other: "handshake",
+};
+
+const URGENCY_ICONS: Record<UrgencyCode, IconName> = {
+  asap: "clock",
+  two_weeks: "calendar",
+  month: "calendar",
+  flexible: "check",
+};
 
 type UploadedPhoto = {
   id: string;
@@ -66,6 +96,46 @@ const initial: FormState = {
   referralSource: "",
 };
 
+// Wizard steps — leads with the job, captures contact info last.
+// `fields` drives per-step "validate before Next" + jump-to-error-on-submit.
+const STEPS: {
+  id: string;
+  title: string;
+  subtitle: string;
+  fields: (keyof FormState)[];
+}[] = [
+  {
+    id: "service",
+    title: "What do you need done?",
+    subtitle: "Pick all that apply — or tell us you're not sure.",
+    fields: ["serviceCategories"],
+  },
+  {
+    id: "details",
+    title: "Tell us about the job",
+    subtitle: "A few words (and a photo or two) help us nail the estimate.",
+    fields: ["description"],
+  },
+  {
+    id: "location",
+    title: "Where's the work?",
+    subtitle: "We serve Garner, Clayton & South Raleigh, NC.",
+    fields: ["address", "propertyType"],
+  },
+  {
+    id: "timing",
+    title: "When works for you?",
+    subtitle: "A rough timeframe is all we need.",
+    fields: ["urgency"],
+  },
+  {
+    id: "contact",
+    title: "How should we reach you?",
+    subtitle: "Last step — then you've nailed it.",
+    fields: ["name", "phone", "email"],
+  },
+];
+
 interface GooglePlaceResult {
   formatted_address?: string;
   place_id?: string;
@@ -75,6 +145,17 @@ interface GooglePlaceResult {
 interface GoogleAutocomplete {
   addListener: (event: string, callback: () => void) => unknown;
   getPlace: () => GooglePlaceResult;
+}
+
+interface GoogleGeocoderResult {
+  formatted_address?: string;
+}
+
+interface GoogleGeocoder {
+  geocode: (
+    request: { location: { lat: number; lng: number } },
+    callback: (results: GoogleGeocoderResult[] | null, status: string) => void,
+  ) => void;
 }
 
 declare global {
@@ -105,6 +186,7 @@ declare global {
             },
           ) => GoogleAutocomplete;
         };
+        Geocoder?: new () => GoogleGeocoder;
         LatLngBounds?: new (
           sw: { lat: number; lng: number },
           ne: { lat: number; lng: number },
@@ -135,10 +217,10 @@ function validate(state: FormState): FieldErrors {
   if (!state.notSure && state.serviceCategories.length === 0)
     errors.serviceCategories =
       "Pick at least one service, or check “I'm not sure.”";
-  if (!state.preferredDate) errors.preferredDate = "Pick a preferred date.";
-  if (!state.urgency) errors.urgency = "Pick how urgent this is.";
+  if (!state.urgency) errors.urgency = "Pick a rough timeframe.";
   if (!state.description.trim())
     errors.description = "Tell us a bit about the work.";
+  // preferredDate is optional — urgency captures the timing.
   return errors;
 }
 
@@ -149,6 +231,14 @@ export function ContactForm() {
   const [serverMessage, setServerMessage] = useState<string>("");
   const [outOfArea, setOutOfArea] = useState<OutOfAreaInfo | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string>("");
+  // Wizard navigation.
+  const [step, setStep] = useState<number>(0);
+  const [maxStepReached, setMaxStepReached] = useState<number>(0);
+  // "Use my current location" UX state.
+  const [geoStatus, setGeoStatus] = useState<
+    "idle" | "locating" | "denied" | "error"
+  >("idle");
+  const geocoderRef = useRef<GoogleGeocoder | null>(null);
   const utmSourceRef = useRef<string>("");
   const honeypotRef = useRef<HTMLInputElement>(null);
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
@@ -185,6 +275,11 @@ export function ContactForm() {
   // Google Places Autocomplete — attaches to the address input when the
   // Maps JS API loads. Biases results to central NC (Forge's service area)
   // but doesn't restrict — customers can still type anything.
+  // NOTE: the address input lives on a wizard panel that is HIDDEN
+  // (display:none) until its step. Because all panels stay MOUNTED (we never
+  // conditionally render them), addressInputRef.current exists at mount and
+  // this one-shot effect attaches successfully. Do not switch panels to
+  // conditional rendering — it would null this ref and break autocomplete.
   useEffect(() => {
     if (!GOOGLE_MAPS_API_KEY) return;
     if (!addressInputRef.current) return;
@@ -239,6 +334,11 @@ export function ContactForm() {
     };
   }, []);
 
+  // Turnstile — renders into the container on the FINAL panel. Like the
+  // address input, that panel stays mounted (display:none) so this one-shot
+  // effect attaches at mount and the token resolves in the background before
+  // the user reaches the last step. Keep the container on the final panel so
+  // any interactive challenge is visible exactly when it's needed.
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY) return;
     if (!turnstileContainerRef.current) return;
@@ -320,6 +420,87 @@ export function ContactForm() {
       setErrors((e) => ({ ...e, serviceCategories: undefined }));
   };
 
+  // ----- wizard navigation -----
+  const isLastStep = step === STEPS.length - 1;
+
+  const goNext = () => {
+    const all = validate(state);
+    const fields = STEPS[step].fields;
+    const firstBad = fields.find((f) => all[f]);
+    if (firstBad) {
+      // Surface only this step's errors (don't reveal later-step errors early).
+      const stepErrors: FieldErrors = {};
+      for (const f of fields) stepErrors[f] = all[f];
+      setErrors((e) => ({ ...e, ...stepErrors }));
+      requestAnimationFrame(() =>
+        document
+          .getElementById(String(firstBad))
+          ?.scrollIntoView({ behavior: "smooth", block: "center" }),
+      );
+      return;
+    }
+    setStep((s) => {
+      const n = Math.min(s + 1, STEPS.length - 1);
+      setMaxStepReached((m) => Math.max(m, n));
+      return n;
+    });
+  };
+
+  const goBack = () => setStep((s) => Math.max(s - 1, 0));
+
+  // Jump to the panel owning the first error, then scroll to it (the field
+  // may be on a hidden panel, so set step before scrolling).
+  const focusFirstError = (errs: FieldErrors) => {
+    const firstKey = Object.keys(errs)[0] as keyof FormState | undefined;
+    if (!firstKey) return;
+    const owning = STEPS.findIndex((s) => s.fields.includes(firstKey));
+    if (owning >= 0) {
+      setStep(owning);
+      setMaxStepReached((m) => Math.max(m, owning));
+    }
+    requestAnimationFrame(() =>
+      document
+        .getElementById(String(firstKey))
+        ?.scrollIntoView({ behavior: "smooth", block: "center" }),
+    );
+  };
+
+  // ----- "Use my current location" -----
+  const handleUseLocation = () => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGeoStatus("error");
+      return;
+    }
+    setGeoStatus("locating");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const Geocoder = window.google?.maps?.Geocoder;
+        if (!Geocoder) {
+          // Maps JS not ready yet — fall back to manual entry.
+          setGeoStatus("error");
+          return;
+        }
+        if (!geocoderRef.current) geocoderRef.current = new Geocoder();
+        geocoderRef.current.geocode(
+          { location: { lat: latitude, lng: longitude } },
+          (results, gStatus) => {
+            if (gStatus === "OK" && results && results[0]?.formatted_address) {
+              update("address", results[0].formatted_address);
+              setGeoStatus("idle");
+            } else {
+              setGeoStatus("error");
+            }
+          },
+        );
+      },
+      (err) => {
+        setGeoStatus(err.code === err.PERMISSION_DENIED ? "denied" : "error");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    );
+  };
+
   const addPhotos = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setPhotoErrors([]);
@@ -399,10 +580,7 @@ export function ContactForm() {
     const nextErrors = validate(state);
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
-      // Scroll to first error
-      const firstErrorKey = Object.keys(nextErrors)[0];
-      const el = document.getElementById(firstErrorKey);
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      focusFirstError(nextErrors);
       return;
     }
 
@@ -473,9 +651,7 @@ export function ContactForm() {
           }
           if (Object.keys(mapped).length > 0) {
             setErrors(mapped);
-            const firstKey = Object.keys(mapped)[0];
-            const el = document.getElementById(firstKey);
-            el?.scrollIntoView({ behavior: "smooth", block: "center" });
+            focusFirstError(mapped);
             const fieldList = Object.entries(mapped)
               .map(([k, v]) => `${k}: ${v}`)
               .join(" · ");
@@ -508,6 +684,8 @@ export function ContactForm() {
       }
       setStatus("success");
       setState(initial);
+      setStep(0);
+      setMaxStepReached(0);
       setPhotos([]);
       setPhotoErrors([]);
       jobIdRef.current = "";
@@ -566,11 +744,9 @@ export function ContactForm() {
   if (status === "success") {
     return (
       <div className="rounded-[10px] border-2 border-ink bg-teal-bg p-[30px] text-center shadow-ticket">
-        <div className="mx-auto flex h-[52px] w-[52px] items-center justify-center rounded-full bg-teal text-white">
-          <Icon name="check" className="h-[26px] w-[26px]" />
-        </div>
-        <h3 className="mt-4 font-display text-2xl font-bold text-[#1d4039]">
-          Request received — thank you!
+        <NailProgress step={STEPS.length} totalSteps={STEPS.length} done />
+        <h3 className="mt-3 font-display text-[clamp(28px,5vw,38px)] font-bold text-[#1d4039]">
+          You NAILED IT! 🔨
         </h3>
         <p className="mx-auto mt-2.5 max-w-[46ch] text-[15px] text-ink-2">
           David will review your details and get back to you shortly with a free
@@ -617,15 +793,6 @@ export function ContactForm() {
         noValidate
         className="overflow-hidden rounded-[10px] border-2 border-ink bg-card shadow-ticket"
       >
-        <div className="flex items-center justify-between bg-ink px-[26px] py-[18px] text-paper">
-          <span className="font-display text-lg font-bold">
-            Work Order Request
-          </span>
-          <span className="font-sans text-[12px] font-bold tracking-[0.14em] text-ember">
-            FREE ESTIMATE
-          </span>
-        </div>
-        <div className="px-[26px] pb-7 pt-2">
         {/* Honeypot */}
         <div
           aria-hidden="true"
@@ -649,392 +816,408 @@ export function ContactForm() {
           />
         </div>
 
-        <FormSection n={1} title="About you">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="name" label="Name" required error={errors.name}>
-              <input
-                id="name"
-                name="name"
-                autoComplete="name"
-                value={state.name}
-                onChange={(e) => update("name", e.target.value)}
-                className={inputClass(!!errors.name)}
-              />
-            </Field>
-            <Field id="phone" label="Phone" required error={errors.phone}>
-              <input
-                id="phone"
-                name="phone"
-                type="tel"
-                autoComplete="tel"
-                placeholder="(555) 555-5555"
-                value={state.phone}
-                onChange={(e) => update("phone", e.target.value)}
-                className={inputClass(!!errors.phone)}
-              />
-            </Field>
+        <div className="flex items-center justify-between bg-ink px-[26px] py-[18px] text-paper">
+          <span className="font-display text-lg font-bold">
+            Work Order Request
+          </span>
+          <span className="font-sans text-[12px] font-bold tracking-[0.14em] text-ember">
+            FREE ESTIMATE
+          </span>
+        </div>
+
+        <div className="px-[26px] pb-7 pt-5 sm:px-[26px]">
+          <NailProgress step={step} totalSteps={STEPS.length} />
+
+          <div className="mt-5">
+            <h3 className="font-display text-xl font-bold text-ink">
+              {STEPS[step].title}
+            </h3>
+            <p className="mt-1 text-sm text-ink-2">{STEPS[step].subtitle}</p>
           </div>
-          <Field id="email" label="Email" required error={errors.email}>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              value={state.email}
-              onChange={(e) => update("email", e.target.value)}
-              className={inputClass(!!errors.email)}
-            />
-          </Field>
-        </FormSection>
 
-        <FormSection n={2} title="About the property">
-          <Field
-            id="address"
-            label="Address"
-            required
-            error={errors.address}
-          >
-            <input
-              ref={addressInputRef}
-              id="address"
-              name="address"
-              autoComplete="street-address"
-              placeholder="Start typing your address…"
-              value={state.address}
-              onChange={(e) => update("address", e.target.value)}
-              className={inputClass(!!errors.address)}
-            />
-            {GOOGLE_MAPS_API_KEY && (
-              <p className="mt-1 text-xs text-ink/50">
-                Pick a suggestion to lock in a verified address.
-              </p>
-            )}
-          </Field>
-          <Field
-            id="propertyType"
-            label="Property type"
-            required
-            error={errors.propertyType}
-          >
-            <select
-              id="propertyType"
-              name="propertyType"
-              value={state.propertyType}
-              onChange={(e) =>
-                update("propertyType", e.target.value as PropertyTypeCode)
-              }
-              className={inputClass(!!errors.propertyType)}
-            >
-              <option value="" disabled>
-                Select property type…
-              </option>
-              {PROPERTY_TYPES.map((opt) => (
-                <option key={opt.code} value={opt.code}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </FormSection>
-
-        <FormSection n={3} title="What do you need help with?">
-          <div>
-            <label
-              htmlFor="serviceCategories"
-              className="mb-2 flex items-center gap-1.5 text-[13.5px] font-bold text-ink"
-            >
-              Services
-              <span className="text-orange">*</span>
-              <span className="ml-1 font-medium text-ink-3">
-                (pick all that apply)
-              </span>
-            </label>
-            <div
-              id="serviceCategories"
-              role="group"
-              aria-labelledby="serviceCategoriesLabel"
-              className="grid gap-2.5 sm:grid-cols-2"
-            >
-              {SERVICE_CATEGORIES.map((opt) => {
-                const isSelected = state.serviceCategories.includes(opt.code);
-                return (
-                  <button
-                    key={opt.code}
-                    type="button"
-                    onClick={() => toggleCategory(opt.code)}
-                    aria-pressed={isSelected}
-                    className={`flex items-center gap-2.5 rounded-[6px] border-2 px-3.5 py-3 text-left text-sm font-medium transition-colors ${
-                      isSelected
-                        ? "border-orange bg-orange/[0.07] text-ink"
-                        : "border-line bg-white text-ink-2 hover:border-ink-3"
-                    }`}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={`flex h-[18px] w-[18px] flex-none items-center justify-center rounded-[4px] border-2 ${
-                        isSelected
-                          ? "border-orange bg-orange text-white"
-                          : "border-line bg-white"
-                      }`}
-                    >
-                      {isSelected && <Icon name="check" className="h-3 w-3" />}
-                    </span>
-                    <span>{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <label className="mt-3 flex items-center gap-2.5 text-sm text-ink-2">
-              <input
-                type="checkbox"
-                checked={state.notSure}
-                onChange={toggleNotSure}
-                className="h-[17px] w-[17px] rounded border-line accent-orange"
+          <div className="mt-5">
+            {/* Step 1 — Service */}
+            <div hidden={step !== 0} className="panel-enter space-y-3">
+              <ChoiceGroup
+                idBase="serviceCategories"
+                multi
+                options={SERVICE_CATEGORIES.map((o) => ({
+                  code: o.code,
+                  label: o.label,
+                  icon: SERVICE_ICONS[o.code],
+                }))}
+                selected={state.serviceCategories}
+                onToggle={(c) => toggleCategory(c as ServiceCategoryCode)}
+                error={errors.serviceCategories}
               />
-              I&rsquo;m not sure what category fits — just talk to me
-            </label>
-            {errors.serviceCategories && (
-              <p
-                className="mt-1.5 text-[12.5px] font-semibold text-red"
-                role="alert"
+              <button
+                type="button"
+                onClick={toggleNotSure}
+                aria-pressed={state.notSure}
+                className={`flex w-full items-center gap-3 rounded-[7px] border-2 px-3.5 py-3 text-left text-sm font-semibold transition-colors ${
+                  state.notSure
+                    ? "border-orange bg-orange/[0.07] text-ink"
+                    : "border-line bg-white text-ink-2 hover:border-ink-3"
+                }`}
               >
-                {errors.serviceCategories}
-              </p>
-            )}
-          </div>
-
-          <Field
-            id="description"
-            label="Description of work"
-            required
-            error={errors.description}
-          >
-            <textarea
-              id="description"
-              name="description"
-              rows={5}
-              placeholder="Tell us what needs doing. Be as specific as you like — the more detail, the better the estimate."
-              value={state.description}
-              onChange={(e) => update("description", e.target.value)}
-              className={inputClass(!!errors.description)}
-            />
-          </Field>
-
-          <div>
-            <label
-              htmlFor="photoInput"
-              className="mb-1.5 flex items-center gap-1.5 text-[13.5px] font-bold text-ink"
-            >
-              Photos
-              <span className="ml-1 font-medium text-ink-3">
-                (optional, up to {MAX_PHOTOS})
-              </span>
-            </label>
-            <p className="mb-3 text-[12.5px] text-ink-3">
-              A picture is worth a thousand words. Snap whatever helps us
-              understand the work — broken thing, room context, whatever.
-            </p>
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-              {photos.map((photo) => (
-                <div
-                  key={photo.id}
-                  className="group relative aspect-square overflow-hidden rounded-[7px] border-2 border-line bg-paper-2"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photo.previewDataUrl}
-                    alt={photo.name}
-                    className="h-full w-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removePhoto(photo.id)}
-                    className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-ink/[0.78] text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
-                    aria-label={`Remove ${photo.name}`}
-                  >
-                    <Icon name="close" className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-              {photos.length < MAX_PHOTOS && (
-                <label
-                  htmlFor="photoInput"
-                  className={`flex aspect-square cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[7px] border-2 border-dashed border-line bg-white text-ink-3 hover:border-ink-3 hover:text-ink ${
-                    photoUploading ? "pointer-events-none opacity-60" : ""
+                <span
+                  aria-hidden="true"
+                  className={`flex h-[18px] w-[18px] flex-none items-center justify-center rounded-[4px] border-2 ${
+                    state.notSure
+                      ? "border-orange bg-orange text-white"
+                      : "border-line bg-white"
                   }`}
                 >
-                  <Icon
-                    name={photoUploading ? "spinner" : "camera"}
-                    className={`h-[26px] w-[26px] ${photoUploading ? "animate-spin" : ""}`}
-                  />
-                  <span className="text-xs font-semibold">
-                    {photoUploading
-                      ? "Uploading…"
-                      : photos.length === 0
-                        ? "Add photos"
-                        : `Add more (${MAX_PHOTOS - photos.length} left)`}
+                  {state.notSure && <Icon name="check" className="h-3 w-3" />}
+                </span>
+                I&rsquo;m not sure what fits — just talk to me
+              </button>
+            </div>
+
+            {/* Step 2 — Details */}
+            <div hidden={step !== 1} className="panel-enter space-y-5">
+              <Field
+                id="description"
+                label="Describe the work"
+                required
+                error={errors.description}
+              >
+                <textarea
+                  id="description"
+                  name="description"
+                  rows={5}
+                  placeholder="Tell us what needs doing. Be as specific as you like — the more detail, the better the estimate."
+                  value={state.description}
+                  onChange={(e) => update("description", e.target.value)}
+                  className={inputClass(!!errors.description)}
+                />
+              </Field>
+
+              <div>
+                <label
+                  htmlFor="photoInput"
+                  className="mb-1.5 flex items-center gap-1.5 text-[13.5px] font-bold text-ink"
+                >
+                  Photos
+                  <span className="ml-1 font-medium text-ink-3">
+                    (optional, up to {MAX_PHOTOS})
                   </span>
-                  <input
-                    ref={fileInputRef}
-                    id="photoInput"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                    multiple
-                    disabled={photoUploading}
-                    onChange={(e) => void addPhotos(e.target.files)}
-                    className="hidden"
-                  />
                 </label>
+                <p className="mb-3 text-[12.5px] text-ink-3">
+                  A picture is worth a thousand words. Snap whatever helps us
+                  understand the work.
+                </p>
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                  {photos.map((photo) => (
+                    <div
+                      key={photo.id}
+                      className="group relative aspect-square overflow-hidden rounded-[7px] border-2 border-line bg-paper-2"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo.previewDataUrl}
+                        alt={photo.name}
+                        className="h-full w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(photo.id)}
+                        className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-ink/[0.78] text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                        aria-label={`Remove ${photo.name}`}
+                      >
+                        <Icon name="close" className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {photos.length < MAX_PHOTOS && (
+                    <label
+                      htmlFor="photoInput"
+                      className={`flex aspect-square cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[7px] border-2 border-dashed border-line bg-white text-ink-3 hover:border-ink-3 hover:text-ink ${
+                        photoUploading ? "pointer-events-none opacity-60" : ""
+                      }`}
+                    >
+                      <Icon
+                        name={photoUploading ? "spinner" : "camera"}
+                        className={`h-[26px] w-[26px] ${photoUploading ? "animate-spin" : ""}`}
+                      />
+                      <span className="text-xs font-semibold">
+                        {photoUploading
+                          ? "Uploading…"
+                          : photos.length === 0
+                            ? "Add photos"
+                            : `Add more (${MAX_PHOTOS - photos.length} left)`}
+                      </span>
+                      <input
+                        ref={fileInputRef}
+                        id="photoInput"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                        multiple
+                        disabled={photoUploading}
+                        onChange={(e) => void addPhotos(e.target.files)}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+                {photoErrors.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-[12.5px] font-semibold text-red">
+                    {photoErrors.map((err, idx) => (
+                      <li key={idx}>{err}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            {/* Step 3 — Location */}
+            <div hidden={step !== 2} className="panel-enter space-y-5">
+              <Field id="address" label="Address" required error={errors.address}>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    ref={addressInputRef}
+                    id="address"
+                    name="address"
+                    autoComplete="street-address"
+                    placeholder="Start typing your address…"
+                    value={state.address}
+                    onChange={(e) => update("address", e.target.value)}
+                    className={inputClass(!!errors.address)}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleUseLocation}
+                    disabled={geoStatus === "locating"}
+                    className="btn-outline shrink-0 whitespace-nowrap px-4 py-3 text-sm"
+                  >
+                    <Icon
+                      name={geoStatus === "locating" ? "spinner" : "map-pin"}
+                      className={`h-4 w-4 ${geoStatus === "locating" ? "animate-spin" : ""}`}
+                    />
+                    {geoStatus === "locating" ? "Locating…" : "Use my location"}
+                  </button>
+                </div>
+                {geoStatus === "denied" && (
+                  <p className="mt-1.5 text-[12.5px] text-ink-3">
+                    We couldn&rsquo;t access your location — just type your
+                    address instead.
+                  </p>
+                )}
+                {geoStatus === "error" && (
+                  <p className="mt-1.5 text-[12.5px] text-ink-3">
+                    Couldn&rsquo;t pin your location — type your address and pick
+                    a suggestion.
+                  </p>
+                )}
+                {GOOGLE_MAPS_API_KEY && geoStatus === "idle" && (
+                  <p className="mt-1.5 text-[12.5px] text-ink-3">
+                    Pick a suggestion to lock in a verified address.
+                  </p>
+                )}
+              </Field>
+
+              <div>
+                <label className="mb-2 block text-[13.5px] font-bold text-ink">
+                  Property type <span className="text-orange">*</span>
+                </label>
+                <ChoiceGroup
+                  idBase="propertyType"
+                  options={PROPERTY_TYPES.map((o) => ({
+                    code: o.code,
+                    label: o.label,
+                    icon: PROPERTY_ICONS[o.code],
+                  }))}
+                  selected={state.propertyType ? [state.propertyType] : []}
+                  onToggle={(c) =>
+                    update("propertyType", c as PropertyTypeCode)
+                  }
+                  error={errors.propertyType}
+                />
+              </div>
+            </div>
+
+            {/* Step 4 — Timing */}
+            <div hidden={step !== 3} className="panel-enter space-y-5">
+              <div>
+                <label className="mb-2 block text-[13.5px] font-bold text-ink">
+                  How soon? <span className="text-orange">*</span>
+                </label>
+                <ChoiceGroup
+                  idBase="urgency"
+                  options={URGENCY_OPTIONS.map((o) => ({
+                    code: o.code,
+                    label: o.label,
+                    icon: URGENCY_ICONS[o.code],
+                  }))}
+                  selected={state.urgency ? [state.urgency] : []}
+                  onToggle={(c) => update("urgency", c as UrgencyCode)}
+                  error={errors.urgency}
+                />
+              </div>
+              <Field id="preferredDate" label="Want a specific day? (optional)">
+                <input
+                  id="preferredDate"
+                  name="preferredDate"
+                  type="date"
+                  value={state.preferredDate}
+                  min={new Date().toISOString().split("T")[0]}
+                  onChange={(e) => update("preferredDate", e.target.value)}
+                  className={inputClass(false)}
+                />
+              </Field>
+            </div>
+
+            {/* Step 5 — Contact */}
+            <div hidden={step !== 4} className="panel-enter space-y-5">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field id="name" label="Name" required error={errors.name}>
+                  <input
+                    id="name"
+                    name="name"
+                    autoComplete="name"
+                    value={state.name}
+                    onChange={(e) => update("name", e.target.value)}
+                    className={inputClass(!!errors.name)}
+                  />
+                </Field>
+                <Field id="phone" label="Phone" required error={errors.phone}>
+                  <input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    autoComplete="tel"
+                    placeholder="(555) 555-5555"
+                    value={state.phone}
+                    onChange={(e) => update("phone", e.target.value)}
+                    className={inputClass(!!errors.phone)}
+                  />
+                </Field>
+              </div>
+              <Field id="email" label="Email" required error={errors.email}>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  value={state.email}
+                  onChange={(e) => update("email", e.target.value)}
+                  className={inputClass(!!errors.email)}
+                />
+              </Field>
+
+              <div className="border-t-2 border-dashed border-line pt-4">
+                <p className="mb-3 text-[13px] font-bold uppercase tracking-[0.1em] text-ink-3">
+                  Optional — helps us reach you faster
+                </p>
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-[13.5px] font-bold text-ink">
+                      Best time to reach you
+                    </label>
+                    <ChoiceGroup
+                      idBase="bestContactTime"
+                      options={CONTACT_TIMES.map((o) => ({
+                        code: o.code,
+                        label: o.label,
+                      }))}
+                      selected={[state.bestContactTime]}
+                      onToggle={(c) =>
+                        update("bestContactTime", c as ContactTimeCode)
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-[13.5px] font-bold text-ink">
+                      Preferred contact method
+                    </label>
+                    <ChoiceGroup
+                      idBase="bestContactMethod"
+                      options={CONTACT_METHODS.map((o) => ({
+                        code: o.code,
+                        label: o.label,
+                      }))}
+                      selected={[state.bestContactMethod]}
+                      onToggle={(c) =>
+                        update("bestContactMethod", c as ContactMethodCode)
+                      }
+                    />
+                  </div>
+                  <Field id="referralSource" label="How did you hear about us?">
+                    <select
+                      id="referralSource"
+                      name="referralSource"
+                      value={state.referralSource}
+                      onChange={(e) => update("referralSource", e.target.value)}
+                      className={inputClass(false)}
+                    >
+                      <option value="">Prefer not to say</option>
+                      {REFERRAL_SOURCES.map((source) => (
+                        <option key={source} value={source}>
+                          {source}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              </div>
+
+              {TURNSTILE_SITE_KEY && (
+                <div
+                  className="mx-auto flex max-w-[320px] justify-center"
+                  ref={turnstileContainerRef}
+                />
+              )}
+
+              {status === "error" && serverMessage && (
+                <div
+                  role="alert"
+                  className="rounded-[5px] border-2 border-red bg-red-bg p-3 text-sm font-medium text-red"
+                >
+                  {serverMessage}
+                </div>
               )}
             </div>
-            {photoErrors.length > 0 && (
-              <ul className="mt-2 space-y-1 text-[12.5px] font-semibold text-red">
-                {photoErrors.map((err, idx) => (
-                  <li key={idx}>{err}</li>
-                ))}
-              </ul>
+          </div>
+
+          {/* Footer — Back / Next / Submit */}
+          <div className="mt-7 flex items-center gap-3">
+            {step > 0 && (
+              <button
+                type="button"
+                onClick={goBack}
+                className="btn-outline"
+              >
+                <Icon name="arrow-left" className="h-4 w-4" />
+                Back
+              </button>
+            )}
+            {!isLastStep ? (
+              <button
+                type="button"
+                onClick={goNext}
+                className="btn-primary ml-auto"
+              >
+                Next
+                <Icon name="arrow-right" className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={status === "submitting"}
+                className="btn-primary ml-auto"
+              >
+                {status === "submitting" ? "Sending…" : "Send My Request"}
+                {status !== "submitting" && (
+                  <Icon name="arrow-right" className="h-4 w-4" />
+                )}
+              </button>
             )}
           </div>
-        </FormSection>
-
-        <FormSection n={4} title="When do you need this?">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              id="preferredDate"
-              label="Preferred date"
-              required
-              error={errors.preferredDate}
-            >
-              <input
-                id="preferredDate"
-                name="preferredDate"
-                type="date"
-                value={state.preferredDate}
-                min={new Date().toISOString().split("T")[0]}
-                onChange={(e) => update("preferredDate", e.target.value)}
-                className={inputClass(!!errors.preferredDate)}
-              />
-            </Field>
-            <Field
-              id="urgency"
-              label="Urgency"
-              required
-              error={errors.urgency}
-            >
-              <select
-                id="urgency"
-                name="urgency"
-                value={state.urgency}
-                onChange={(e) =>
-                  update("urgency", e.target.value as UrgencyCode)
-                }
-                className={inputClass(!!errors.urgency)}
-              >
-                <option value="" disabled>
-                  Select urgency…
-                </option>
-                {URGENCY_OPTIONS.map((opt) => (
-                  <option key={opt.code} value={opt.code}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-        </FormSection>
-
-        <FormSection n={5} title="How should we reach you?">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="bestContactTime" label="Best time to reach you">
-              <select
-                id="bestContactTime"
-                name="bestContactTime"
-                value={state.bestContactTime}
-                onChange={(e) =>
-                  update(
-                    "bestContactTime",
-                    e.target.value as ContactTimeCode,
-                  )
-                }
-                className={inputClass(false)}
-              >
-                {CONTACT_TIMES.map((opt) => (
-                  <option key={opt.code} value={opt.code}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field id="bestContactMethod" label="Preferred contact method">
-              <select
-                id="bestContactMethod"
-                name="bestContactMethod"
-                value={state.bestContactMethod}
-                onChange={(e) =>
-                  update(
-                    "bestContactMethod",
-                    e.target.value as ContactMethodCode,
-                  )
-                }
-                className={inputClass(false)}
-              >
-                {CONTACT_METHODS.map((opt) => (
-                  <option key={opt.code} value={opt.code}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <Field id="referralSource" label="How did you hear about us?">
-            <select
-              id="referralSource"
-              name="referralSource"
-              value={state.referralSource}
-              onChange={(e) => update("referralSource", e.target.value)}
-              className={inputClass(false)}
-            >
-              <option value="">Prefer not to say</option>
-              {REFERRAL_SOURCES.map((source) => (
-                <option key={source} value={source}>
-                  {source}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </FormSection>
-
-        <div className="mt-6 space-y-4">
-          {TURNSTILE_SITE_KEY && (
-            <div
-              className="mx-auto flex max-w-[320px] justify-center"
-              ref={turnstileContainerRef}
-            />
+          {isLastStep && (
+            <p className="mt-3 text-center text-[12.5px] text-ink-3">
+              We&rsquo;ll respond within one business day. No spam, ever.
+            </p>
           )}
-
-          {status === "error" && serverMessage && (
-            <div
-              role="alert"
-              className="rounded-[5px] border-2 border-red bg-red-bg p-3 text-sm font-medium text-red"
-            >
-              {serverMessage}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={status === "submitting"}
-            className="btn-primary w-full text-base"
-          >
-            {status === "submitting" ? "Sending…" : "Send My Request"}
-            {status !== "submitting" && (
-              <Icon name="arrow-right" className="h-4 w-4" />
-            )}
-          </button>
-          <p className="text-center text-[12.5px] text-ink-3">
-            We&rsquo;ll respond within one business day. No spam, ever.
-          </p>
-        </div>
         </div>
       </form>
     </>
@@ -1048,28 +1231,6 @@ function readAsDataUrl(file: Blob): Promise<string> {
     reader.onload = () => resolve(String(reader.result || ""));
     reader.readAsDataURL(file);
   });
-}
-
-function FormSection({
-  n,
-  title,
-  children,
-}: {
-  n: number;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <fieldset className="border-b-2 border-dashed border-line py-6 last:border-b-0">
-      <legend className="mb-[18px] flex items-center gap-3">
-        <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full bg-orange font-display text-[15px] font-bold text-white">
-          {n}
-        </span>
-        <span className="font-display text-xl font-bold text-ink">{title}</span>
-      </legend>
-      <div className="space-y-4">{children}</div>
-    </fieldset>
-  );
 }
 
 function inputClass(hasError: boolean) {
@@ -1104,6 +1265,71 @@ function Field({
         {required && <span className="text-orange">*</span>}
       </label>
       {children}
+      {error && (
+        <p className="mt-1.5 text-[12.5px] font-semibold text-red" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ChoiceGroup({
+  idBase,
+  options,
+  selected,
+  onToggle,
+  multi = false,
+  error,
+}: {
+  idBase: string;
+  options: { code: string; label: string; icon?: IconName }[];
+  selected: string[];
+  onToggle: (code: string) => void;
+  multi?: boolean;
+  error?: string;
+}) {
+  return (
+    <div>
+      <div id={idBase} role="group" className="grid gap-2.5 sm:grid-cols-2">
+        {options.map((opt) => {
+          const isSel = selected.includes(opt.code);
+          return (
+            <button
+              key={opt.code}
+              type="button"
+              aria-pressed={isSel}
+              onClick={() => onToggle(opt.code)}
+              className={`flex items-center gap-3 rounded-[7px] border-2 px-3.5 py-3 text-left text-sm font-semibold transition-colors ${
+                isSel
+                  ? "border-orange bg-orange/[0.07] text-ink"
+                  : "border-line bg-white text-ink-2 hover:border-ink-3"
+              }`}
+            >
+              {opt.icon && (
+                <span
+                  className={`flex h-9 w-9 flex-none items-center justify-center rounded-md ${
+                    isSel ? "bg-orange text-white" : "bg-paper-2 text-ink-2"
+                  }`}
+                >
+                  <Icon name={opt.icon} className="h-[18px] w-[18px]" />
+                </span>
+              )}
+              <span className="min-w-0">{opt.label}</span>
+              <span
+                aria-hidden="true"
+                className={`ml-auto flex h-5 w-5 flex-none items-center justify-center border-2 ${
+                  multi ? "rounded-[5px]" : "rounded-full"
+                } ${
+                  isSel ? "border-orange bg-orange text-white" : "border-line bg-white"
+                }`}
+              >
+                {isSel && <Icon name="check" className="h-3 w-3" />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
       {error && (
         <p className="mt-1.5 text-[12.5px] font-semibold text-red" role="alert">
           {error}

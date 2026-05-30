@@ -52,8 +52,12 @@ const contactSchema = z
     notSure: z.boolean().optional().default(false),
     propertyType: propertyTypeSchema,
     preferredDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format'),
+      .union([
+        z.literal(''),
+        z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format'),
+      ])
+      .optional()
+      .default(''),
     description: freeTextSchema,
     urgency: urgencySchema,
     bestContactTime: contactTimeSchema,
