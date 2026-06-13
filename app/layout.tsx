@@ -54,13 +54,13 @@ export const metadata: Metadata = {
     siteName: BUSINESS.name,
     title: `${BUSINESS.name} — Honest Work. Built to Last.`,
     description:
-      "Trusted local handyman serving Garner, Clayton, and South Raleigh. Free estimates, licensed and insured, 40+ years of craftsmanship.",
+      "Trusted local handyman serving Garner, Clayton, and South Raleigh. Free estimates, fully insured, 40+ years of craftsmanship.",
   },
   twitter: {
     card: "summary_large_image",
     title: `${BUSINESS.name} — Honest Work. Built to Last.`,
     description:
-      "Trusted local handyman serving Garner, Clayton, and South Raleigh. Free estimates, licensed and insured.",
+      "Trusted local handyman serving Garner, Clayton, and South Raleigh. Free estimates, fully insured.",
   },
   robots: {
     index: true,

@@ -31,7 +31,7 @@ export function Hero() {
           <div className="mt-7 flex flex-wrap gap-2">
             {[
               "Free estimates",
-              "Licensed & insured",
+              "Fully insured",
               "Same-week availability",
             ].map((chip) => (
               <span

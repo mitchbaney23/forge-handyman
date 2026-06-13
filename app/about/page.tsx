@@ -25,7 +25,7 @@ const FACTS: { icon: IconName; term: string; def: React.ReactNode }[] = [
   },
   {
     icon: "shield",
-    term: "Licensed & Insured",
+    term: "Fully Insured",
     def: "Full coverage for your home and our work.",
   },
   {
@@ -125,29 +125,22 @@ export default function AboutPage() {
             </h2>
             <div className="mt-6 space-y-[18px] text-[16.5px] leading-relaxed text-ink-2">
               <p>
-                David Baney has been building and fixing things for over 40
-                years. Long before this was a business, it was a way of life —
-                the kind of lifelong, hands-on work where you learn by doing, and
-                you do a lot of it.
+                Forge Handyman Service is a proud, homegrown NC family business
+                backed by more than 40 years of experience. Our reputation is
+                built the same way a forge shapes steel &mdash; through hard work,
+                dedication, and attention to detail.
               </p>
               <p>
-                Forge Handyman Service was started with one goal: bring that kind
-                of craftsmanship back to the homeowner. Not a call-center
-                dispatcher, not a rotating crew of technicians you&rsquo;ve never
-                met — just a real person who shows up to your home, listens to
-                what you need, and does the job right the first time.
+                We aren&rsquo;t just working in your community; we are a part of
+                it. We believe in honest communication, dependable service, and
+                fair pricing that respects your hard-earned money. Every project
+                is an opportunity to serve our neighbors with the integrity and
+                craftsmanship they deserve.
               </p>
               <p>
-                Behind the scenes, David&rsquo;s son Mitch Baney handles the
-                business side of things — scheduling, estimates, and making sure
-                every customer has a smooth experience from the first email to
-                the final walk-through. It&rsquo;s a family operation in every
-                sense.
-              </p>
-              <p>
-                Forge Handyman Service is part of a growing family of local
-                ventures built around the same principle: do honest work for your
-                neighbors, and the business takes care of itself.
+                Whether it&rsquo;s a repair or a home improvement project,
+                we&rsquo;re committed to delivering quality work you can count on.
+                Forging lasting relationships, one project at a time.
               </p>
             </div>
           </Reveal>

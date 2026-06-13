@@ -136,7 +136,7 @@ export const SERVICES: Service[] = [
 ];
 
 export const TRUST_SIGNALS = [
-  { icon: "shield", label: "Licensed & Insured" },
+  { icon: "shield", label: "Fully Insured" },
   { icon: "hammer", label: "40+ Years Experience" },
   { icon: "home", label: "Locally Owned" },
   { icon: "star", label: "5-Star Reviews" },

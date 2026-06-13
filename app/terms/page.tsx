@@ -59,7 +59,7 @@ export default function TermsPage() {
 
       <h2>Liability</h2>
       <p>
-        Forge is licensed and insured. To the extent permitted by North Carolina
+        Forge is fully insured. To the extent permitted by North Carolina
         law, our liability for any claim related to the work is limited to the
         amount you paid for that work. We are not liable for indirect or
         consequential damages.
