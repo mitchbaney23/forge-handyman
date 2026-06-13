@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { JobActions } from "./JobActions";
 import { StatusBadge } from "@/components/admin/StatusBadge";
-import { findRowByJobId } from "@/lib/sheet/repo";
+import { findRowByJobId } from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "Job — Forge Admin",

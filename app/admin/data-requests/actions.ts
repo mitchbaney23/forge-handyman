@@ -6,9 +6,14 @@ import * as Sentry from "@sentry/nextjs";
 import { authOptions, isAllowlistedEmail } from "@/lib/auth";
 import { logger, maskEmail } from "@/lib/security/logger";
 import { checkLimit } from "@/lib/security/rate-limit";
-import { appendAuditRow } from "@/lib/sheet/audit-log";
-import { findPriorJobsByEmail } from "@/lib/sheet/queries";
-import { updateRowByJobId, type ContactRowPartial } from "@/lib/sheet/repo";
+import {
+  appendAuditRow,
+  findPriorJobsByEmail,
+  redactCustomerByEmail,
+  redactJobLegacyByIds,
+  updateRowByJobId,
+  type ContactRowPartial,
+} from "@/lib/data";
 
 const REDACTED = "[REDACTED]";
 
@@ -62,17 +67,36 @@ export async function anonymizeCustomer(
     }
 
     let count = 0;
+    const redactedJobIds: string[] = [];
     for (const row of targets) {
       if (!row.job_id) continue;
       await updateRowByJobId(row.job_id, ANONYMIZED_FIELDS);
+      redactedJobIds.push(row.job_id);
       count += 1;
     }
+
+    // Clear the migration's raw-row stash (postgres backend only — a no-op on
+    // sheet). jobs.legacy holds the COMPLETE original sheet row incl. PII and
+    // can't be reached via updateRowByJobId, so without this the customer's
+    // original name/phone/email/address would survive the deletion request in
+    // legacy AND be re-emitted daily in the backup CSV. Matched by the ids we
+    // just redacted (email is already '[REDACTED]' on those rows now).
+    const legacyRedaction = await redactJobLegacyByIds(redactedJobIds);
+
+    // Also redact the normalized customer record (postgres backend only — a
+    // no-op on sheet). This is the compliance path: a failure here must fail
+    // the action, so it runs unguarded inside the surrounding try.
+    const customerRedaction = await redactCustomerByEmail(email);
 
     await appendAuditRow({
       actor: admin.email,
       action: "data.anonymized",
       target: maskEmail(email),
-      after: JSON.stringify({ rowsAnonymized: count }),
+      after: JSON.stringify({
+        rowsAnonymized: count,
+        legacyCleared: legacyRedaction.updated,
+        customerRedacted: customerRedaction.updated,
+      }),
       notes: "Customer data-deletion request — PII redacted, rows retained for tax compliance.",
     });
     logger.info(

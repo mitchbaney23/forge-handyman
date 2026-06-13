@@ -3,7 +3,7 @@
 Production marketing website for **Forge Handyman Service**, a local
 handyman business serving Garner, Clayton, and South Raleigh, NC.
 
-Built with **Next.js 14 (App Router)**, **TypeScript**, and **Tailwind CSS**.
+Built with **Next.js 16 (App Router)**, **TypeScript**, and **Tailwind CSS**.
 The contact form submits to an API route that simultaneously sends a Gmail
 notification, creates a Google Calendar event, and appends a row to a
 Google Sheet (lightweight CRM) via the `googleapis` SDK.
@@ -180,6 +180,12 @@ forge-handyman/
 └── README.md
 ```
 
+The data layer is pluggable: jobs, customers, and the audit log live in a
+Google Sheet (default) or Supabase Postgres, selected by the `DATA_BACKEND`
+env var. `docs/stage-13-postgres-design.md` and the stage docs in
+`progress/` are the source of truth for the data layer's design, schema,
+and cutover/rollback procedures.
+
 ---
 
 ## Adding Real Photos
@@ -193,9 +199,8 @@ into `public/` and un-comment.
 
 ## Notes
 
-- The contact form rate-limits submissions to 10 per IP per hour (in-memory,
-  per-instance). Swap for Vercel KV or Upstash Redis if that becomes a
-  real problem.
+- The contact form rate-limits submissions per IP via Upstash Redis
+  (shared across all serverless instances) — see `lib/security/rate-limit.ts`.
 - Email is the critical path — if that fails the user gets an error. Calendar
   and Sheets failures are logged but don't block the success response.
 - No CMS, no DB — content lives in `lib/constants.ts`. Testimonials,

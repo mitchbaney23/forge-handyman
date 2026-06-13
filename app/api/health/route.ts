@@ -2,6 +2,8 @@ import { google } from "googleapis";
 import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { getStripe } from "@/lib/stripe/client";
+import { getBackend, type DataBackend } from "@/lib/data/backend";
+import { getSupabaseClient } from "@/lib/data/pg/client";
 import { logger } from "@/lib/security/logger";
 
 export const runtime = "nodejs";
@@ -45,15 +47,37 @@ async function withTimeout<T>(
 
 async function checkEnvVars(): Promise<HealthCheck> {
   const started = Date.now();
+
+  // getBackend() throws on a garbage DATA_BACKEND value. Surface that as an
+  // env-vars failure rather than letting it crash the route — a typo in the
+  // cutover flag must show up as a red health check, not a 500.
+  let backend: DataBackend;
+  try {
+    backend = getBackend();
+  } catch (err) {
+    return {
+      name: "env-vars",
+      status: "fail",
+      latencyMs: Date.now() - started,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+
   const required = [
+    // Google service-account creds drive Gmail + Calendar regardless of the
+    // data backend, so they stay unconditional.
     "GOOGLE_SERVICE_ACCOUNT_EMAIL",
     "GOOGLE_PRIVATE_KEY",
-    "GOOGLE_SHEET_ID",
     "BUSINESS_EMAIL",
     "NEXTAUTH_SECRET",
     "ADMIN_ALLOWLIST",
     "UPSTASH_REDIS_REST_URL",
     "UPSTASH_REDIS_REST_TOKEN",
+    // Backend-specific: only the active datastore's vars are required.
+    ...(backend === "sheet" ? ["GOOGLE_SHEET_ID"] : []),
+    ...(backend === "postgres"
+      ? ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]
+      : []),
   ];
   const missing = required.filter((name) => !process.env[name]);
   return {
@@ -105,6 +129,42 @@ async function checkSheets(): Promise<HealthCheck> {
   } catch (err) {
     return {
       name: "google-sheets",
+      status: "fail",
+      latencyMs: Date.now() - started,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+async function checkPostgres(): Promise<HealthCheck> {
+  const started = Date.now();
+  try {
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return {
+        name: "postgres",
+        status: "skipped",
+        latencyMs: Date.now() - started,
+        detail: "Supabase env vars missing",
+      };
+    }
+    const supabase = getSupabaseClient();
+    // Cheap call: head count on jobs — no row data transferred.
+    await withTimeout(
+      Promise.resolve(
+        supabase.from("jobs").select("*", { count: "exact", head: true }),
+      ).then(({ error }) => {
+        if (error) throw new Error(error.message);
+      }),
+      TIMEOUT_MS,
+    );
+    return {
+      name: "postgres",
+      status: "ok",
+      latencyMs: Date.now() - started,
+    };
+  } catch (err) {
+    return {
+      name: "postgres",
       status: "fail",
       latencyMs: Date.now() - started,
       detail: err instanceof Error ? err.message : String(err),
@@ -171,11 +231,43 @@ async function checkUpstash(): Promise<HealthCheck> {
   }
 }
 
+// Connectivity check for the INACTIVE backend: never run it (rollback must be
+// able to go green while the other datastore is down, and staged-but-unused
+// vars must not page production). Report it as skipped so the JSON still lists
+// every check.
+function inactiveBackendCheck(name: "google-sheets" | "postgres"): HealthCheck {
+  return {
+    name,
+    status: "skipped",
+    latencyMs: 0,
+    detail: "inactive backend",
+  };
+}
+
 export async function GET(): Promise<NextResponse> {
   const startedAt = new Date().toISOString();
+
+  // Resolve the active backend so we only run (and only let fail) that
+  // datastore's connectivity check. A garbage DATA_BACKEND throws — checkEnvVars
+  // already turns that into a red check; here we fall back to running NEITHER
+  // backend's connectivity check (both reported skipped) so the route still
+  // responds with a clear env-vars failure instead of 500ing.
+  let backend: DataBackend | null = null;
+  try {
+    backend = getBackend();
+  } catch {
+    backend = null;
+  }
+
+  const sheetsCheck =
+    backend === "sheet" ? checkSheets() : Promise.resolve(inactiveBackendCheck("google-sheets"));
+  const postgresCheck =
+    backend === "postgres" ? checkPostgres() : Promise.resolve(inactiveBackendCheck("postgres"));
+
   const checks = await Promise.all([
     checkEnvVars(),
-    checkSheets(),
+    sheetsCheck,
+    postgresCheck,
     checkStripe(),
     checkUpstash(),
   ]);
@@ -193,6 +285,7 @@ export async function GET(): Promise<NextResponse> {
   const body = {
     status: overall,
     timestamp: startedAt,
+    backend,
     checks,
   };
 

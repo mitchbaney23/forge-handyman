@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import * as Sentry from "@sentry/nextjs";
 import { authOptions, isAllowlistedEmail } from "@/lib/auth";
+import { getBackend } from "@/lib/data/backend";
 import { logger } from "@/lib/security/logger";
 import { appendAuditRow, ensureAuditTab } from "@/lib/sheet/audit-log";
 import {
@@ -44,6 +45,17 @@ export async function runSheetMigration(): Promise<MigrationResult> {
   const actor = session?.user?.email ?? null;
   if (!actor || !isAllowlistedEmail(actor)) {
     return { ok: false, error: "Not authorized", stepsBeforeFailure: [] };
+  }
+
+  // Retired in postgres mode: this tool manages the Google Sheet schema, which
+  // is no longer the data backend. Return immediately so no sheet writes run.
+  if (getBackend() === "postgres") {
+    return {
+      ok: false,
+      error:
+        "Sheet migration is retired — the data backend is Postgres now. This tool only managed the Google Sheet schema.",
+      stepsBeforeFailure: [],
+    };
   }
 
   const steps: MigrationStep[] = [];

@@ -1,5 +1,5 @@
 import { buildIdempotencyKey, getStripe } from '@/lib/stripe/client'
-import { appendAuditRow } from '@/lib/sheet/audit-log'
+import { appendAuditRow } from '@/lib/data'
 import { logger, maskEmail } from '@/lib/security/logger'
 
 export interface QuoteLineItem {

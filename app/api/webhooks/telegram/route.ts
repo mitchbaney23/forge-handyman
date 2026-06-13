@@ -5,8 +5,7 @@ import {
   checkLimit,
   extractIp,
 } from "@/lib/security/rate-limit";
-import { appendAuditRow } from "@/lib/sheet/audit-log";
-import { findRowByJobId, updateRowByJobId } from "@/lib/sheet/repo";
+import { appendAuditRow, findRowByJobId, updateRowByJobId } from "@/lib/data";
 import {
   answerCallbackQuery,
   editMessageText,

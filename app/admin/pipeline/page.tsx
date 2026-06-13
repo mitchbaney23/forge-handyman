@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { listJobs, type JobRow } from "@/lib/sheet/queries";
+import { listJobs, type JobRow } from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "Pipeline — Forge Admin",

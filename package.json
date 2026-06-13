@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "prepare": "husky",
     "secret-scan": "secretlint --maskSecrets \"**/*\" \"!**/node_modules/**\" \"!**/.next/**\" \"!**/.git/**\" \"!**/package-lock.json\"",
-    "setup-sheet": "tsx scripts/setup-sheet.ts"
+    "setup-sheet": "tsx scripts/setup-sheet.ts",
+    "test": "vitest run"
   },
   "lint-staged": {
     "*": [
@@ -22,6 +23,7 @@
   },
   "dependencies": {
     "@sentry/nextjs": "^10.53.1",
+    "@supabase/supabase-js": "^2.108.1",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
     "googleapis": "^144.0.0",
@@ -36,6 +38,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@secretlint/secretlint-rule-pattern": "^13.0.2",
     "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
     "@types/node": "^20.14.0",
     "@types/react": "^19.2.15",
@@ -50,6 +53,7 @@
     "secretlint": "^13.0.2",
     "tailwindcss": "^3.4.4",
     "tsx": "^4.22.3",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^4.1.8"
   }
 }

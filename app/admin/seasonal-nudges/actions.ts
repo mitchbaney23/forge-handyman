@@ -10,8 +10,7 @@ import { buildUnsubscribeUrl } from "@/lib/automation/unsubscribe";
 import { BUSINESS } from "@/lib/constants";
 import { logger, maskEmail } from "@/lib/security/logger";
 import { checkLimit } from "@/lib/security/rate-limit";
-import { appendAuditRow } from "@/lib/sheet/audit-log";
-import { updateRowByJobId } from "@/lib/sheet/repo";
+import { appendAuditRow, updateRowByJobId } from "@/lib/data";
 
 const SCOPES = ["https://www.googleapis.com/auth/gmail.send"];
 

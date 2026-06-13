@@ -2,10 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { sendEmailWithAttachments } from "@/lib/email/attachment";
 import { logger } from "@/lib/security/logger";
-import { exportAllTabsCsv } from "@/lib/sheet/export";
+import { exportAllTabsCsv } from "@/lib/data";
+import { getBackend } from "@/lib/data/backend";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 function unauthorized(): NextResponse {
   return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -46,25 +48,51 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const summaryLines = tabs
       .map((t) => `  ${t.tabName}: ${t.rowCount} row${t.rowCount === 1 ? "" : "s"}`)
       .join("\n");
-    const bodyText = [
-      `Daily Forge Sheet backup — ${dateStamp}`,
-      "",
-      `Total rows across ${tabs.length} tab${tabs.length === 1 ? "" : "s"}: ${totalRows}`,
-      "",
-      "Per-tab row counts:",
-      summaryLines,
-      "",
-      "Each tab is attached as its own CSV file. Files are RFC 4180 encoded.",
-      "",
-      "Drop these into a backup folder somewhere safe (Google Drive, Dropbox, external drive).",
-      "If you ever need to restore: paste the CSV contents back into the matching tab in the master sheet.",
-      "",
-      "— Forge automation",
-    ].join("\n");
+
+    const isPostgres = getBackend() === "postgres";
+    const subject = isPostgres
+      ? `Forge DB Backup — ${dateStamp}`
+      : `Forge Sheet Backup — ${dateStamp}`;
+    const bodyText = isPostgres
+      ? [
+          `Daily Forge DB backup — ${dateStamp}`,
+          "",
+          `Total rows across ${tabs.length} table${tabs.length === 1 ? "" : "s"}: ${totalRows}`,
+          "",
+          "Per-table row counts:",
+          summaryLines,
+          "",
+          "Each table is attached as its own CSV file. Files are RFC 4180 encoded.",
+          "",
+          "Drop these into a backup folder somewhere safe (Google Drive, Dropbox, external drive).",
+          "If you ever need to restore: open the Supabase dashboard → Table Editor, select the",
+          "matching table, and use Insert → Import data from CSV. Match the file to the table by name",
+          "(customers / jobs / activities).",
+          "",
+          "Note: the Google Sheet is retired — it is no longer the data backend, so do NOT restore",
+          "into it. Postgres (Supabase) is the source of truth.",
+          "",
+          "— Forge automation",
+        ].join("\n")
+      : [
+          `Daily Forge Sheet backup — ${dateStamp}`,
+          "",
+          `Total rows across ${tabs.length} tab${tabs.length === 1 ? "" : "s"}: ${totalRows}`,
+          "",
+          "Per-tab row counts:",
+          summaryLines,
+          "",
+          "Each tab is attached as its own CSV file. Files are RFC 4180 encoded.",
+          "",
+          "Drop these into a backup folder somewhere safe (Google Drive, Dropbox, external drive).",
+          "If you ever need to restore: paste the CSV contents back into the matching tab in the master sheet.",
+          "",
+          "— Forge automation",
+        ].join("\n");
 
     await sendEmailWithAttachments({
       to: businessEmail,
-      subject: `Forge Sheet Backup — ${dateStamp}`,
+      subject,
       bodyText,
       attachments,
     });

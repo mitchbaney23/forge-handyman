@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SetupSheetForm } from "./SetupSheetForm";
+import { getBackend } from "@/lib/data/backend";
 import { SHEET_HEADERS, readHeaderRow } from "@/lib/sheet/repo";
 
 export const metadata: Metadata = {
@@ -21,6 +22,34 @@ function arraysEqual(a: readonly string[], b: readonly string[]): boolean {
 
 export default async function SetupSheetPage() {
   const expected = Array.from(SHEET_HEADERS);
+
+  // Retired in postgres mode: this tool managed the Google Sheet schema, which
+  // is no longer the data backend. Render a short notice and run NO sheet reads.
+  if (getBackend() === "postgres") {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div>
+          <Link
+            href="/admin"
+            className="text-xs font-medium text-ink/60 hover:text-navy"
+          >
+            ← Back to overview
+          </Link>
+        </div>
+        <header>
+          <p className="eyebrow">Maintenance</p>
+          <h1 className="mt-1 text-2xl font-semibold text-navy">
+            Sheet schema migration
+          </h1>
+        </header>
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+          Retired — the data backend is Postgres now; this tool managed the
+          Google Sheet schema.
+        </section>
+      </div>
+    );
+  }
+
   let current: string[] = [];
   let loadError: string | null = null;
   try {

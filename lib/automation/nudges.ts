@@ -1,5 +1,5 @@
 import type { ServiceCategoryCode } from "@/lib/constants";
-import { listJobs, type JobRow } from "@/lib/sheet/queries";
+import { listJobs, type JobRow } from "@/lib/data";
 import { pickTemplate, type NudgeTemplate } from "@/lib/templates/seasonal";
 
 const NUDGE_ELIGIBLE_AFTER_DAYS = 180;

@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import * as Sentry from "@sentry/nextjs";
 import { verifyUnsubscribeToken } from "@/lib/automation/unsubscribe";
 import { logger, maskEmail } from "@/lib/security/logger";
-import { listJobs } from "@/lib/sheet/queries";
-import { updateRowByJobId } from "@/lib/sheet/repo";
+import { listJobs, updateRowByJobId } from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "Unsubscribe — Forge Handyman",

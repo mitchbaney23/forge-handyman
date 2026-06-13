@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { JobCard } from "@/components/admin/JobCard";
-import { groupJobsForOverview, listJobs, type JobRow } from "@/lib/sheet/queries";
+import { groupJobsForOverview, listJobs, type JobRow } from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "Forge Admin",

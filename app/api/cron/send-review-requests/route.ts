@@ -8,9 +8,9 @@ import { sendReviewRequestEmail } from "@/lib/email/review-request";
 import { logger, maskEmail } from "@/lib/security/logger";
 import {
   listJobs,
+  updateRowByJobId,
   type JobRow,
-} from "@/lib/sheet/queries";
-import { updateRowByJobId } from "@/lib/sheet/repo";
+} from "@/lib/data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

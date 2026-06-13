@@ -33,10 +33,12 @@ import {
   shortTextSchema,
 } from '@/lib/security/zod'
 import {
+  appendContactRow,
   countDuplicateLeadsLast24h,
   findPriorJobsByEmail,
-} from '@/lib/sheet/queries'
-import { appendContactRow, updateRowByJobId, type ContactRow } from '@/lib/sheet/repo'
+  updateRowByJobId,
+  type ContactRow,
+} from '@/lib/data'
 import { dispatchJobToDavid, notifyMitchNewLead } from '@/lib/telegram/dispatch'
 
 export const runtime = 'nodejs'

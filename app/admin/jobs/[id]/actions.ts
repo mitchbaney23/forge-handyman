@@ -6,8 +6,7 @@ import * as Sentry from "@sentry/nextjs";
 import { authOptions, isAllowlistedEmail } from "@/lib/auth";
 import { logger } from "@/lib/security/logger";
 import { checkLimit } from "@/lib/security/rate-limit";
-import { appendAuditRow } from "@/lib/sheet/audit-log";
-import { findRowByJobId, updateRowByJobId } from "@/lib/sheet/repo";
+import { appendAuditRow, findRowByJobId, updateRowByJobId } from "@/lib/data";
 import { chargeBalance, type ChargeBalanceResult } from "@/lib/stripe/charges";
 import { dispatchJobToDavid } from "@/lib/telegram/dispatch";
 
