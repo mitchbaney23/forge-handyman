@@ -32,6 +32,12 @@ yarn-error.log*
 .idea/
 .DS_Store
 
+# Claude Code local config (machine-local, not shared)
+.claude/
+
+# Local brand/reference exports (not part of the app)
+Forge Brand Guide (portable).html
+
 # TypeScript
 *.tsbuildinfo
 .vercel
