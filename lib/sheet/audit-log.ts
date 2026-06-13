@@ -25,6 +25,11 @@ export interface AuditEntry {
   before?: string
   after?: string
   notes?: string
+  // Optional explicit job association. Read by pg/audit.ts to set
+  // activities.job_id reliably (target is sometimes a Stripe id or masked
+  // email). The sheet write below ignores it — the Audit tab has no job_id
+  // column; target carries the jobId there as it does today.
+  jobId?: string
 }
 
 function getSpreadsheetId(): string {

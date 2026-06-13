@@ -32,6 +32,9 @@ export default async function AdminLayout({
               <Link href="/admin/pipeline" className="hover:text-navy">
                 Pipeline
               </Link>
+              <Link href="/admin/customers" className="hover:text-navy">
+                Customers
+              </Link>
               <Link href="/admin/seasonal-nudges" className="hover:text-navy">
                 Nudges
               </Link>

@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { JobActions } from "./JobActions";
+import { addJobNoteAction } from "./actions";
+import { ActivityTimeline } from "@/components/admin/ActivityTimeline";
+import { AddNoteForm } from "@/components/admin/AddNoteForm";
 import { StatusBadge } from "@/components/admin/StatusBadge";
-import { findRowByJobId } from "@/lib/data";
+import { crmEnabled, findRowByJobId, listActivitiesForJob } from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "Job — Forge Admin",
@@ -26,6 +29,12 @@ export default async function JobDetailPage({
 
   const balanceCents = Number(row.balance_owed_cents || "0");
   const depositCents = Number(row.deposit_paid_cents || "0");
+
+  const jobId = row.job_id || decoded;
+  const timelineEnabled = crmEnabled();
+  const activities = timelineEnabled
+    ? await listActivitiesForJob(jobId)
+    : [];
 
   return (
     <div className="space-y-6">
@@ -163,6 +172,24 @@ export default async function JobDetailPage({
             <Detail label="Job ID" value={row.job_id || decoded} mono />
           </Panel>
         </div>
+      </section>
+
+      <section className="rounded-xl border border-navy/10 bg-white p-6 shadow-card">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink/60">
+          Activity
+        </h2>
+        {timelineEnabled ? (
+          <div className="space-y-5">
+            <ActivityTimeline activities={activities} />
+            <div className="border-t border-navy/10 pt-4">
+              <AddNoteForm action={addJobNoteAction.bind(null, jobId)} />
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-ink/55">
+            The activity timeline is available once you&rsquo;re on Postgres.
+          </p>
+        )}
       </section>
     </div>
   );

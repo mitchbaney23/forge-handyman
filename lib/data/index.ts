@@ -1,12 +1,21 @@
 import { getBackend } from '@/lib/data/backend'
+import * as pgActivitiesRead from '@/lib/data/pg/activities-read'
 import * as pgAudit from '@/lib/data/pg/audit'
+import * as pgCustomers from '@/lib/data/pg/customers'
 import * as pgExport from '@/lib/data/pg/export'
 import * as pgQueries from '@/lib/data/pg/queries'
 import * as pgRepo from '@/lib/data/pg/repo'
+import { ACTIONS } from '@/lib/data/activity-actions'
 import * as sheetAudit from '@/lib/sheet/audit-log'
 import * as sheetExport from '@/lib/sheet/export'
 import * as sheetQueries from '@/lib/sheet/queries'
 import * as sheetRepo from '@/lib/sheet/repo'
+import type { Activity } from '@/lib/data/pg/activities-read'
+import type {
+  CustomerDetail,
+  CustomerStats,
+  CustomerSummary,
+} from '@/lib/data/pg/customers'
 import type { AuditEntry } from '@/lib/sheet/audit-log'
 import type { JobRow, PriorJobsSummary } from '@/lib/sheet/queries'
 import type { ContactRow, ContactRowPartial } from '@/lib/sheet/repo'
@@ -27,6 +36,16 @@ import type { ContactRow, ContactRowPartial } from '@/lib/sheet/repo'
 export type { ContactRow, ContactRowPartial } from '@/lib/sheet/repo'
 export type { JobRow, PriorJobsSummary } from '@/lib/sheet/queries'
 export type { AuditEntry } from '@/lib/sheet/audit-log'
+
+// Stage 14 (Phase B1) CRM read surface — postgres-only. See the dispatched
+// exports at the bottom of this file and lib/data/pg/{customers,activities-read}.
+export type {
+  CustomerSummary,
+  CustomerDetail,
+  CustomerProperty,
+  CustomerStats,
+} from '@/lib/data/pg/customers'
+export type { Activity } from '@/lib/data/pg/activities-read'
 
 // ---------------------------------------------------------------------------
 // Pure helpers + constants — backend-independent, re-exported directly.
@@ -136,4 +155,70 @@ export async function exportAllTabsCsv(): Promise<
   return getBackend() === 'postgres'
     ? pgExport.exportAllTabsCsv()
     : sheetExport.exportAllTabsCsv()
+}
+
+// ---------------------------------------------------------------------------
+// CRM read surface — Stage 14 (Phase B1). POSTGRES-ONLY: there is no sheet
+// counterpart. In sheet mode each read returns its empty value and the pages
+// render an honest "available once you're on Postgres" notice (crmEnabled()).
+// addJobNote is the one exception — it routes to appendAuditRow best-effort so
+// a note isn't silently dropped on a sheet-mode deployment.
+// (lib/data/pg/{customers,activities-read}.ts)
+// ---------------------------------------------------------------------------
+
+// True when the new CRM surfaces have a real backend. Pages gate their
+// rendering on this (postgres-only); sheet mode shows the "on Postgres" notice.
+export function crmEnabled(): boolean {
+  return getBackend() === 'postgres'
+}
+
+export async function listCustomers(): Promise<CustomerSummary[]> {
+  return getBackend() === 'postgres' ? pgCustomers.listCustomers() : []
+}
+
+export async function getCustomerById(id: string): Promise<CustomerDetail | null> {
+  return getBackend() === 'postgres' ? pgCustomers.getCustomerById(id) : null
+}
+
+export async function getCustomerStats(): Promise<CustomerStats> {
+  return getBackend() === 'postgres'
+    ? pgCustomers.getCustomerStats()
+    : { totalCustomers: '0', totalJobs: '0' }
+}
+
+export async function updateCustomerNotes(
+  id: string,
+  notes: string,
+): Promise<{ updated: boolean }> {
+  // Sheet has no customers table — a no-op, mirroring redactCustomerByEmail.
+  return getBackend() === 'postgres'
+    ? pgCustomers.updateCustomerNotes(id, notes)
+    : { updated: false }
+}
+
+export async function listActivitiesForJob(jobId: string): Promise<Activity[]> {
+  return getBackend() === 'postgres' ? pgActivitiesRead.listActivitiesForJob(jobId) : []
+}
+
+export async function addJobNote(
+  jobId: string,
+  actor: string,
+  text: string,
+): Promise<{ ok: boolean }> {
+  if (getBackend() === 'postgres') return pgActivitiesRead.addJobNote(jobId, actor, text)
+  // Sheet mode: no timeline to read back, but record the note best-effort on
+  // the Audit tab so it isn't lost. target carries the jobId (the sheet Audit
+  // convention); a failure here must never surface to the caller.
+  try {
+    await sheetAudit.appendAuditRow({
+      actor,
+      action: ACTIONS.NOTE_ADDED,
+      target: jobId,
+      notes: text,
+      jobId,
+    })
+    return { ok: true }
+  } catch {
+    return { ok: false }
+  }
 }

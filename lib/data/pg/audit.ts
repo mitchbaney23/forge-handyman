@@ -26,7 +26,10 @@ function parseJsonObject(value: string | undefined): unknown {
 // - before/after/notes absent/empty -> NULL (a queryable log treats absent as
 //   NULL, not ''); this matches the migration's planAuditActivity convention
 //   so migrated and live rows are byte-identical for absent values.
-// - job_id is set whenever `target` is UUID-shaped, regardless of whether
+// - job_id is taken from `entry.jobId` when the caller supplied a UUID-shaped
+//   one (callers that know their jobId pass it so the timeline associates
+//   reliably even when `target` is a Stripe id or masked email), otherwise it
+//   falls back to `target` when that is UUID-shaped. Set regardless of whether
 //   such a job exists — activities has NO foreign key on purpose: an
 //   append-only log must never fail a write on referential grounds (audit
 //   rows for not-yet/never-existing jobs are a real webhook path).
@@ -51,7 +54,12 @@ export async function appendAuditRow(entry: AuditEntry): Promise<void> {
     before: entry.before || null,
     after: entry.after || null,
     notes: entry.notes || null,
-    job_id: isUuid(entry.target) ? entry.target : null,
+    job_id:
+      entry.jobId && isUuid(entry.jobId)
+        ? entry.jobId
+        : isUuid(entry.target)
+          ? entry.target
+          : null,
     data,
   })
   if (error) throw new Error(`pg/audit: activities insert failed: ${error.message}`)

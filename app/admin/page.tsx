@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
 import { JobCard } from "@/components/admin/JobCard";
-import { groupJobsForOverview, listJobs, type JobRow } from "@/lib/data";
+import {
+  crmEnabled,
+  getCustomerStats,
+  groupJobsForOverview,
+  listJobs,
+  type JobRow,
+} from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "Forge Admin",
@@ -29,11 +35,21 @@ export default async function AdminHomePage() {
   }
 
   const groups = groupJobsForOverview(jobs);
-  const stats = [
+
+  // Customers stat is postgres-only (Stage 14 / Phase B). In sheet mode the
+  // CRM surface has no backend, so we omit the card rather than show a zero.
+  let customersStat: { label: string; value: string | number } | null = null;
+  if (crmEnabled()) {
+    const customerStats = await getCustomerStats();
+    customersStat = { label: "Customers", value: customerStats.totalCustomers };
+  }
+
+  const stats: { label: string; value: string | number }[] = [
     { label: "Needs triage", value: groups.needsTriage.length },
     { label: "Today", value: groups.today.length },
     { label: "Tomorrow", value: groups.tomorrow.length },
     { label: "Open quotes", value: groups.openQuotes.length },
+    ...(customersStat ? [customersStat] : []),
   ];
 
   return (

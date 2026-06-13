@@ -92,6 +92,7 @@ export async function chargeBalance(
       actor,
       action: 'balance.charged',
       target: input.jobId,
+      jobId: input.jobId,
       after: JSON.stringify({
         paymentIntentId: intent.id,
         amountCents: input.amountCents,
@@ -127,6 +128,7 @@ export async function chargeBalance(
         actor,
         action: 'balance.charge_failed',
         target: input.jobId,
+        jobId: input.jobId,
         after: JSON.stringify({
           paymentIntentId: paymentIntent?.id ?? null,
           failureCode: classification.failureCode,

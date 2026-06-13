@@ -119,6 +119,7 @@ export async function sendQuote(input: SendQuoteInput): Promise<SendQuoteResult>
     actor: adminEmail,
     action: "quote.sent",
     target: input.jobId,
+    jobId: input.jobId,
     after: JSON.stringify({
       paymentLinkId: paymentLink.paymentLinkId,
       depositCents,

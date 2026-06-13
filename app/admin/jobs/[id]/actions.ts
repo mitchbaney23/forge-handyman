@@ -6,7 +6,13 @@ import * as Sentry from "@sentry/nextjs";
 import { authOptions, isAllowlistedEmail } from "@/lib/auth";
 import { logger } from "@/lib/security/logger";
 import { checkLimit } from "@/lib/security/rate-limit";
-import { appendAuditRow, findRowByJobId, updateRowByJobId } from "@/lib/data";
+import {
+  addJobNote,
+  appendAuditRow,
+  findRowByJobId,
+  updateRowByJobId,
+} from "@/lib/data";
+import { adminActor } from "@/lib/data/activity-actions";
 import { chargeBalance, type ChargeBalanceResult } from "@/lib/stripe/charges";
 import { dispatchJobToDavid } from "@/lib/telegram/dispatch";
 
@@ -60,6 +66,7 @@ export async function updateJobStatus(
     actor: auth.email,
     action: "job.status_changed",
     target: jobId,
+    jobId,
     before,
     after: newStatus,
   });
@@ -102,6 +109,7 @@ export async function dispatchToDavid(jobId: string): Promise<ActionResult> {
       actor: auth.email,
       action: "dispatch.sent",
       target: jobId,
+      jobId,
       after: JSON.stringify({ messageId: result.messageId }),
       notes: "Manual re-dispatch from admin.",
     });
@@ -134,6 +142,7 @@ export async function recordFirstTouch(jobId: string): Promise<ActionResult> {
     actor: auth.email,
     action: "job.first_touch_recorded",
     target: jobId,
+    jobId,
     after: now,
   });
   revalidatePath(`/admin/jobs/${jobId}`);
@@ -210,6 +219,7 @@ export async function markComplete(jobId: string): Promise<ActionResult> {
     actor: auth.email,
     action: "job.completed",
     target: jobId,
+    jobId,
     before: found.row.status,
     after: "Complete",
     notes: chargeResult
@@ -232,4 +242,34 @@ export async function markComplete(jobId: string): Promise<ActionResult> {
     ok: true,
     message: `Job marked complete.${balanceMessage}`,
   };
+}
+
+// Append a free-form note to this job's activity timeline (a `note.added`
+// activity, actor `admin:<email>`). Postgres-only timeline read surface; in
+// sheet mode addJobNote records the note best-effort on the Audit tab. The job
+// detail page binds jobId and passes the (text) -> result shape AddNoteForm
+// expects.
+export async function addJobNoteAction(
+  jobId: string,
+  text: string,
+): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdmin(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  // Cap at 2000 chars to match the shared freeTextSchema convention
+  // (lib/security/zod.ts) — server actions are independently invokable, so the
+  // cap belongs here, not just in the form.
+  const trimmed = text.trim().slice(0, 2000);
+  if (!trimmed) return { ok: false, error: "Note can't be empty." };
+  const found = await findRowByJobId(jobId);
+  if (!found) return { ok: false, error: "Job not found" };
+
+  const { ok } = await addJobNote(jobId, adminActor(auth.email), trimmed);
+  if (!ok) return { ok: false, error: "Couldn't save the note." };
+
+  logger.info({ jobId, actor: auth.email }, "admin: job note added");
+  revalidatePath(`/admin/jobs/${jobId}`);
+  return { ok: true, message: "Note added." };
 }

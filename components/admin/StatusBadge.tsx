@@ -5,10 +5,10 @@ const STATUS_COLORS: Record<string, string> = {
   Booked: "bg-emerald-100 text-emerald-900 border-emerald-300",
   "In Progress": "bg-violet-100 text-violet-900 border-violet-300",
   Complete: "bg-slate-100 text-slate-700 border-slate-300",
-  Cancelled: "bg-slate-100 text-slate-500 border-slate-300",
+  Cancelled: "bg-stone-100 text-stone-600 border-stone-300",
   "Payment Failed": "bg-red-100 text-red-900 border-red-300",
-  Refunded: "bg-slate-100 text-slate-500 border-slate-300",
-  "Partial Refund": "bg-slate-100 text-slate-500 border-slate-300",
+  Refunded: "bg-orange-100 text-orange-900 border-orange-300",
+  "Partial Refund": "bg-orange-100 text-orange-900 border-orange-300",
 };
 
 export function StatusBadge({ status }: { status: string }) {

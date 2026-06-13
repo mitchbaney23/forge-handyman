@@ -157,6 +157,7 @@ async function handleCallback(
     actor: "telegram:david",
     action: `dispatch.${label.decision.toLowerCase().replace(/\s+/g, "_")}`,
     target: parsed.jobId,
+    jobId: parsed.jobId,
     after: JSON.stringify({ decision: label.decision, decidedAt }),
   });
 

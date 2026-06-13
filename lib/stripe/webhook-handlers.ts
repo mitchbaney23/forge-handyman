@@ -80,6 +80,7 @@ export async function handleCheckoutSessionCompleted(
     actor: 'stripe-webhook',
     action: 'job.booked',
     target: jobId,
+    jobId,
     after: JSON.stringify({
       sessionId: session.id,
       amountPaidCents: session.amount_total,
@@ -115,6 +116,7 @@ export async function handlePaymentIntentSucceeded(
     actor: 'stripe-webhook',
     action: `payment.${purpose}.succeeded`,
     target: jobId,
+    jobId,
     after: JSON.stringify({
       paymentIntentId: pi.id,
       amountCents: pi.amount,
@@ -166,6 +168,7 @@ export async function handlePaymentIntentFailed(event: Stripe.Event): Promise<vo
       actor: 'stripe-webhook',
       action: 'payment.failed',
       target: jobId,
+      jobId,
       after: JSON.stringify({
         paymentIntentId: pi.id,
         failureCode,
@@ -216,6 +219,7 @@ export async function handleChargeRefunded(event: Stripe.Event): Promise<void> {
       actor: 'stripe-webhook',
       action: charge.refunded ? 'charge.fully_refunded' : 'charge.partially_refunded',
       target: jobId,
+      jobId,
       after: JSON.stringify({
         chargeId: charge.id,
         amountRefundedCents: charge.amount_refunded,

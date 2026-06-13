@@ -55,6 +55,7 @@ export async function refundCharge(
       actor,
       action: 'refund.issued',
       target: input.jobId,
+      jobId: input.jobId,
       after: JSON.stringify({
         refundId: refund.id,
         chargeId: input.chargeId,
@@ -85,6 +86,7 @@ export async function refundCharge(
         actor,
         action: 'refund.failed',
         target: input.jobId,
+        jobId: input.jobId,
         after: JSON.stringify({
           chargeId: input.chargeId,
           failureCode: err.code ?? null,

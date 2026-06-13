@@ -100,6 +100,7 @@ export async function createQuotePaymentLink(
     actor,
     action: 'payment_link.created',
     target: quote.jobId,
+    jobId: quote.jobId,
     after: JSON.stringify({
       paymentLinkId: paymentLink.id,
       depositCents: quote.depositCents,
