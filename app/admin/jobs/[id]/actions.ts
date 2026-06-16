@@ -13,8 +13,19 @@ import {
   updateRowByJobId,
 } from "@/lib/data";
 import { adminActor } from "@/lib/data/activity-actions";
+import { getBackend } from "@/lib/data/backend";
+import { canAdminTransition } from "@/lib/jobs/status-machine";
+import {
+  claimChargeAttempt,
+  findLiveAttempt,
+  recordPaymentOutcome,
+} from "@/lib/data/pg/payments";
 import { chargeBalance, type ChargeBalanceResult } from "@/lib/stripe/charges";
 import { dispatchJobToDavid } from "@/lib/telegram/dispatch";
+
+// The deterministic Stripe idempotency key chargeBalance uses; also the
+// payments.purpose for the guard row.
+const BALANCE_PURPOSE = "balance-charge";
 
 export type ActionResult =
   | { ok: true; message?: string }
@@ -61,6 +72,19 @@ export async function updateJobStatus(
   if (!found) return { ok: false, error: "Job not found" };
 
   const before = found.row.status;
+  if (before === newStatus) return { ok: true, message: "No change." };
+  // Integrity guard (Phase B2): block dangerous human transitions — notably
+  // hand-setting 'Complete' (which would bypass markComplete's balance charge).
+  // Webhook status writes bypass this; they call updateRowByJobId directly.
+  if (!canAdminTransition(before, newStatus)) {
+    return {
+      ok: false,
+      error:
+        newStatus === "Complete"
+          ? "Use “Mark Complete” to complete a job — it charges the saved-card balance."
+          : `Can't move a job from “${before}” to “${newStatus}”.`,
+    };
+  }
   await updateRowByJobId(jobId, { status: newStatus });
   await appendAuditRow({
     actor: auth.email,
@@ -164,10 +188,34 @@ export async function markComplete(jobId: string): Promise<ActionResult> {
   const balanceCents = Number(found.row.balance_owed_cents || "0");
   const customerId = found.row.stripe_customer_id || "";
   const paymentMethodId = found.row.stripe_payment_method_id || "";
+  const hasBalanceToCharge =
+    balanceCents > 0 && Boolean(customerId) && Boolean(paymentMethodId);
 
-  // If there's a balance owed AND we have a saved card, charge it.
+  // POSTGRES guarded path. The payments table is the DURABLE double-charge
+  // guard (Stripe idempotency keys expire at 24h, then re-charge). On a
+  // synchronous success it writes Complete immediately, so a job never strands
+  // charged-but-open if the webhook is delayed or lost; the
+  // payment_intent.succeeded webhook is an idempotent backstop that re-confirms
+  // Complete and reconciles the payments row. A 3DS (requires_action) charge
+  // can't complete synchronously — its guard row is held until the webhook
+  // resolves it.
+  if (hasBalanceToCharge && getBackend() === "postgres") {
+    return chargeBalanceGuarded({
+      jobId,
+      balanceCents,
+      customerId,
+      paymentMethodId,
+      serviceType: found.row.service_type || "",
+      customerEmail: found.row.email || "",
+      adminEmail: auth.email,
+    });
+  }
+
+  // LEGACY path — unchanged pre-B2 behavior, used for sheet mode and for the
+  // no-balance / no-saved-card cases. Here there is no balance-charge webhook
+  // to own the transition, so markComplete writes Complete itself.
   let chargeResult: ChargeBalanceResult | null = null;
-  if (balanceCents > 0 && customerId && paymentMethodId) {
+  if (hasBalanceToCharge) {
     try {
       chargeResult = await chargeBalance(
         {
@@ -241,6 +289,140 @@ export async function markComplete(jobId: string): Promise<ActionResult> {
   return {
     ok: true,
     message: `Job marked complete.${balanceMessage}`,
+  };
+}
+
+// The postgres double-charge-guarded balance charge. Claims a payments attempt
+// (atomic gate), charges, records the outcome — and deliberately does NOT write
+// status=Complete (the payment_intent.succeeded webhook owns that, so there's
+// exactly one authoritative completer instead of a markComplete/webhook race).
+async function chargeBalanceGuarded(args: {
+  jobId: string;
+  balanceCents: number;
+  customerId: string;
+  paymentMethodId: string;
+  serviceType: string;
+  customerEmail: string;
+  adminEmail: string;
+}): Promise<ActionResult> {
+  const { jobId, balanceCents, customerId, paymentMethodId } = args;
+
+  // 1. Claim the attempt. null => a live (pending|succeeded) attempt already
+  //    exists — we must NOT charge again.
+  const claimed = await claimChargeAttempt({
+    jobId,
+    purpose: BALANCE_PURPOSE,
+    amountCents: balanceCents,
+    idempotencyKey: `${BALANCE_PURPOSE}:${jobId}`,
+    stripeCustomerId: customerId,
+  });
+  if (!claimed) {
+    const existing = await findLiveAttempt(jobId, BALANCE_PURPOSE);
+    if (existing?.status === "succeeded") {
+      return { ok: true, message: "Balance already charged for this job." };
+    }
+    if (existing?.status === "requires_action") {
+      return {
+        ok: false,
+        error:
+          "This balance charge needs customer 3DS authentication — generate a hosted authentication link from Stripe. Don't re-run Mark Complete.",
+      };
+    }
+    return {
+      ok: false,
+      error:
+        "A balance charge for this job is already in progress. Give it a moment and refresh.",
+    };
+  }
+
+  // 2. We own the attempt — charge.
+  let chargeResult: ChargeBalanceResult;
+  try {
+    chargeResult = await chargeBalance(
+      {
+        jobId,
+        customerId,
+        paymentMethodId,
+        amountCents: balanceCents,
+        description: `Forge Handyman — balance for ${args.serviceType || "service"}`,
+        customerEmail: args.customerEmail,
+      },
+      args.adminEmail,
+    );
+  } catch (err) {
+    // Free the gate so a deliberate retry is possible; the deterministic Stripe
+    // idempotency key still prevents a real double-charge within 24h.
+    await recordPaymentOutcome(claimed.id, {
+      status: "failed",
+      error: err instanceof Error ? err.message : String(err),
+    }).catch(() => {});
+    Sentry.captureException(err, {
+      tags: { route: "admin", action: "markComplete" },
+      extra: { jobId },
+    });
+    logger.error({ err, jobId }, "admin: chargeBalance threw");
+    return {
+      ok: false,
+      error: "Couldn't charge the balance — see Sentry for details.",
+    };
+  }
+
+  // 3. Record the outcome on the attempt row.
+  if (chargeResult.status === "failed") {
+    await recordPaymentOutcome(claimed.id, {
+      status: "failed",
+      error: chargeResult.failureMessage,
+      stripePaymentIntentId: chargeResult.paymentIntentId ?? undefined,
+    });
+    return {
+      ok: false,
+      error: `Balance charge failed: ${chargeResult.failureMessage}`,
+    };
+  }
+  if (chargeResult.status === "requires_action") {
+    // 3DS in-flight. 'requires_action' is INSIDE the gate index, so the row
+    // stays held (a re-claim is blocked) until the webhook resolves it to
+    // succeeded/failed after the customer authenticates via the hosted link.
+    await recordPaymentOutcome(claimed.id, {
+      status: "requires_action",
+      stripePaymentIntentId: chargeResult.paymentIntentId,
+    });
+    return {
+      ok: false,
+      error:
+        "Charge needs customer authentication (3DS). Generate a hosted authentication link from Stripe.",
+    };
+  }
+
+  // Succeeded (Stripe confirmed synchronously). Record the attempt best-effort
+  // — a DB blip here must NOT surface as an error after a real charge — then
+  // write Complete now so the job never strands as charged-but-open if the
+  // webhook is delayed or lost (the Redis dedupe is at-most-once). The
+  // payment_intent.succeeded webhook idempotently re-confirms Complete and
+  // reconciles this row.
+  await recordPaymentOutcome(claimed.id, {
+    status: "succeeded",
+    stripePaymentIntentId: chargeResult.paymentIntentId,
+    stripeChargeId: chargeResult.chargeId ?? undefined,
+  }).catch(() => {});
+  await updateRowByJobId(jobId, {
+    status: "Complete",
+    complete_date: new Date().toISOString(),
+    balance_owed_cents: "0",
+  });
+  await appendAuditRow({
+    actor: args.adminEmail,
+    action: "job.completed",
+    target: jobId,
+    jobId,
+    after: "Complete",
+    notes: `Balance ${balanceCents} cents charged (guarded)`,
+  });
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/admin");
+  return {
+    ok: true,
+    message: `Job marked complete. Balance of $${(balanceCents / 100).toFixed(2)} charged.`,
   };
 }
 

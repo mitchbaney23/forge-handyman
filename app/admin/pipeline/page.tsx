@@ -16,6 +16,14 @@ const COLUMNS: { status: string; matches: string[]; staleAfterHours: number }[] 
   { status: "Booked", matches: ["Booked"], staleAfterHours: 14 * 24 },
   { status: "In Progress", matches: ["In Progress"], staleAfterHours: 48 },
   { status: "Complete", matches: ["Complete"], staleAfterHours: 365 * 24 },
+  // Needs attention: a balance charge bounced — surface fast, don't drop it.
+  { status: "Payment Failed", matches: ["Payment Failed"], staleAfterHours: 24 },
+  // Closed out (cancelled or refunded) — visible, not silently dropped.
+  {
+    status: "Closed",
+    matches: ["Cancelled", "Refunded", "Partial Refund"],
+    staleAfterHours: 365 * 24,
+  },
 ];
 
 export default async function PipelinePage() {

@@ -63,10 +63,52 @@ security-auth / spec-UX), each finding independently verified — 3 confirmed,
 
 ---
 
-## B2 — write integrity (next)
+## B2 — write integrity (2026-06-14)
 
-Postgres-gated money-path fixes — see the design spec's B2 section: markComplete
-stops being a second completer (webhook stays authoritative), a pre-charge
-`payments` guard row (+ a partial unique index migration), the human-path-only
-status guard with escape edges, and the `isSameLocalDay` TZ fix. Should land
-after the production cutover so its "trustworthy money paths" actually apply.
+Postgres-gated money-path fixes. Sheet mode keeps the pre-B2 behavior unchanged;
+none of this protects production until the cutover.
+
+### What shipped
+- **Double-charge guard.** A `payments` row is claimed BEFORE the Stripe call
+  via the `claim_charge_attempt` RPC (returns `setof payments` → `[]` on
+  conflict) against a partial unique index on `(job_id, purpose) where status in
+  ('pending','succeeded','requires_action')`. Stripe idempotency keys expire at
+  24h then re-charge — this row is the *durable* guard. A failed attempt drops
+  out of the index, freeing a deliberate retry.
+- **markComplete reworked.** Postgres path: claim → charge → record → write
+  Complete (optimistic, so a job never strands charged-but-open) — the
+  `payment_intent.succeeded` webhook is an idempotent backstop that re-confirms
+  Complete and reconciles the payments row. 3DS (`requires_action`) charges
+  can't complete synchronously; their row is held in the gate until the webhook
+  resolves them.
+- **Payments ledger.** The webhook records deposits / balance charges / refunds
+  (best-effort, postgres-only, can never fail the webhook) — sets up true LTV.
+- **Status-machine guard** (`lib/jobs/status-machine.ts`): the admin dropdown
+  can no longer hand-set `Complete` (that would skip the balance charge);
+  webhook-driven transitions bypass the guard; every terminal state has escape
+  edges so nothing wedges. The dropdown shows only allowed targets.
+- **Eastern-time Today/Tomorrow** (`isSameLocalDay`) — was UTC, rolled over at
+  ~8pm ET.
+- **Pipeline** surfaces Payment Failed / Cancelled / Refunded instead of
+  dropping them.
+
+### Design review (pre-commit, money-path)
+4-lens adversarial review (double-charge / webhook-coordination / status-guard /
+correctness), each finding independently verified — and the live integration
+test caught a separate bug the unit tests missed:
+- **(live test) double-charge trap:** the claim RPC returned an all-null row on
+  conflict (not an empty result), so the code read it as "won the gate." Fixed
+  (`setof` return + an id check). Verified: 2nd claim blocked, failed frees,
+  succeeded holds.
+- **(review blocker) 3DS gate leak:** a `requires_action` outcome dropped the
+  row out of the gate index → a post-24h double-charge + an orphaned row. Fixed
+  by including `requires_action` in the index / `findLiveAttempt` /
+  `reconcileAttempt`. **Live-verified**: a 3DS row now holds the gate and the
+  webhook still terminalizes it.
+- 4 more confirmed (collected-but-not-Complete stranding → optimistic Complete;
+  unguarded success write → best-effort; a `Partial Refund → Complete` edge →
+  removed) — all fixed.
+
+### Verification
+typecheck / lint / build clean; **127 tests**; two live-Postgres integration
+checks passed (the double-charge gate + the 3DS gate-hold + webhook reconcile).

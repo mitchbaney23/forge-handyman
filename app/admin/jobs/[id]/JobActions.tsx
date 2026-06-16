@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { statusOptionsFor } from "@/lib/jobs/status-machine";
 import {
   dispatchToDavid,
   markComplete,
@@ -8,16 +9,6 @@ import {
   updateJobStatus,
   type ActionResult,
 } from "./actions";
-
-const STATUS_OPTIONS = [
-  "New",
-  "Quoted",
-  "Pending Follow-Up",
-  "Booked",
-  "In Progress",
-  "Complete",
-  "Cancelled",
-];
 
 export function JobActions({
   jobId,
@@ -83,7 +74,7 @@ export function JobActions({
           onChange={(e) => handleStatusChange(e.target.value)}
           className="block w-full max-w-xs rounded-lg border border-navy/15 bg-white px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-2 focus:ring-amber-forge/40"
         >
-          {STATUS_OPTIONS.map((opt) => (
+          {statusOptionsFor(currentStatus).map((opt) => (
             <option key={opt} value={opt}>
               {opt}
             </option>

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { groupJobsForOverview, type JobRow } from '@/lib/sheet/queries'
+import { groupJobsForOverview, toLocalIsoDate, type JobRow } from '@/lib/sheet/queries'
 
 // Two concerns (docs/stage-13-postgres-design.md "Tests + CI"):
 //  1. groupJobsForOverview routing/sorting (pure — sheet module, backend-shared).
@@ -46,8 +46,10 @@ describe('groupJobsForOverview: status routing', () => {
     const today = new Date()
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
-    const todayYmd = today.toISOString().slice(0, 10)
-    const tomorrowYmd = tomorrow.toISOString().slice(0, 10)
+    // Use the same Eastern-time helper the code uses, so the test is correct
+    // regardless of the wall-clock time it runs at (the Phase B2 TZ fix).
+    const todayYmd = toLocalIsoDate(today)
+    const tomorrowYmd = toLocalIsoDate(tomorrow)
 
     const result = groupJobsForOverview([
       job({ status: 'Booked', preferred_date: todayYmd }),

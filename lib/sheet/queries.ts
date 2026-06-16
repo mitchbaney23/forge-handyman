@@ -40,15 +40,25 @@ export async function listJobs(): Promise<JobRow[]> {
   return rows
 }
 
+// Forge serves the NC Triangle — bucket "today"/"tomorrow" on Eastern time, not
+// UTC. The pre-B2 code used toISOString() (UTC), so the dashboard's Today/
+// Tomorrow groups shifted at UTC midnight (8pm ET in winter / 7pm in summer).
+const ET_TIME_ZONE = 'America/New_York'
+
+// The YYYY-MM-DD calendar date of `d` in Eastern time. 'en-CA' formats as
+// ISO-style YYYY-MM-DD.
+function easternIsoDate(d: Date): string {
+  return d.toLocaleDateString('en-CA', { timeZone: ET_TIME_ZONE })
+}
+
 export function isSameLocalDay(isoDate: string, comparison: Date): boolean {
   if (!isoDate) return false
-  // preferred_date is YYYY-MM-DD (date-only, no timezone)
-  const ymd = comparison.toISOString().slice(0, 10)
-  return isoDate.slice(0, 10) === ymd
+  // preferred_date is YYYY-MM-DD (date-only, the customer's intended day)
+  return isoDate.slice(0, 10) === easternIsoDate(comparison)
 }
 
 export function toLocalIsoDate(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  return easternIsoDate(d)
 }
 
 export const NEEDS_TRIAGE_STATUSES = new Set(['New'])

@@ -2,12 +2,34 @@ import type Stripe from 'stripe'
 import * as Sentry from '@sentry/nextjs'
 import { logger, maskEmail } from '@/lib/security/logger'
 import { appendAuditRow, updateRowByJobId } from '@/lib/data'
+import { getBackend } from '@/lib/data/backend'
+import { recordPayment, reconcileAttempt } from '@/lib/data/pg/payments'
 import { getStripe } from '@/lib/stripe/client'
 
 function extractJobId(metadata: Stripe.Metadata | null | undefined): string | null {
   if (!metadata) return null
   const value = metadata.jobId
   return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+// The payments ledger is postgres-only and strictly best-effort: a failure
+// here must NEVER fail the webhook (the status flip + audit are the primary
+// work). Gated on the active backend so sheet-mode webhooks no-op cleanly.
+async function recordPaymentSafe(fn: () => Promise<void>): Promise<void> {
+  if (getBackend() !== 'postgres') return
+  try {
+    await fn()
+  } catch (err) {
+    logger.warn({ err }, 'stripe: payments-ledger write failed (non-fatal)')
+    Sentry.captureException(err, {
+      tags: { route: 'stripe-webhook', step: 'payments-ledger' },
+    })
+  }
+}
+
+function chargeIdOf(pi: Stripe.PaymentIntent): string {
+  const c = pi.latest_charge
+  return typeof c === 'string' ? c : (c?.id ?? '')
 }
 
 export async function handleCheckoutSessionCompleted(
@@ -24,12 +46,14 @@ export async function handleCheckoutSessionCompleted(
   let paymentMethodId: string | null = null
   let customerId: string | null =
     typeof session.customer === 'string' ? session.customer : session.customer?.id ?? null
+  let depositPaymentIntentId = ''
 
   if (session.payment_intent) {
     const piId =
       typeof session.payment_intent === 'string'
         ? session.payment_intent
         : session.payment_intent.id
+    depositPaymentIntentId = piId
     const pi = await stripe.paymentIntents.retrieve(piId)
     paymentMethodId =
       typeof pi.payment_method === 'string'
@@ -87,6 +111,19 @@ export async function handleCheckoutSessionCompleted(
       stripeCustomerId: customerId,
     }),
   })
+
+  // Ledger: record the deposit (no guard — a hosted single-use checkout link
+  // isn't re-chargeable from our side).
+  await recordPaymentSafe(() =>
+    recordPayment({
+      jobId,
+      purpose: 'deposit',
+      status: 'succeeded',
+      amountCents: session.amount_total ?? null,
+      stripePaymentIntentId: depositPaymentIntentId,
+      stripeCustomerId: customerId ?? '',
+    }),
+  )
 }
 
 export async function handlePaymentIntentSucceeded(
@@ -128,6 +165,15 @@ export async function handlePaymentIntentSucceeded(
       status: 'Complete',
       balance_owed_cents: '0',
     })
+    // Reconcile the markComplete guard row to its terminal state (idempotent —
+    // a no-op if markComplete's sync update already marked it succeeded).
+    await recordPaymentSafe(() =>
+      reconcileAttempt(jobId, 'balance-charge', {
+        status: 'succeeded',
+        stripePaymentIntentId: pi.id,
+        stripeChargeId: chargeIdOf(pi),
+      }),
+    )
   }
 }
 
@@ -175,6 +221,18 @@ export async function handlePaymentIntentFailed(event: Stripe.Event): Promise<vo
         failureMessage,
       }),
     })
+    // A failed balance charge frees its guard row so a deliberate retry is
+    // possible (the 'failed' status drops out of the partial unique index).
+    const purpose = typeof pi.metadata?.purpose === 'string' ? pi.metadata.purpose : ''
+    if (purpose === 'balance-charge') {
+      await recordPaymentSafe(() =>
+        reconcileAttempt(jobId, 'balance-charge', {
+          status: 'failed',
+          stripePaymentIntentId: pi.id,
+          error: failureMessage,
+        }),
+      )
+    }
   }
 }
 
@@ -225,5 +283,18 @@ export async function handleChargeRefunded(event: Stripe.Event): Promise<void> {
         amountRefundedCents: charge.amount_refunded,
       }),
     })
+    // Ledger: record the refund (positive amount under purpose 'refund'; LTV
+    // computation subtracts these from collected revenue).
+    await recordPaymentSafe(() =>
+      recordPayment({
+        jobId,
+        purpose: 'refund',
+        status: 'succeeded',
+        amountCents: charge.amount_refunded ?? 0,
+        stripeChargeId: charge.id,
+        stripePaymentIntentId:
+          typeof charge.payment_intent === 'string' ? charge.payment_intent : '',
+      }),
+    )
   }
 }
