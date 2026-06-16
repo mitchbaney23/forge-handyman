@@ -17,10 +17,10 @@ also lives in the memory files (see "Pointers" at the bottom) — read those fir
 |---|---|
 | Marketing site + booking form | **Live** (forgehandyman.com) |
 | Flat-rate **service menu** page | **Live** (merged to main) |
-| Postgres CRM (Phases A + B) | **Code live in prod, dormant behind `DATA_BACKEND=sheet`** |
-| Supabase project | **Created + schema applied** (dev), not yet production backend |
-| **Booking cart** | **Built + reviewed on branch `feat/booking-cart`**, NOT merged (awaiting Mitch's go) |
-| Production **data cutover** to Postgres | **Blocked** on Mitch's Google private key |
+| Postgres CRM (Phases A + B) | **LIVE in prod on Postgres** (`DATA_BACKEND=postgres`, cut over 2026-06-16) |
+| Supabase project | **Production backend** (`nkvsgvlyxwdsvklxypwu`); also the local `.env.local` project → dev+prod share one DB |
+| **Booking cart** | **Built + reviewed on branch `feat/booking-cart`** (HEAD `c6d4966`), NOT merged (awaiting Mitch's go) |
+| Production **data cutover** to Postgres | **DONE — fresh start** (empty Postgres; Sheet leads NOT migrated) |
 | Stripe | **TEST mode** in prod (no live keys yet) |
 | Phone number on site | still `(555) 123-4567` placeholder (Twilio number pending) |
 
@@ -122,14 +122,16 @@ once the list crosses ~2 hours. The "not sure / custom job" door stays.
 
 1. **Ship the cart**: test-drive the Vercel preview, then say "ship it" → merge
    `feat/booking-cart` → `main`.
-2. **Production data cutover to Postgres** — BLOCKED on the **Google service-
-   account private key** (Vercel keeps it write-only; it can't be pulled).
-   To finish: paste the key locally → run `scripts/migrate-sheet-to-db.ts`
-   (dry-run → execute) → add `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` to
-   Vercel (Production, Sensitive) → set `DATA_BACKEND=postgres` → redeploy →
-   `/api/health` shows `backend: postgres`. Use the freeze procedure in
-   `progress/13-postgres-foundation.md`. (Or, if the Sheet has few leads,
-   start Postgres fresh and re-enter them.)
+2. ✅ **Production data cutover to Postgres — DONE 2026-06-16 (fresh start).**
+   Mitch chose to start the CRM fresh on the empty Postgres DB (no Sheet
+   migration, so the Google-key blocker was sidestepped). Added `SUPABASE_URL`,
+   `SUPABASE_SERVICE_ROLE_KEY` (sensitive), `DATA_BACKEND=postgres` to Vercel
+   Production; empty commit on `main` (`8542038`) auto-deployed; `/api/health`
+   confirmed `backend: postgres` (~84s after push), all checks green, no
+   downtime. Old Sheet leads remain in the Sheet, un-imported. Rollback =
+   `DATA_BACKEND=sheet` + redeploy (but pg now takes live writes).
+   **New follow-up:** local `.env.local` points at the *production* Supabase
+   project — consider a separate dev project so local work can't hit live data.
 3. **Twilio phone number** → replaces `(555) 123-4567` in `BUSINESS.phone`
    (`lib/constants.ts`), which is in the site header, mobile Call button, and
    booking confirmations.
