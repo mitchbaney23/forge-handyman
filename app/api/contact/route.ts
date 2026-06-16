@@ -33,7 +33,6 @@ import { verifyTurnstileToken } from '@/lib/security/turnstile'
 import {
   emailSchema,
   fieldErrorsFromZod,
-  freeTextSchema,
   honeypotSchema,
   nameSchema,
   phoneSchema,
@@ -51,7 +50,7 @@ import { dispatchJobToDavid, notifyMitchNewLead } from '@/lib/telegram/dispatch'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const contactSchema = z
+export const contactSchema = z
   .object({
     name: nameSchema,
     phone: phoneSchema,
@@ -68,7 +67,20 @@ const contactSchema = z
       ])
       .optional()
       .default(''),
-    description: freeTextSchema,
+    // Optional notes. The cart carries the job detail now, so a menu-picker
+    // can leave this blank; it's required only on the "not sure" path (see the
+    // refine below). Sanitize/cap exactly like freeTextSchema, but allow empty.
+    description: z
+      .string()
+      .max(2000, 'Too long (max 2000 characters)')
+      .optional()
+      .default('')
+      .transform((s) =>
+        s
+          .trim()
+          .replace(/<[^>]*>/g, '')
+          .replace(/\s+/g, ' '),
+      ),
     urgency: urgencySchema,
     bestContactTime: contactTimeSchema,
     bestContactMethod: contactMethodSchema,
@@ -99,6 +111,15 @@ const contactSchema = z
       // Key to the live form field (`cart`) so the client highlights it and
       // scrolls to step 1 — `serviceCategories` no longer exists on the form.
       path: ['cart'],
+    },
+  )
+  .refine(
+    // On the "not sure / custom job" path the description IS the job, so it's
+    // required there. When a cart was picked, the cart says what the job is.
+    (v) => !v.notSure || v.description.trim().length > 0,
+    {
+      message: "Since you're not sure, tell us a bit about the work",
+      path: ['description'],
     },
   )
 

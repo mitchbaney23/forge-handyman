@@ -115,7 +115,7 @@ const STEPS: {
   {
     id: "details",
     title: "Tell us about the job",
-    subtitle: "A few words (and a photo or two) help us nail the estimate.",
+    subtitle: "A quick photo of the spot helps us arrive ready — add one below.",
     fields: ["description"],
   },
   {
@@ -217,8 +217,12 @@ function validate(state: FormState): FieldErrors {
     errors.cart =
       "Pick at least one service or a package, or check “I'm not sure.”";
   if (!state.urgency) errors.urgency = "Pick a rough timeframe.";
-  if (!state.description.trim())
-    errors.description = "Tell us a bit about the work.";
+  // Description is required only on the "not sure / custom job" path — there
+  // the text IS the job. When they've picked menu items, the cart already says
+  // what the job is, so notes are optional.
+  if (state.notSure && !state.description.trim())
+    errors.description =
+      "Since you're not sure, a few words about the job helps us help you.";
   // preferredDate is optional — urgency captures the timing.
   return errors;
 }
@@ -1095,15 +1099,23 @@ export function ContactForm() {
             <div hidden={step !== 1} className="panel-enter space-y-5">
               <Field
                 id="description"
-                label="Describe the work"
-                required
+                label={
+                  state.notSure
+                    ? "Describe the work"
+                    : "Anything we should know? (optional)"
+                }
+                required={state.notSure}
                 error={errors.description}
               >
                 <textarea
                   id="description"
                   name="description"
                   rows={5}
-                  placeholder="Tell us what needs doing. Be as specific as you like — the more detail, the better the estimate."
+                  placeholder={
+                    state.notSure
+                      ? "Tell us what needs doing. Be as specific as you like — the more detail, the better we can help."
+                      : "Optional — anything special about the space, access, parking, or the spot itself."
+                  }
                   value={state.description}
                   onChange={(e) => update("description", e.target.value)}
                   className={inputClass(!!errors.description)}
@@ -1121,8 +1133,8 @@ export function ContactForm() {
                   </span>
                 </label>
                 <p className="mb-3 text-[12.5px] text-ink-3">
-                  A picture is worth a thousand words. Snap whatever helps us
-                  understand the work.
+                  A quick photo of the spot lets us arrive with the right parts
+                  and tools — and confirm the flat rate fits before we book.
                 </p>
                 <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
                   {photos.map((photo) => (
