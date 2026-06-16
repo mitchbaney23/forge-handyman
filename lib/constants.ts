@@ -36,13 +36,10 @@ export const NAV_LINKS = [
 
 export type ServiceKey =
   | "general-repairs"
-  | "carpentry"
-  | "painting"
-  | "deck-fence"
-  | "fixtures"
-  | "assembly"
-  | "pressure-washing"
-  | "drywall";
+  | "install-assembly"
+  | "paint-drywall"
+  | "minor-plumbing"
+  | "tv-mounting";
 
 export type Service = {
   key: ServiceKey;
@@ -53,85 +50,146 @@ export type Service = {
   category: ServiceCategory;
 };
 
+// The five service sections (the "menu" sections). Outdoor & seasonal work
+// (decks, fences, pressure washing) was dropped 2026-06 to focus the offering.
 export type ServiceCategory =
-  | "General Repairs & Maintenance"
-  | "Carpentry & Woodwork"
-  | "Painting"
-  | "Assembly & Installation"
-  | "Outdoor & Seasonal";
+  | "General Repairs"
+  | "Installation & Furniture Assembly"
+  | "Painting & Drywall Repair"
+  | "Minor Plumbing"
+  | "TV Mounting";
 
+// Homepage "what we do" cards — one per menu section.
 export const SERVICES: Service[] = [
   {
     key: "general-repairs",
     title: "General Repairs",
-    short: "Leaky faucets, sticky doors, loose railings — all the nagging fixes.",
+    short: "Sticky doors, loose railings, fresh caulk — the nagging fixes, done.",
     long:
-      "From leaky faucets and running toilets to sticky doors and loose railings, we tackle the growing list of small repairs most homeowners never get to. One visit, one invoice, done right.",
-    icon: "wrench",
-    category: "General Repairs & Maintenance",
+      "Sticking doors, fresh caulk, squeaky stairs, weatherstripping, and the growing list of small repairs most homeowners never get to. One visit, one invoice, done right.",
+    icon: "hammer",
+    category: "General Repairs",
   },
   {
-    key: "carpentry",
-    title: "Carpentry & Woodwork",
-    short: "Trim, shelving, custom builds, and honest old-school carpentry.",
+    key: "install-assembly",
+    title: "Installation & Assembly",
+    short: "Ceiling fans, fixtures, shelving, and the flat-pack still in the box.",
     long:
-      "Trim work, crown molding, custom shelving, door and window repairs, and small custom builds. Four decades of hands-on carpentry means tight miters and square corners.",
-    icon: "saw",
-    category: "Carpentry & Woodwork",
-  },
-  {
-    key: "painting",
-    title: "Interior & Exterior Painting",
-    short: "Clean lines, proper prep, no drips on the floor.",
-    long:
-      "Interior rooms, trim, doors, and smaller exterior projects. We prep properly, protect your floors and furniture, and leave the job site cleaner than we found it.",
-    icon: "brush",
-    category: "Painting",
-  },
-  {
-    key: "deck-fence",
-    title: "Deck & Fence Work",
-    short: "Board replacement, railings, repairs, and refinishing.",
-    long:
-      "Replace rotted deck boards, fix loose railings, repair fence sections, and refinish weathered wood. We build things that hold up to Carolina weather.",
-    icon: "fence",
-    category: "Outdoor & Seasonal",
-  },
-  {
-    key: "fixtures",
-    title: "Fixture Installation",
-    short: "Ceiling fans, light fixtures, faucets, shelving, hardware.",
-    long:
-      "Ceiling fans, light fixtures, faucets, cabinet hardware, wall-mounted shelving, mirrors, TVs, and more. Installed level, solid, and tested before we leave.",
-    icon: "lightbulb",
-    category: "Assembly & Installation",
-  },
-  {
-    key: "assembly",
-    title: "Furniture Assembly",
-    short: "Flat-pack furniture, play sets, outdoor pieces — skip the headache.",
-    long:
-      "Let us handle the flat-pack furniture, play sets, outdoor pieces, and whatever else is still in the box in your garage. Assembled correctly, fully tested, packaging hauled away.",
+      "Ceiling fans, light fixtures, shelving, mirrors, hardware, and flat-pack furniture — assembled and installed level, solid, and tested before we leave.",
     icon: "box",
-    category: "Assembly & Installation",
+    category: "Installation & Furniture Assembly",
   },
   {
-    key: "pressure-washing",
-    title: "Pressure Washing",
-    short: "Driveways, siding, decks, walkways — restored in a day.",
+    key: "paint-drywall",
+    title: "Painting & Drywall",
+    short: "Patches that disappear and clean paint lines, no drips on the floor.",
     long:
-      "Driveways, sidewalks, siding, decks, fences, and outdoor furniture. The right pressure and technique for each surface — no stripped paint, no gouged wood.",
-    icon: "spray",
-    category: "Outdoor & Seasonal",
+      "Drywall holes, cracks, and water damage patched and blended, plus interior rooms, trim, and doors prepped properly and painted cleanly.",
+    icon: "brush",
+    category: "Painting & Drywall Repair",
   },
   {
-    key: "drywall",
-    title: "Drywall Repair",
-    short: "Holes, cracks, water damage — patched and painted.",
+    key: "minor-plumbing",
+    title: "Minor Plumbing",
+    short: "Leaky faucets, running toilets, and fixture swaps — fixed for good.",
     long:
-      "Doorknob holes, nail pops, stress cracks, water-damaged patches. We cut it clean, patch it flat, and blend the texture so the repair disappears.",
+      "Leaky faucets, running toilets, faucet and toilet replacement, garbage disposals, and shutoff valves — the small plumbing fixes that drive you crazy.",
+    icon: "wrench",
+    category: "Minor Plumbing",
+  },
+  {
+    key: "tv-mounting",
+    title: "TV Mounting",
+    short: "Mounted level and solid, wires hidden, ready to watch.",
+    long:
+      'Flat-screens mounted to the wall or over the fireplace, leveled and secure with the cords tidied up — from everyday sets up to the big 65"+ screens.',
     icon: "panel",
-    category: "General Repairs & Maintenance",
+    category: "TV Mounting",
+  },
+];
+
+// Flat-rate pricing, derived from an $85/hr target labor rate with a $95
+// minimum (covers the trip + first job). Drives the service menu below.
+export const PRICING = {
+  hourlyRate: 85,
+  minimumCharge: 95,
+} as const;
+
+// Numbered "combo" packages — blocks of time for a punch list of jobs. The
+// star of the menu: "I'll take the #1."
+export type ServicePackage = {
+  number: number;
+  name: string;
+  hours: number;
+  price: string;
+  blurb: string;
+};
+
+export const SERVICE_PACKAGES: ServicePackage[] = [
+  { number: 1, name: "The Honey-Do", hours: 2, price: "$169", blurb: "Knock out the punch list." },
+  { number: 2, name: "The Half-Day", hours: 4, price: "$329", blurb: "Bigger projects, multiple rooms." },
+  { number: 3, name: "The Full Day", hours: 8, price: "$629", blurb: "The whole list, done in a day." },
+];
+
+// À la carte flat-rate menu, grouped by section. `price` is a display string
+// (a few are "from $X" where scope varies).
+export type MenuItem = { name: string; price: string };
+export type MenuSection = {
+  category: ServiceCategory;
+  icon: string;
+  items: MenuItem[];
+};
+
+export const SERVICE_MENU: MenuSection[] = [
+  {
+    category: "General Repairs",
+    icon: "hammer",
+    items: [
+      { name: "Sticking or misaligned door", price: "$95" },
+      { name: "Re-caulk tub, shower, or sink", price: "$125" },
+      { name: "Squeaky stairs / loose handrail", price: "$110" },
+      { name: "Weatherstripping or door sweep", price: "$95" },
+    ],
+  },
+  {
+    category: "Installation & Furniture Assembly",
+    icon: "box",
+    items: [
+      { name: "Ceiling fan (existing wiring)", price: "$135" },
+      { name: "Light fixture swap", price: "$110" },
+      { name: "Shelving / floating shelves", price: "$135" },
+      { name: "Furniture assembly (per item)", price: "$110" },
+      { name: "Mirror, art, or hardware hanging", price: "$95" },
+      { name: "Blinds or curtain rods (per window)", price: "from $95" },
+    ],
+  },
+  {
+    category: "Painting & Drywall Repair",
+    icon: "brush",
+    items: [
+      { name: "Drywall patch — small (doorknob)", price: "$135" },
+      { name: "Drywall patch + texture & paint", price: "$275" },
+      { name: "Single room — walls", price: "$475" },
+      { name: "Trim & doors (per room)", price: "$215" },
+    ],
+  },
+  {
+    category: "Minor Plumbing",
+    icon: "wrench",
+    items: [
+      { name: "Leaky faucet / running toilet", price: "$95" },
+      { name: "Faucet replacement", price: "$175" },
+      { name: "Toilet install (you supply the toilet)", price: "$225" },
+      { name: "Garbage disposal install", price: "$175" },
+    ],
+  },
+  {
+    category: "TV Mounting",
+    icon: "panel",
+    items: [
+      { name: 'TV up to 55" (existing outlet)', price: "$135" },
+      { name: 'TV 65"+ or over the fireplace', price: "$225" },
+    ],
   },
 ];
 

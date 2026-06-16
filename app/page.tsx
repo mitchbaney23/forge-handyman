@@ -28,7 +28,7 @@ export default function HomePage() {
               what we handle most.
             </p>
           </Reveal>
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {SERVICES.map((service, i) => (
               <Reveal key={service.key} delay={i * 80}>
                 <ServiceCard service={service} index={i} />
