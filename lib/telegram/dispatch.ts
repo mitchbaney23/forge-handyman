@@ -40,6 +40,11 @@ function mapsLink(address: string): string {
 }
 
 function serviceLabel(row: ContactRow): string {
+  // Cart bookings set a descriptive service_type (a package name like "The
+  // Honey-Do" or "Menu order: N items") that isn't one of the category codes —
+  // show it as-is so David sees the package/order at a glance.
+  const st = (row.service_type || "").trim();
+  if (st && !(st in SERVICE_LABEL_BY_CODE)) return st;
   const codes = (row.service_categories || "")
     .split(",")
     .map((s) => s.trim())

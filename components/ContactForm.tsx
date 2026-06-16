@@ -7,32 +7,34 @@ import {
   CONTACT_TIMES,
   PROPERTY_TYPES,
   REFERRAL_SOURCES,
-  SERVICE_CATEGORIES,
+  SERVICE_MENU,
+  SERVICE_PACKAGES,
   URGENCY_OPTIONS,
   type ContactMethodCode,
   type ContactTimeCode,
   type PropertyTypeCode,
-  type ServiceCategoryCode,
   type UrgencyCode,
 } from "@/lib/constants";
+import {
+  cartTotals,
+  isCartEmpty,
+  suggestPackage,
+  type Cart,
+} from "@/lib/cart";
 import { Icon, type IconName } from "@/lib/icons";
 import { NailProgress } from "@/components/NailProgress";
 import { compressIfNeeded } from "@/lib/photo/compress";
 
 const MAX_PHOTOS = 6;
 
-// Map service-category codes → existing glyphs in lib/icons.tsx.
-const SERVICE_ICONS: Record<ServiceCategoryCode, IconName> = {
-  mounting: "box",
-  plumbing: "wrench",
-  electrical: "lightbulb",
-  drywall_paint: "brush",
-  doors_windows: "panel",
-  carpentry: "saw",
-  exterior: "fence",
-  maintenance: "hammer",
-  multiple: "box",
-  other: "handshake",
+// Map menu section names → existing glyphs in lib/icons.tsx, for the cart
+// section headers. Mirrors the `icon` field on each SERVICE_MENU section.
+const SECTION_ICONS: Record<string, IconName> = {
+  hammer: "hammer",
+  box: "box",
+  brush: "brush",
+  wrench: "wrench",
+  panel: "panel",
 };
 
 const PROPERTY_ICONS: Record<PropertyTypeCode, IconName> = {
@@ -70,7 +72,7 @@ type FormState = {
   email: string;
   address: string;
   propertyType: PropertyTypeCode | "";
-  serviceCategories: ServiceCategoryCode[];
+  cart: Cart;
   notSure: boolean;
   description: string;
   preferredDate: string;
@@ -86,7 +88,7 @@ const initial: FormState = {
   email: "",
   address: "",
   propertyType: "",
-  serviceCategories: [],
+  cart: { items: [], packageNumber: null },
   notSure: false,
   description: "",
   preferredDate: "",
@@ -106,9 +108,9 @@ const STEPS: {
 }[] = [
   {
     id: "service",
-    title: "What do you need done?",
-    subtitle: "Pick all that apply — or tell us you're not sure.",
-    fields: ["serviceCategories"],
+    title: "Build your job",
+    subtitle: "Pick what you need — or tell us you're not sure.",
+    fields: ["cart"],
   },
   {
     id: "details",
@@ -211,9 +213,9 @@ function validate(state: FormState): FieldErrors {
   if (!state.address.trim())
     errors.address = "Please share your address or city.";
   if (!state.propertyType) errors.propertyType = "Select a property type.";
-  if (!state.notSure && state.serviceCategories.length === 0)
-    errors.serviceCategories =
-      "Pick at least one service, or check “I'm not sure.”";
+  if (!state.notSure && isCartEmpty(state.cart))
+    errors.cart =
+      "Pick at least one service or a package, or check “I'm not sure.”";
   if (!state.urgency) errors.urgency = "Pick a rough timeframe.";
   if (!state.description.trim())
     errors.description = "Tell us a bit about the work.";
@@ -332,32 +334,62 @@ export function ContactForm() {
     if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
   };
 
-  const toggleCategory = (code: ServiceCategoryCode) => {
+  const clearCartError = () => {
+    if (errors.cart) setErrors((e) => ({ ...e, cart: undefined }));
+  };
+
+  // Toggle an à-la-carte menu item. Selecting any item clears the package and
+  // "I'm not sure". Selecting an already-selected item removes it.
+  const toggleItem = (id: string) => {
     setState((s) => {
-      const has = s.serviceCategories.includes(code);
-      const next = has
-        ? s.serviceCategories.filter((c) => c !== code)
-        : [...s.serviceCategories, code];
-      // If user picks a category, clear "I'm not sure"
+      const has = s.cart.items.some((it) => it.id === id);
+      const items = has
+        ? s.cart.items.filter((it) => it.id !== id)
+        : [...s.cart.items, { id, qty: 1 }];
       return {
         ...s,
-        serviceCategories: next,
-        notSure: next.length > 0 ? false : s.notSure,
+        cart: { items, packageNumber: null },
+        notSure: false,
       };
     });
-    if (errors.serviceCategories)
-      setErrors((e) => ({ ...e, serviceCategories: undefined }));
+    clearCartError();
+  };
+
+  // Select / deselect a package (radio-like). Selecting one clears à-la-carte
+  // items and "I'm not sure"; selecting the active one again deselects it.
+  const togglePackage = (packageNumber: number) => {
+    setState((s) => {
+      const active = s.cart.packageNumber === packageNumber;
+      return {
+        ...s,
+        cart: {
+          items: [],
+          packageNumber: active ? null : packageNumber,
+        },
+        notSure: false,
+      };
+    });
+    clearCartError();
+  };
+
+  // Accept the package nudge — swap the à-la-carte list for the suggested pkg.
+  const acceptPackage = (packageNumber: number) => {
+    setState((s) => ({
+      ...s,
+      cart: { items: [], packageNumber },
+      notSure: false,
+    }));
+    clearCartError();
   };
 
   const toggleNotSure = () => {
     setState((s) => ({
       ...s,
       notSure: !s.notSure,
-      // Clear category selections when picking "not sure"
-      serviceCategories: !s.notSure ? [] : s.serviceCategories,
+      // Clear the cart when picking "not sure".
+      cart: !s.notSure ? { items: [], packageNumber: null } : s.cart,
     }));
-    if (errors.serviceCategories)
-      setErrors((e) => ({ ...e, serviceCategories: undefined }));
+    clearCartError();
   };
 
   // ----- address autocomplete (Places API New) -----
@@ -610,7 +642,7 @@ export function ContactForm() {
           email: state.email,
           address: state.address,
           propertyType: state.propertyType,
-          serviceCategories: state.serviceCategories,
+          cart: state.cart,
           notSure: state.notSure,
           description: state.description,
           preferredDate: state.preferredDate,
@@ -649,8 +681,8 @@ export function ContactForm() {
           for (const [key, message] of Object.entries(incoming)) {
             if (typeof message !== "string") continue;
             // Top-level field names (e.g., "phone") map 1:1 to FormState keys.
-            // Array paths (e.g., "serviceCategories.0") get attributed to
-            // the parent array field.
+            // Nested paths (e.g., "cart.items.0.id") get attributed to the
+            // parent field (e.g., "cart").
             const root = key.split(".")[0] as keyof FormState;
             if (root in initial && !mapped[root]) {
               mapped[root] = message;
@@ -843,20 +875,198 @@ export function ContactForm() {
           </div>
 
           <div className="mt-5">
-            {/* Step 1 — Service */}
-            <div hidden={step !== 0} className="panel-enter space-y-3">
-              <ChoiceGroup
-                idBase="serviceCategories"
-                multi
-                options={SERVICE_CATEGORIES.map((o) => ({
-                  code: o.code,
-                  label: o.label,
-                  icon: SERVICE_ICONS[o.code],
-                }))}
-                selected={state.serviceCategories}
-                onToggle={(c) => toggleCategory(c as ServiceCategoryCode)}
-                error={errors.serviceCategories}
-              />
+            {/* Step 1 — Service (the cart picker) */}
+            <div hidden={step !== 0} className="panel-enter space-y-4">
+              <div
+                id="cart"
+                className={`space-y-4 transition-opacity ${
+                  state.notSure ? "pointer-events-none opacity-45" : ""
+                }`}
+                aria-disabled={state.notSure}
+              >
+                {/* Packages — pick one and we knock out the whole list. */}
+                <div>
+                  <p className="mb-2 text-[13px] font-bold uppercase tracking-[0.1em] text-ink-3">
+                    Book a block of time
+                  </p>
+                  <div className="grid gap-2.5 sm:grid-cols-3">
+                    {SERVICE_PACKAGES.map((pkg) => {
+                      const isSel = state.cart.packageNumber === pkg.number;
+                      return (
+                        <button
+                          key={pkg.number}
+                          type="button"
+                          aria-pressed={isSel}
+                          onClick={() => togglePackage(pkg.number)}
+                          className={`flex flex-col rounded-[7px] border-2 px-3.5 py-3 text-left transition-colors ${
+                            isSel
+                              ? "border-orange bg-orange/[0.07]"
+                              : "border-line bg-white hover:border-ink-3"
+                          }`}
+                        >
+                          <span className="flex items-center justify-between">
+                            <span className="font-display text-base font-bold text-ink">
+                              #{pkg.number} {pkg.name}
+                            </span>
+                            <span
+                              aria-hidden="true"
+                              className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
+                                isSel
+                                  ? "border-orange bg-orange text-white"
+                                  : "border-line bg-white"
+                              }`}
+                            >
+                              {isSel && (
+                                <Icon name="check" className="h-3 w-3" />
+                              )}
+                            </span>
+                          </span>
+                          <span className="mt-0.5 text-[13px] font-semibold text-ink-2">
+                            {pkg.hours} hrs · {pkg.price}
+                          </span>
+                          <span className="mt-1 text-[12.5px] text-ink-3">
+                            {pkg.blurb}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* À-la-carte menu — pick individual jobs. */}
+                <div className="space-y-3 border-t-2 border-dashed border-line pt-4">
+                  <p className="text-[13px] font-bold uppercase tracking-[0.1em] text-ink-3">
+                    Or pick individual jobs
+                  </p>
+                  {SERVICE_MENU.map((section) => (
+                    <div key={section.category}>
+                      <div className="mb-1.5 flex items-center gap-2">
+                        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-paper-2 text-ink-2">
+                          <Icon
+                            name={SECTION_ICONS[section.icon] ?? "hammer"}
+                            className="h-4 w-4"
+                          />
+                        </span>
+                        <span className="text-[13.5px] font-bold text-ink">
+                          {section.category}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {section.items.map((item) => {
+                          const isSel = state.cart.items.some(
+                            (it) => it.id === item.id,
+                          );
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              aria-pressed={isSel}
+                              onClick={() => toggleItem(item.id)}
+                              className={`flex w-full items-center gap-3 rounded-[7px] border-2 px-3.5 py-2.5 text-left text-sm transition-colors ${
+                                isSel
+                                  ? "border-orange bg-orange/[0.07] text-ink"
+                                  : "border-line bg-white text-ink-2 hover:border-ink-3"
+                              }`}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className={`flex h-5 w-5 flex-none items-center justify-center rounded-[5px] border-2 ${
+                                  isSel
+                                    ? "border-orange bg-orange text-white"
+                                    : "border-line bg-white"
+                                }`}
+                              >
+                                {isSel && (
+                                  <Icon name="check" className="h-3 w-3" />
+                                )}
+                              </span>
+                              <span className="min-w-0 flex-1 font-semibold">
+                                {item.name}
+                              </span>
+                              <span className="flex-none font-bold text-ink">
+                                {item.price}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Package nudge — gentle upsell when the list crosses ~2 hrs. */}
+              {!state.notSure &&
+                (() => {
+                  const pkg = suggestPackage(state.cart);
+                  if (!pkg) return null;
+                  return (
+                    <div className="flex flex-col gap-2.5 rounded-[7px] border-2 border-orange bg-orange/[0.07] p-3.5 sm:flex-row sm:items-center">
+                      <Icon
+                        name="hammer"
+                        className="h-5 w-5 flex-none text-orange"
+                      />
+                      <p className="flex-1 text-[13.5px] text-ink">
+                        You&rsquo;ve got enough for{" "}
+                        <span className="font-bold">
+                          {pkg.name} ({pkg.price})
+                        </span>{" "}
+                        — switch and we&rsquo;ll knock out the whole list.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => acceptPackage(pkg.number)}
+                        className="btn-primary shrink-0 whitespace-nowrap px-4 py-2 text-sm"
+                      >
+                        Switch to #{pkg.number}
+                      </button>
+                    </div>
+                  );
+                })()}
+
+              {/* Running summary. */}
+              {!state.notSure &&
+                !isCartEmpty(state.cart) &&
+                (() => {
+                  if (state.cart.packageNumber != null) {
+                    const pkg = SERVICE_PACKAGES.find(
+                      (p) => p.number === state.cart.packageNumber,
+                    );
+                    if (!pkg) return null;
+                    return (
+                      <div className="flex items-center justify-between rounded-[7px] border-2 border-ink bg-paper-2 px-3.5 py-2.5 text-sm font-bold text-ink">
+                        <span>
+                          #{pkg.number} {pkg.name}
+                        </span>
+                        <span>
+                          {pkg.hours} hrs · {pkg.price}
+                        </span>
+                      </div>
+                    );
+                  }
+                  const totals = cartTotals(state.cart);
+                  const hrs = Math.round((totals.minutes / 60) * 10) / 10;
+                  return (
+                    <div className="flex items-center justify-between rounded-[7px] border-2 border-ink bg-paper-2 px-3.5 py-2.5 text-sm font-bold text-ink">
+                      <span>
+                        {totals.itemCount} item
+                        {totals.itemCount === 1 ? "" : "s"} · ~{hrs} hrs
+                      </span>
+                      <span>${totals.subtotalCents / 100}</span>
+                    </div>
+                  );
+                })()}
+
+              {errors.cart && (
+                <p
+                  className="text-[12.5px] font-semibold text-red"
+                  role="alert"
+                >
+                  {errors.cart}
+                </p>
+              )}
+
+              {/* "I'm not sure / custom job" toggle. */}
               <button
                 type="button"
                 onClick={toggleNotSure}
@@ -877,7 +1087,7 @@ export function ContactForm() {
                 >
                   {state.notSure && <Icon name="check" className="h-3 w-3" />}
                 </span>
-                I&rsquo;m not sure what fits — just talk to me
+                I&rsquo;m not sure / it&rsquo;s a custom job — just talk to me
               </button>
             </div>
 

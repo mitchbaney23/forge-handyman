@@ -5,11 +5,18 @@ import { z } from 'zod'
 import { checkServiceArea } from '@/lib/geocoding'
 import { SERVICE_LABEL_BY_CODE, type ServiceCategoryCode } from '@/lib/constants'
 import {
+  deriveServiceCategories,
+  formatCartSummary,
+  isCartEmpty,
+  resolveCart,
+} from '@/lib/cart'
+import {
   createCalendarEvent,
   sendNotificationEmail,
   type ContactSubmission,
 } from '@/lib/google'
 import {
+  cartSchema,
   contactMethodSchema,
   contactTimeSchema,
   propertyTypeSchema,
@@ -51,6 +58,7 @@ const contactSchema = z
     email: emailSchema,
     address: shortTextSchema,
     serviceCategories: serviceCategoriesArraySchema.optional().default([]),
+    cart: cartSchema.optional(),
     notSure: z.boolean().optional().default(false),
     propertyType: propertyTypeSchema,
     preferredDate: z
@@ -82,10 +90,15 @@ const contactSchema = z
     photoUrls: z.array(z.string().url()).max(6).optional().default([]),
   })
   .refine(
-    (v) => v.notSure || (v.serviceCategories && v.serviceCategories.length >= 1),
+    (v) =>
+      v.notSure ||
+      (v.serviceCategories && v.serviceCategories.length >= 1) ||
+      (v.cart != null && !isCartEmpty(v.cart)),
     {
-      message: "Pick at least one service, or check 'I'm not sure'",
-      path: ['serviceCategories'],
+      message: "Pick at least one service or a package, or check 'I'm not sure'",
+      // Key to the live form field (`cart`) so the client highlights it and
+      // scrolls to step 1 — `serviceCategories` no longer exists on the form.
+      path: ['cart'],
     },
   )
 
@@ -98,6 +111,29 @@ interface DerivedServiceInfo {
 }
 
 function deriveServiceInfo(payload: ContactPayload): DerivedServiceInfo {
+  // Cart-driven derivation takes precedence when a non-empty cart is present.
+  if (payload.cart && !isCartEmpty(payload.cart)) {
+    const cart = payload.cart
+    const { lines, pkg } = resolveCart(cart)
+    // Defensive: a cart that resolves to nothing (only stale/unknown ids from a
+    // since-changed menu) must not become "Menu order: 0 items" — fall back to a
+    // generic request so the lead still reads sensibly downstream.
+    if (!pkg && lines.length === 0) {
+      return {
+        serviceType: 'other',
+        serviceTypeLabel: SERVICE_LABEL_BY_CODE.other,
+        serviceCategoriesCsv: '',
+      }
+    }
+    const serviceType = pkg
+      ? pkg.name
+      : `Menu order: ${lines.length} item${lines.length === 1 ? '' : 's'}`
+    return {
+      serviceType,
+      serviceTypeLabel: serviceType,
+      serviceCategoriesCsv: deriveServiceCategories(cart).join(','),
+    }
+  }
   if (payload.notSure) {
     return {
       serviceType: 'other',
@@ -179,6 +215,15 @@ function payloadToRow(
   isReturningCustomer: boolean,
   priorJobCount: number,
 ): ContactRow {
+  // When a cart is present, lead the description with its plain-text summary,
+  // then append the customer's free-text note (if any). Otherwise the
+  // description is the free-text note unchanged.
+  const description =
+    payload.cart && !isCartEmpty(payload.cart)
+      ? formatCartSummary(payload.cart) +
+        (payload.description ? '\n\n' + payload.description : '')
+      : payload.description
+
   return {
     submitted_at: submittedAt,
     name: payload.name,
@@ -187,7 +232,7 @@ function payloadToRow(
     address: payload.address,
     service_type: derived.serviceType,
     preferred_date: payload.preferredDate,
-    description: payload.description,
+    description,
     referral_source: payload.referralSource,
     status: 'New',
     utm_source: payload.utmSource,

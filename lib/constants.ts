@@ -122,13 +122,14 @@ export type ServicePackage = {
   name: string;
   hours: number;
   price: string;
+  priceCents: number;
   blurb: string;
 };
 
 export const SERVICE_PACKAGES: ServicePackage[] = [
-  { number: 1, name: "The Honey-Do", hours: 2, price: "$169", blurb: "Knock out the punch list." },
-  { number: 2, name: "The Half-Day", hours: 4, price: "$329", blurb: "Bigger projects, multiple rooms." },
-  { number: 3, name: "The Full Day", hours: 8, price: "$629", blurb: "The whole list, done in a day." },
+  { number: 1, name: "The Honey-Do", hours: 2, price: "$169", priceCents: 16900, blurb: "Knock out the punch list." },
+  { number: 2, name: "The Half-Day", hours: 4, price: "$329", priceCents: 32900, blurb: "Bigger projects, multiple rooms." },
+  { number: 3, name: "The Full Day", hours: 8, price: "$629", priceCents: 62900, blurb: "The whole list, done in a day." },
 ];
 
 // À la carte flat-rate menu, grouped by section.
