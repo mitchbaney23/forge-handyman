@@ -122,18 +122,29 @@ export type ServicePackage = {
   name: string;
   hours: number;
   price: string;
+  priceCents: number;
   blurb: string;
 };
 
 export const SERVICE_PACKAGES: ServicePackage[] = [
-  { number: 1, name: "The Honey-Do", hours: 2, price: "$169", blurb: "Knock out the punch list." },
-  { number: 2, name: "The Half-Day", hours: 4, price: "$329", blurb: "Bigger projects, multiple rooms." },
-  { number: 3, name: "The Full Day", hours: 8, price: "$629", blurb: "The whole list, done in a day." },
+  { number: 1, name: "The Honey-Do", hours: 2, price: "$169", priceCents: 16900, blurb: "Knock out the punch list." },
+  { number: 2, name: "The Half-Day", hours: 4, price: "$329", priceCents: 32900, blurb: "Bigger projects, multiple rooms." },
+  { number: 3, name: "The Full Day", hours: 8, price: "$629", priceCents: 62900, blurb: "The whole list, done in a day." },
 ];
 
-// À la carte flat-rate menu, grouped by section. `price` is a display string
-// (a few are "from $X" where scope varies).
-export type MenuItem = { name: string; price: string };
+// À la carte flat-rate menu, grouped by section.
+//  - `id`       — stable key for cart selection + storage.
+//  - `price`    — display string (a few are "from $X" where scope varies).
+//  - `priceCents` — the numeric flat price for cart math (the floor for "from").
+//  - `minutes`  — typical on-site time, used by the cart to total hours and
+//    nudge toward a package once the list crosses ~2 hours.
+export type MenuItem = {
+  id: string;
+  name: string;
+  price: string;
+  priceCents: number;
+  minutes: number;
+};
 export type MenuSection = {
   category: ServiceCategory;
   icon: string;
@@ -145,53 +156,57 @@ export const SERVICE_MENU: MenuSection[] = [
     category: "General Repairs",
     icon: "hammer",
     items: [
-      { name: "Sticking or misaligned door", price: "$95" },
-      { name: "Re-caulk tub, shower, or sink", price: "$125" },
-      { name: "Squeaky stairs / loose handrail", price: "$110" },
-      { name: "Weatherstripping or door sweep", price: "$95" },
+      { id: "door-fix", name: "Sticking or misaligned door", price: "$95", priceCents: 9500, minutes: 60 },
+      { id: "recaulk", name: "Re-caulk tub, shower, or sink", price: "$125", priceCents: 12500, minutes: 90 },
+      { id: "handrail", name: "Squeaky stairs / loose handrail", price: "$110", priceCents: 11000, minutes: 60 },
+      { id: "weatherstrip", name: "Weatherstripping or door sweep", price: "$95", priceCents: 9500, minutes: 45 },
     ],
   },
   {
     category: "Installation & Furniture Assembly",
     icon: "box",
     items: [
-      { name: "Ceiling fan (existing wiring)", price: "$135" },
-      { name: "Light fixture swap", price: "$110" },
-      { name: "Shelving / floating shelves", price: "$135" },
-      { name: "Furniture assembly (per item)", price: "$110" },
-      { name: "Mirror, art, or hardware hanging", price: "$95" },
-      { name: "Blinds or curtain rods (per window)", price: "from $95" },
+      { id: "ceiling-fan", name: "Ceiling fan (existing wiring)", price: "$135", priceCents: 13500, minutes: 90 },
+      { id: "light-fixture", name: "Light fixture swap", price: "$110", priceCents: 11000, minutes: 60 },
+      { id: "shelving", name: "Shelving / floating shelves", price: "$135", priceCents: 13500, minutes: 90 },
+      { id: "furniture", name: "Furniture assembly (per item)", price: "$110", priceCents: 11000, minutes: 90 },
+      { id: "hanging", name: "Mirror, art, or hardware hanging", price: "$95", priceCents: 9500, minutes: 45 },
+      { id: "blinds", name: "Blinds or curtain rods (per window)", price: "from $95", priceCents: 9500, minutes: 45 },
     ],
   },
   {
     category: "Painting & Drywall Repair",
     icon: "brush",
     items: [
-      { name: "Drywall patch — small (doorknob)", price: "$135" },
-      { name: "Drywall patch + texture & paint", price: "$275" },
-      { name: "Single room — walls", price: "$475" },
-      { name: "Trim & doors (per room)", price: "$215" },
+      { id: "patch-small", name: "Drywall patch — small (doorknob)", price: "$135", priceCents: 13500, minutes: 90 },
+      { id: "patch-paint", name: "Drywall patch + texture & paint", price: "$275", priceCents: 27500, minutes: 180 },
+      { id: "room-walls", name: "Single room — walls", price: "$475", priceCents: 47500, minutes: 330 },
+      { id: "trim-doors", name: "Trim & doors (per room)", price: "$215", priceCents: 21500, minutes: 150 },
     ],
   },
   {
     category: "Minor Plumbing",
     icon: "wrench",
     items: [
-      { name: "Leaky faucet / running toilet", price: "$95" },
-      { name: "Faucet replacement", price: "$175" },
-      { name: "Toilet install (you supply the toilet)", price: "$225" },
-      { name: "Garbage disposal install", price: "$175" },
+      { id: "faucet-repair", name: "Leaky faucet / running toilet", price: "$95", priceCents: 9500, minutes: 60 },
+      { id: "faucet-replace", name: "Faucet replacement", price: "$175", priceCents: 17500, minutes: 120 },
+      { id: "toilet-install", name: "Toilet install (you supply the toilet)", price: "$225", priceCents: 22500, minutes: 150 },
+      { id: "disposal", name: "Garbage disposal install", price: "$175", priceCents: 17500, minutes: 120 },
     ],
   },
   {
     category: "TV Mounting",
     icon: "panel",
     items: [
-      { name: 'TV up to 55" (existing outlet)', price: "$135" },
-      { name: 'TV 65"+ or over the fireplace', price: "$225" },
+      { id: "tv-standard", name: 'TV up to 55" (existing outlet)', price: "$135", priceCents: 13500, minutes: 90 },
+      { id: "tv-large", name: 'TV 65"+ or over the fireplace', price: "$225", priceCents: 22500, minutes: 150 },
     ],
   },
 ];
+
+// Package time blocks in minutes, for the cart's "you've got enough for the #1"
+// nudge. Keyed by package number.
+export const PACKAGE_MINUTES: Record<number, number> = { 1: 120, 2: 240, 3: 480 };
 
 export const TRUST_SIGNALS = [
   { icon: "shield", label: "Fully Insured" },
