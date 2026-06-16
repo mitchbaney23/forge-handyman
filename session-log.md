@@ -19,7 +19,7 @@ also lives in the memory files (see "Pointers" at the bottom) — read those fir
 | Flat-rate **service menu** page | **Live** (merged to main) |
 | Postgres CRM (Phases A + B) | **LIVE in prod on Postgres** (`DATA_BACKEND=postgres`, cut over 2026-06-16) |
 | Supabase project | **Production backend** (`nkvsgvlyxwdsvklxypwu`); also the local `.env.local` project → dev+prod share one DB |
-| **Booking cart** | **Built + reviewed on branch `feat/booking-cart`** (HEAD `c6d4966`), NOT merged (awaiting Mitch's go) |
+| **Booking cart** | **LIVE in prod** (merged to `main` `ecc4a7b`, deployed 2026-06-16) — `/contact` serves the "Build your job" cart |
 | Production **data cutover** to Postgres | **DONE — fresh start** (empty Postgres; Sheet leads NOT migrated) |
 | Stripe | **TEST mode** in prod (no live keys yet) |
 | Phone number on site | still `(555) 123-4567` placeholder (Twilio number pending) |
@@ -120,8 +120,12 @@ once the list crosses ~2 hours. The "not sure / custom job" door stays.
 
 ## Pending — needs Mitch (action items)
 
-1. **Ship the cart**: test-drive the Vercel preview, then say "ship it" → merge
-   `feat/booking-cart` → `main`.
+1. ✅ **Ship the cart — DONE 2026-06-16.** Merged `feat/booking-cart` → `main`
+   (`ecc4a7b`), verified (typecheck/150 tests/build), deployed; `/contact` now
+   serves the "Build your job" cart in prod. First customer-facing write path
+   into the new empty Postgres CRM. NOT YET live-tested with a real submission
+   (would write a lead + ping David's Telegram) — first real booking confirms
+   the cart→Postgres→Telegram pipeline end-to-end.
 2. ✅ **Production data cutover to Postgres — DONE 2026-06-16 (fresh start).**
    Mitch chose to start the CRM fresh on the empty Postgres DB (no Sheet
    migration, so the Google-key blocker was sidestepped). Added `SUPABASE_URL`,
