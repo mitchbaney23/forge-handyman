@@ -22,6 +22,9 @@ function buildCsp(isDev: boolean): string {
       'https://*.ingest.us.sentry.io',
       'https://challenges.cloudflare.com',
       'https://maps.googleapis.com',
+      // Places API (New) — the address-autocomplete library can call this host
+      // directly; without it the browser CSP silently blocks suggestions.
+      'https://places.googleapis.com',
     ],
     'frame-src': [
       'https://js.stripe.com',
