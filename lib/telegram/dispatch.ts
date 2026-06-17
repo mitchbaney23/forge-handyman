@@ -3,6 +3,7 @@ import {
   type ServiceCategoryCode,
 } from "@/lib/constants";
 import { logger, maskPhone } from "@/lib/security/logger";
+import { formatEtDay, formatEtTime } from "@/lib/scheduling/time";
 import type { ContactRow } from "@/lib/sheet/repo";
 import { sendMessage, type InlineButton } from "@/lib/telegram/client";
 
@@ -153,6 +154,81 @@ export async function dispatchJobToDavid(row: ContactRow): Promise<DispatchResul
     { jobId: row.job_id, maskedPhone: maskPhone(row.phone), messageId: sent.message_id },
     "telegram-dispatch: job card sent to David",
   );
+  return { ok: true, messageId: sent.message_id };
+}
+
+// A CONFIRMED self-scheduled booking card. Unlike buildDispatchMessage (a lead
+// awaiting David's approval), the time is firm and there are no decision
+// buttons — David just gets where/when/what (the Phase C "daily agenda"
+// direction; approve/decline is retired for self-serve bookings).
+export function buildBookingMessage(
+  row: ContactRow,
+  startsAt: string,
+  endsAt: string,
+): string {
+  const start = new Date(startsAt);
+  const end = new Date(endsAt);
+  const photoCount = (row.photo_urls || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean).length;
+  const returning =
+    row.is_returning_customer === "true" || Number(row.prior_job_count || "0") > 0;
+
+  const lines = [
+    `📅 <b>Booked — ${escapeHtml(row.name || "(no name)")}</b>`,
+    "",
+    `🗓 <b>${escapeHtml(formatEtDay(start))} · ${escapeHtml(formatEtTime(start))}–${escapeHtml(formatEtTime(end))}</b>`,
+    `📍 <a href="${mapsLink(row.address || "")}">${escapeHtml(row.address || "—")}</a>`,
+    `🛠 ${escapeHtml(serviceLabel(row))}`,
+    row.phone ? `📞 ${escapeHtml(row.phone)}` : "",
+    photoCount > 0 ? `📷 ${photoCount} photo${photoCount === 1 ? "" : "s"}` : "",
+    returning
+      ? `↩️ <i>Returning customer · ${escapeHtml(String(row.prior_job_count || "1"))} prior</i>`
+      : "",
+    "",
+    `<b>Job:</b> ${escapeHtml((row.description || "").slice(0, 600))}`,
+  ].filter((l) => l !== "");
+
+  return lines.join("\n");
+}
+
+/**
+ * Sends David a CONFIRMED booking card (firm time, no buttons). Best-effort.
+ */
+export async function dispatchBookingToDavid(
+  row: ContactRow,
+  slot: { startsAt: string; endsAt: string },
+): Promise<DispatchResult> {
+  const davidChatId = process.env.TELEGRAM_DAVID_CHAT_ID;
+  if (!davidChatId) {
+    logger.warn("telegram-dispatch: TELEGRAM_DAVID_CHAT_ID not set — skipping");
+    return { ok: false, reason: "no-chat-id" };
+  }
+  const sent = await sendMessage(
+    davidChatId,
+    buildBookingMessage(row, slot.startsAt, slot.endsAt),
+  ); // no keyboard — the booking is firm
+  if (!sent) return { ok: false, reason: "send-failed" };
+  logger.info(
+    { jobId: row.job_id, messageId: sent.message_id },
+    "telegram-dispatch: booking card sent to David",
+  );
+  return { ok: true, messageId: sent.message_id };
+}
+
+/**
+ * Sends Mitch an FYI copy of a confirmed booking. Best-effort.
+ */
+export async function notifyMitchBooking(
+  row: ContactRow,
+  slot: { startsAt: string; endsAt: string },
+): Promise<DispatchResult> {
+  const mitchChatId = process.env.TELEGRAM_MITCH_CHAT_ID;
+  if (!mitchChatId) return { ok: false, reason: "no-chat-id" };
+  const text = `✅ <b>New booking</b>\n\n${buildBookingMessage(row, slot.startsAt, slot.endsAt)}`;
+  const sent = await sendMessage(mitchChatId, text);
+  if (!sent) return { ok: false, reason: "send-failed" };
   return { ok: true, messageId: sent.message_id };
 }
 

@@ -4,6 +4,7 @@ import { Redis } from "@upstash/redis";
 import { getStripe } from "@/lib/stripe/client";
 import { getBackend, type DataBackend } from "@/lib/data/backend";
 import { getSupabaseClient } from "@/lib/data/pg/client";
+import { getAuth } from "@/lib/google";
 import { logger } from "@/lib/security/logger";
 
 export const runtime = "nodejs";
@@ -201,6 +202,38 @@ async function checkStripe(): Promise<HealthCheck> {
   }
 }
 
+// Calendar connectivity — scheduling reads free/busy + writes bookings here, so
+// a calendar outage breaks self-scheduling even though the data backend is fine.
+async function checkGoogleCalendar(): Promise<HealthCheck> {
+  const started = Date.now();
+  try {
+    const calendarId = process.env.GOOGLE_CALENDAR_ID;
+    if (
+      !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||
+      !process.env.GOOGLE_PRIVATE_KEY ||
+      !calendarId
+    ) {
+      return {
+        name: "google-calendar",
+        status: "skipped",
+        latencyMs: Date.now() - started,
+        detail: "Calendar env vars missing",
+      };
+    }
+    const calendar = google.calendar({ version: "v3", auth: getAuth() });
+    // Cheap call: read calendar metadata only, no event data.
+    await withTimeout(calendar.calendars.get({ calendarId }), TIMEOUT_MS);
+    return { name: "google-calendar", status: "ok", latencyMs: Date.now() - started };
+  } catch (err) {
+    return {
+      name: "google-calendar",
+      status: "fail",
+      latencyMs: Date.now() - started,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 async function checkUpstash(): Promise<HealthCheck> {
   const started = Date.now();
   try {
@@ -268,6 +301,7 @@ export async function GET(): Promise<NextResponse> {
     checkEnvVars(),
     sheetsCheck,
     postgresCheck,
+    checkGoogleCalendar(),
     checkStripe(),
     checkUpstash(),
   ]);

@@ -23,6 +23,7 @@ export type LimiterName =
   | 'public-api'
   | 'photo-upload'
   | 'telegram-webhook'
+  | 'scheduling-availability'
 
 const limiterCache: Partial<Record<LimiterName, Ratelimit>> = {}
 
@@ -49,6 +50,10 @@ function buildLimiter(name: LimiterName): Ratelimit {
       // Telegram callback volume is tiny (David tapping buttons); a generous
       // cap that still stops a runaway loop if Telegram retries aggressively.
       return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(60, '1 m'), prefix: 'rl:tg', analytics: true })
+    case 'scheduling-availability':
+      // Public, unauthenticated slot lookup — a customer refining their cart may
+      // call it several times. Generous per-IP cap that still blocks scraping.
+      return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(60, '1 h'), prefix: 'rl:sched', analytics: true })
   }
 }
 

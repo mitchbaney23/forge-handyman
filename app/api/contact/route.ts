@@ -5,16 +5,27 @@ import { z } from 'zod'
 import { checkServiceArea } from '@/lib/geocoding'
 import { SERVICE_LABEL_BY_CODE, type ServiceCategoryCode } from '@/lib/constants'
 import {
+  cartJobMinutes,
   deriveServiceCategories,
   formatCartSummary,
   isCartEmpty,
   resolveCart,
 } from '@/lib/cart'
 import {
+  createBookingEvent,
   createCalendarEvent,
+  deleteBookingEvent,
   sendNotificationEmail,
   type ContactSubmission,
 } from '@/lib/google'
+import {
+  getAvailabilityWindows,
+  getBusyIntervals,
+} from '@/lib/scheduling/availability'
+import { computeAvailableSlots } from '@/lib/scheduling/slots'
+import { BOOKING_WINDOW_DAYS } from '@/lib/scheduling/config'
+import { easternIsoDate } from '@/lib/scheduling/time'
+import { ACTIONS, ACTORS } from '@/lib/data/activity-actions'
 import {
   cartSchema,
   contactMethodSchema,
@@ -39,13 +50,24 @@ import {
   shortTextSchema,
 } from '@/lib/security/zod'
 import {
+  appendAuditRow,
   appendContactRow,
+  claimSlot,
   countDuplicateLeadsLast24h,
   findPriorJobsByEmail,
+  getDefaultTechnician,
+  linkAppointment,
+  listAppointmentsInRange,
+  releaseSlot,
   updateRowByJobId,
   type ContactRow,
 } from '@/lib/data'
-import { dispatchJobToDavid, notifyMitchNewLead } from '@/lib/telegram/dispatch'
+import {
+  dispatchBookingToDavid,
+  dispatchJobToDavid,
+  notifyMitchBooking,
+  notifyMitchNewLead,
+} from '@/lib/telegram/dispatch'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -81,7 +103,18 @@ export const contactSchema = z
           .replace(/<[^>]*>/g, '')
           .replace(/\s+/g, ' '),
       ),
-    urgency: urgencySchema,
+    // Urgency is the fallback-path timing hint; a scheduled booking carries an
+    // exact slot instead, so it's optional now.
+    urgency: urgencySchema.optional(),
+    // A customer-chosen appointment slot (self-scheduling). ISO instants;
+    // re-validated server-side against live availability before booking — never
+    // trusted as-is.
+    selectedSlot: z
+      .object({
+        startsAt: z.string().datetime(),
+        endsAt: z.string().datetime(),
+      })
+      .optional(),
     bestContactTime: contactTimeSchema,
     bestContactMethod: contactMethodSchema,
     referralSource: z
@@ -260,13 +293,171 @@ function payloadToRow(
     job_id: jobId,
     service_categories: derived.serviceCategoriesCsv,
     property_type: payload.propertyType,
-    urgency: payload.urgency,
+    urgency: payload.urgency ?? '',
     best_contact_time: payload.bestContactTime,
     best_contact_method: payload.bestContactMethod,
     photo_urls: (payload.photoUrls ?? []).join(','),
     is_returning_customer: isReturningCustomer ? 'true' : '',
     prior_job_count: String(priorJobCount),
   }
+}
+
+const MS_PER_DAY = 86_400_000
+
+// Auto-confirm a customer-chosen slot. Returns a NextResponse when scheduling
+// was attempted (success, slot-taken 409, or error), or null to fall through to
+// the normal lead-capture flow (e.g. no technician/calendar configured yet).
+//
+// Order matters — claim BEFORE writing the job so a taken slot fails fast with
+// nothing persisted, and compensate (release slot / delete event) on any later
+// failure so we never leave a phantom hold or orphan event.
+async function handleScheduledBooking(args: {
+  payload: ContactPayload
+  jobId: string
+  row: ContactRow
+  submission: ContactSubmission
+  slot: { startsAt: string; endsAt: string }
+}): Promise<NextResponse | null> {
+  const { payload, jobId, row, submission, slot } = args
+
+  const tech = await getDefaultTechnician()
+  if (!tech || !tech.calendarEmail) {
+    logger.warn('contact-form: scheduled booking requested but no technician/calendar — falling back to lead')
+    return null
+  }
+
+  const jobMinutes = payload.cart ? cartJobMinutes(payload.cart) : 0
+  const now = new Date()
+  const from = now.toISOString()
+  const to = new Date(now.getTime() + BOOKING_WINDOW_DAYS * MS_PER_DAY).toISOString()
+
+  // Re-validate the chosen slot against LIVE availability — authoritative, never
+  // trust the client. It must be a slot we'd currently offer (right duration,
+  // within an open window, not busy, respects lead time).
+  try {
+    const [windows, freebusy, appts] = await Promise.all([
+      getAvailabilityWindows(tech, { from, to }),
+      getBusyIntervals(tech, { from, to }),
+      listAppointmentsInRange(from, to),
+    ])
+    const busy = [
+      ...freebusy,
+      ...appts.map((a) => ({ start: Date.parse(a.startsAt), end: Date.parse(a.endsAt) })),
+    ]
+    const { slotsByDay } = computeAvailableSlots({
+      now,
+      jobMinutes,
+      availabilityWindows: windows,
+      busyIntervals: busy,
+    })
+    const offered = slotsByDay.some((d) =>
+      d.slots.some((s) => s.startsAt === slot.startsAt && s.endsAt === slot.endsAt),
+    )
+    if (!offered) {
+      return jsonError('That time is no longer available — please pick another.', 409, {
+        error: 'slot_taken',
+        refreshAvailability: true,
+      })
+    }
+  } catch (err) {
+    Sentry.captureException(err, { tags: { route: 'contact-form', step: 'slot-revalidate' } })
+    logger.error({ err }, 'contact-form: slot re-validation failed')
+    return jsonError("We couldn't confirm that time right now. Please try again.", 503)
+  }
+
+  // Atomically claim the slot (job_id null until the jobs row exists).
+  let appt
+  try {
+    appt = await claimSlot({
+      jobId: '',
+      technicianId: tech.id,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+    })
+  } catch (err) {
+    Sentry.captureException(err, { tags: { route: 'contact-form', step: 'claim-slot' } })
+    logger.error({ err }, 'contact-form: claim_slot failed')
+    return jsonError("We couldn't confirm that time right now. Please try again.", 503)
+  }
+  if (!appt) {
+    return jsonError('That time was just taken — please pick another.', 409, {
+      error: 'slot_taken',
+      refreshAvailability: true,
+    })
+  }
+
+  // Create the firm calendar event on the technician's calendar.
+  let eventId = ''
+  try {
+    eventId = await createBookingEvent({
+      subject: tech.calendarEmail,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      data: submission,
+    })
+  } catch (err) {
+    Sentry.captureException(err, { tags: { route: 'contact-form', step: 'booking-event' } })
+    logger.error({ err }, 'contact-form: createBookingEvent failed')
+    await releaseSlot(appt.id).catch(() => {})
+    return jsonError("We couldn't confirm that time right now. Please try again.", 502)
+  }
+
+  // Persist the job as Booked, then link the appointment to it.
+  const bookedRow: ContactRow = {
+    ...row,
+    status: 'Booked',
+    preferred_date: easternIsoDate(new Date(slot.startsAt)),
+  }
+  try {
+    await appendContactRow(bookedRow)
+  } catch (err) {
+    Sentry.captureException(err, { tags: { route: 'contact-form', step: 'sheet-append-booked' } })
+    logger.error({ err }, 'contact-form: booked job append failed')
+    await releaseSlot(appt.id).catch(() => {})
+    await deleteBookingEvent({ subject: tech.calendarEmail, eventId }).catch(() => {})
+    return jsonError("We couldn't complete your booking. Please try again.", 502)
+  }
+  await linkAppointment(appt.id, { jobId, googleEventId: eventId }).catch((err) => {
+    logger.error({ err, jobId }, 'contact-form: linkAppointment failed (non-fatal)')
+  })
+
+  // Activity log (best-effort).
+  await appendAuditRow({
+    actor: ACTORS.SYSTEM,
+    action: ACTIONS.APPOINTMENT_SCHEDULED,
+    target: jobId,
+    jobId,
+    notes: `${slot.startsAt} → ${slot.endsAt}`,
+  }).catch(() => {})
+  await appendAuditRow({
+    actor: ACTORS.SYSTEM,
+    action: ACTIONS.JOB_BOOKED,
+    target: jobId,
+    jobId,
+  }).catch(() => {})
+
+  // Notifications — booking is already firm, so all best-effort (a comms failure
+  // must not undo a confirmed booking).
+  try {
+    await sendNotificationEmail(submission)
+  } catch (err) {
+    logger.error({ err, jobId }, 'contact-form: booking notification email failed')
+  }
+  if (process.env.DISPATCH_DISABLED !== 'true') {
+    try {
+      await dispatchBookingToDavid(bookedRow, slot)
+    } catch (err) {
+      logger.error({ err, jobId }, 'contact-form: booking dispatch to David failed')
+    }
+    try {
+      await notifyMitchBooking(bookedRow, slot)
+    } catch (err) {
+      logger.error({ err, jobId }, 'contact-form: booking FYI to Mitch failed')
+    }
+  }
+
+  logger.info({ jobId, startsAt: slot.startsAt }, 'contact-form: booking confirmed')
+  return NextResponse.json({ ok: true, booked: { startsAt: slot.startsAt, endsAt: slot.endsAt } })
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -407,6 +598,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (isDevMode()) {
     logger.info({ submittedAt }, 'contact-form: DEV_MODE active — skipping third-party calls')
     return NextResponse.json({ ok: true, mode: 'dev' })
+  }
+
+  // Self-scheduling: when the customer picked a real slot (known-duration cart,
+  // not the custom path), auto-confirm the booking. Falls through to the normal
+  // lead flow if scheduling can't run (e.g. no technician configured).
+  const slot = payload.selectedSlot
+  const wantsBooking =
+    !!slot &&
+    !payload.notSure &&
+    !!payload.cart &&
+    !isCartEmpty(payload.cart) &&
+    cartJobMinutes(payload.cart) > 0
+  if (wantsBooking && slot) {
+    const booked = await handleScheduledBooking({ payload, jobId, row, submission, slot })
+    if (booked) return booked
   }
 
   try {

@@ -150,17 +150,40 @@ create index activities_action_idx on activities (action);
 -- ---------------------------------------------------------------------------
 
 create table technicians (
-  id               uuid primary key default gen_random_uuid(),
-  created_at       timestamptz not null default now(),
-  name             text not null,
-  phone            text not null default '',
-  email            citext not null default '',
-  telegram_chat_id text not null default '',  -- dispatch recipient (Phase C generalizes beyond the single hardcoded chat)
-  active           boolean not null default true,
-  notes            text not null default ''
+  id                       uuid primary key default gen_random_uuid(),
+  created_at               timestamptz not null default now(),
+  name                     text not null,
+  phone                    text not null default '',
+  email                    citext not null default '',
+  telegram_chat_id         text not null default '',  -- dispatch recipient (Phase C generalizes beyond the single hardcoded chat)
+  active                   boolean not null default true,
+  notes                    text not null default '',
+  -- Phase C scheduling (migration 20260617120000_appointments.sql):
+  calendar_email           text not null default '',  -- @forgehandyman.com account impersonated (DWD) to read availability/free-busy + write bookings
+  availability_calendar_id text not null default ''   -- calendar holding "open for jobs" windows
 );
--- Phase C adds an `appointments` table (job_id, technician_id, time window)
--- + a dispatch-recipient column; `jobs` is NOT ALTERed for scheduling.
+
+-- Phase C: self-scheduling. One row per booked slot. `jobs` is NOT ALTERed for
+-- scheduling. A partial unique index + claim_slot() RPC mirror the payments
+-- double-charge guard (the atomic anti-double-booking layer). See migration
+-- 20260617120000_appointments.sql.
+create table appointments (
+  id              uuid primary key default gen_random_uuid(),
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  job_id          uuid references jobs(id),
+  technician_id   uuid not null references technicians(id),
+  starts_at       timestamptz not null,
+  ends_at         timestamptz not null,
+  status          text not null default 'Booked',  -- app-enforced (Booked/Cancelled), no CHECK
+  google_event_id text not null default '',
+  source          text not null default 'self-serve'
+);
+-- At most one live (Booked) appointment per technician + start instant.
+create unique index appointments_live_slot_uniq
+  on appointments (technician_id, starts_at) where status = 'Booked';
+create index appointments_starts_at_idx on appointments (starts_at);
+create index appointments_job_id_idx on appointments (job_id);
 
 create table catalog_items (
   id               uuid primary key default gen_random_uuid(),

@@ -16,11 +16,13 @@ import {
   type UrgencyCode,
 } from "@/lib/constants";
 import {
+  cartJobMinutes,
   cartTotals,
   isCartEmpty,
   suggestPackage,
   type Cart,
 } from "@/lib/cart";
+import { formatEtDay, formatEtTime } from "@/lib/scheduling/time";
 import { Icon, type IconName } from "@/lib/icons";
 import { NailProgress } from "@/components/NailProgress";
 import { compressIfNeeded } from "@/lib/photo/compress";
@@ -66,6 +68,8 @@ type OutOfAreaInfo = { distanceMiles: number; radiusMiles: number };
 
 type FieldErrors = Partial<Record<keyof FormState, string>>;
 
+type SelectedSlot = { startsAt: string; endsAt: string };
+
 type FormState = {
   name: string;
   phone: string;
@@ -77,6 +81,12 @@ type FormState = {
   description: string;
   preferredDate: string;
   urgency: UrgencyCode | "";
+  // A chosen appointment slot (self-scheduling). null on the fallback/custom
+  // path, where urgency/preferredDate carry the timing instead.
+  selectedSlot: SelectedSlot | null;
+  // True when the customer is on the "request a callback" timing path (custom
+  // job, no fitting slot, or "none of these work") rather than the slot picker.
+  useFallbackTiming: boolean;
   bestContactTime: ContactTimeCode;
   bestContactMethod: ContactMethodCode;
   referralSource: string;
@@ -93,9 +103,18 @@ const initial: FormState = {
   description: "",
   preferredDate: "",
   urgency: "",
+  selectedSlot: null,
+  useFallbackTiming: false,
   bestContactTime: "any",
   bestContactMethod: "any",
   referralSource: "",
+};
+
+// Shape returned by /api/scheduling/availability.
+type AvailabilityResponse = {
+  slotsByDay: { dayISO: string; slots: SelectedSlot[] }[];
+  tooLongForWindow?: boolean;
+  noTechnician?: boolean;
 };
 
 // Wizard steps — leads with the job, captures contact info last.
@@ -126,9 +145,9 @@ const STEPS: {
   },
   {
     id: "timing",
-    title: "When works for you?",
-    subtitle: "A rough timeframe is all we need.",
-    fields: ["urgency"],
+    title: "Pick your time",
+    subtitle: "Choose a real opening — or tell us your timeframe.",
+    fields: ["selectedSlot", "urgency"],
   },
   {
     id: "contact",
@@ -216,7 +235,17 @@ function validate(state: FormState): FieldErrors {
   if (!state.notSure && isCartEmpty(state.cart))
     errors.cart =
       "Pick at least one service or a package, or check “I'm not sure.”";
-  if (!state.urgency) errors.urgency = "Pick a rough timeframe.";
+  // Timing: on the slot-picker path a selected slot is required; on the
+  // fallback/callback path (custom job, no fitting slot, or "none of these
+  // work") a rough timeframe is required instead. A custom cart is always
+  // fallback regardless of the stored flag.
+  const canScheduleTiming =
+    !state.notSure && !isCartEmpty(state.cart) && cartJobMinutes(state.cart) > 0;
+  if (!canScheduleTiming || state.useFallbackTiming) {
+    if (!state.urgency) errors.urgency = "Pick a rough timeframe.";
+  } else if (!state.selectedSlot) {
+    errors.selectedSlot = "Please choose an appointment time.";
+  }
   // Description is required only on the "not sure / custom job" path — there
   // the text IS the job. When they've picked menu items, the cart already says
   // what the job is, so notes are optional.
@@ -237,6 +266,12 @@ export function ContactForm() {
   // Wizard navigation.
   const [step, setStep] = useState<number>(0);
   const [maxStepReached, setMaxStepReached] = useState<number>(0);
+  // Self-scheduling (timing step). Availability is fetched on entering that step.
+  const [slotData, setSlotData] = useState<AvailabilityResponse | null>(null);
+  const [slotLoading, setSlotLoading] = useState<boolean>(false);
+  const [slotError, setSlotError] = useState<boolean>(false);
+  // Set on a successful booking so the success screen can show the firm time.
+  const [bookedSlot, setBookedSlot] = useState<SelectedSlot | null>(null);
   // "Use my current location" UX state.
   const [geoStatus, setGeoStatus] = useState<
     "idle" | "locating" | "denied" | "error"
@@ -279,6 +314,58 @@ export function ContactForm() {
     const utm = params.get("utm_source");
     if (utm) utmSourceRef.current = utm.slice(0, 120);
   }, []);
+
+  // A known-duration cart (not the custom/"not sure" path) can self-schedule.
+  const canSchedule = !state.notSure && !isCartEmpty(state.cart) && cartJobMinutes(state.cart) > 0;
+  // True when the slot picker has real openings to show (vs. the callback fallback).
+  const pickerAvailable =
+    !!slotData &&
+    !slotData.tooLongForWindow &&
+    !slotData.noTechnician &&
+    !slotError &&
+    slotData.slotsByDay.some((d) => d.slots.length > 0);
+
+  // Fetch the technician's open slots for the current cart. On anything that
+  // means "no self-serve slots" (too-long job, no technician, no openings, or an
+  // error) we switch the timing step to the callback fallback so a lead is never
+  // lost.
+  async function fetchAvailability(): Promise<void> {
+    setSlotLoading(true);
+    setSlotError(false);
+    try {
+      const cartParam = encodeURIComponent(JSON.stringify(state.cart));
+      const res = await fetch(`/api/scheduling/availability?cart=${cartParam}`);
+      if (!res.ok) throw new Error(`availability ${res.status}`);
+      const data = (await res.json()) as AvailabilityResponse;
+      setSlotData(data);
+      const hasSlots = (data.slotsByDay ?? []).some((d) => d.slots.length > 0);
+      if (!hasSlots || data.tooLongForWindow || data.noTechnician) {
+        setState((s) => ({ ...s, useFallbackTiming: true, selectedSlot: null }));
+      } else {
+        setState((s) => {
+          // Drop a stale selection that's no longer offered (e.g. cart changed).
+          const stillOffered =
+            s.selectedSlot != null &&
+            data.slotsByDay.some((d) =>
+              d.slots.some((sl) => sl.startsAt === s.selectedSlot!.startsAt),
+            );
+          return {
+            ...s,
+            useFallbackTiming: false,
+            selectedSlot: stillOffered ? s.selectedSlot : null,
+          };
+        });
+      }
+    } catch {
+      setSlotError(true);
+      setState((s) => ({ ...s, useFallbackTiming: true }));
+    } finally {
+      setSlotLoading(false);
+    }
+  }
+
+  // On entering the timing step (index 3), load availability for a schedulable
+  // cart; a custom/unschedulable cart goes straight to the callback fallback.
 
   // Turnstile — renders into the container on the FINAL panel. Like the
   // address input, that panel stays mounted (display:none) so this one-shot
@@ -481,11 +568,13 @@ export function ContactForm() {
       );
       return;
     }
-    setStep((s) => {
-      const n = Math.min(s + 1, STEPS.length - 1);
-      setMaxStepReached((m) => Math.max(m, n));
-      return n;
-    });
+    const next = Math.min(step + 1, STEPS.length - 1);
+    setStep(next);
+    setMaxStepReached((m) => Math.max(m, next));
+    // Advancing INTO the timing step: load live availability for a schedulable
+    // cart (event-driven, so we don't setState from an effect). goBack / submit
+    // jumps reuse the cached slots already in state.
+    if (next === 3 && canSchedule) void fetchAvailability();
   };
 
   const goBack = () => setStep((s) => Math.max(s - 1, 0));
@@ -650,7 +739,11 @@ export function ContactForm() {
           notSure: state.notSure,
           description: state.description,
           preferredDate: state.preferredDate,
-          urgency: state.urgency,
+          urgency: state.urgency || undefined,
+          selectedSlot:
+            !state.useFallbackTiming && state.selectedSlot
+              ? state.selectedSlot
+              : undefined,
           bestContactTime: state.bestContactTime,
           bestContactMethod: state.bestContactMethod,
           referralSource: state.referralSource,
@@ -663,6 +756,18 @@ export function ContactForm() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        // A slot was taken between loading and submitting — send the customer
+        // back to the timing step with fresh availability to repick.
+        if (response.status === 409 && data?.refreshAvailability) {
+          setStatus("idle");
+          setState((s) => ({ ...s, selectedSlot: null }));
+          setErrors({ selectedSlot: "That time was just taken — please pick another." });
+          setStep(3);
+          setMaxStepReached((m) => Math.max(m, 3));
+          void fetchAvailability();
+          resetTurnstile();
+          return;
+        }
         setStatus("error");
         // Maintenance kill switch — friendly, distinct from a generic error.
         if (data?.maintenance) {
@@ -725,12 +830,18 @@ export function ContactForm() {
         });
         return;
       }
+      setBookedSlot(
+        data?.booked?.startsAt && data?.booked?.endsAt
+          ? { startsAt: data.booked.startsAt, endsAt: data.booked.endsAt }
+          : null,
+      );
       setStatus("success");
       setState(initial);
       setStep(0);
       setMaxStepReached(0);
       setPhotos([]);
       setPhotoErrors([]);
+      setSlotData(null);
       jobIdRef.current = "";
       resetTurnstile();
     } catch {
@@ -791,17 +902,36 @@ export function ContactForm() {
         <h3 className="mt-3 font-display text-[clamp(28px,5vw,38px)] font-bold text-[#1d4039]">
           You NAILED IT! 🔨
         </h3>
-        <p className="mx-auto mt-2.5 max-w-[46ch] text-[15px] text-ink-2">
-          David will review your details and get back to you shortly with a free
-          estimate. For urgent requests, call us at{" "}
-          <a
-            href="tel:+15551234567"
-            className="font-semibold text-orange underline underline-offset-[3px]"
-          >
-            (555) 123-4567
-          </a>
-          .
-        </p>
+        {bookedSlot ? (
+          <p className="mx-auto mt-2.5 max-w-[46ch] text-[15px] text-ink-2">
+            You&rsquo;re booked for{" "}
+            <span className="font-semibold text-[#1d4039]">
+              {formatEtDay(new Date(bookedSlot.startsAt))} at{" "}
+              {formatEtTime(new Date(bookedSlot.startsAt))}
+            </span>
+            . David will see you then — we&rsquo;ll text if anything changes. Need
+            to adjust? Call{" "}
+            <a
+              href="tel:+15551234567"
+              className="font-semibold text-orange underline underline-offset-[3px]"
+            >
+              (555) 123-4567
+            </a>
+            .
+          </p>
+        ) : (
+          <p className="mx-auto mt-2.5 max-w-[46ch] text-[15px] text-ink-2">
+            David will review your details and get back to you shortly with a free
+            estimate. For urgent requests, call us at{" "}
+            <a
+              href="tel:+15551234567"
+              className="font-semibold text-orange underline underline-offset-[3px]"
+            >
+              (555) 123-4567
+            </a>
+            .
+          </p>
+        )}
         <button
           type="button"
           onClick={() => setStatus("idle")}
@@ -1300,33 +1430,116 @@ export function ContactForm() {
 
             {/* Step 4 — Timing */}
             <div hidden={step !== 3} className="panel-enter space-y-5">
-              <div>
-                <label className="mb-2 block text-[13.5px] font-bold text-ink">
-                  How soon? <span className="text-orange">*</span>
-                </label>
-                <ChoiceGroup
-                  idBase="urgency"
-                  options={URGENCY_OPTIONS.map((o) => ({
-                    code: o.code,
-                    label: o.label,
-                    icon: URGENCY_ICONS[o.code],
-                  }))}
-                  selected={state.urgency ? [state.urgency] : []}
-                  onToggle={(c) => update("urgency", c as UrgencyCode)}
-                  error={errors.urgency}
-                />
-              </div>
-              <Field id="preferredDate" label="Want a specific day? (optional)">
-                <input
-                  id="preferredDate"
-                  name="preferredDate"
-                  type="date"
-                  value={state.preferredDate}
-                  min={new Date().toISOString().split("T")[0]}
-                  onChange={(e) => update("preferredDate", e.target.value)}
-                  className={inputClass(false)}
-                />
-              </Field>
+              {slotLoading ? (
+                <div className="flex items-center gap-2.5 py-4 text-[14px] text-ink-2">
+                  <Icon name="spinner" className="h-5 w-5 animate-spin" />
+                  Finding open times…
+                </div>
+              ) : !state.useFallbackTiming && pickerAvailable && slotData ? (
+                <div className="space-y-4">
+                  <p className="text-[13.5px] text-ink-2">
+                    Pick an open time and you&rsquo;re booked — no callback needed.
+                  </p>
+                  {slotData.slotsByDay.map((day) => (
+                    <div key={day.dayISO}>
+                      <h4 className="mb-2 text-[13.5px] font-bold text-ink">
+                        {formatEtDay(new Date(day.slots[0].startsAt))}
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {day.slots.map((slot) => {
+                          const sel = state.selectedSlot?.startsAt === slot.startsAt;
+                          return (
+                            <button
+                              key={slot.startsAt}
+                              type="button"
+                              aria-pressed={sel}
+                              onClick={() =>
+                                setState((s) => ({ ...s, selectedSlot: slot }))
+                              }
+                              className={`rounded-[7px] border-2 px-3.5 py-2 text-[13.5px] font-semibold transition-colors ${
+                                sel
+                                  ? "border-ink bg-ink text-white"
+                                  : "border-line bg-white text-ink hover:border-ink-3"
+                              }`}
+                            >
+                              {formatEtTime(new Date(slot.startsAt))}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  {errors.selectedSlot && (
+                    <p className="text-[12.5px] font-semibold text-red" role="alert">
+                      {errors.selectedSlot}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setState((s) => ({
+                        ...s,
+                        useFallbackTiming: true,
+                        selectedSlot: null,
+                      }))
+                    }
+                    className="text-[13px] font-semibold text-ink-3 underline underline-offset-2 hover:text-ink"
+                  >
+                    None of these work / I&rsquo;m flexible
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {slotError ? (
+                    <p className="text-[12.5px] text-ink-3">
+                      We couldn&rsquo;t load live times just now — tell us your
+                      timeframe and we&rsquo;ll call to schedule.
+                    </p>
+                  ) : canSchedule ? null : (
+                    <p className="text-[12.5px] text-ink-3">
+                      For a custom job we&rsquo;ll call to find a time that works.
+                    </p>
+                  )}
+                  <div>
+                    <label className="mb-2 block text-[13.5px] font-bold text-ink">
+                      How soon? <span className="text-orange">*</span>
+                    </label>
+                    <ChoiceGroup
+                      idBase="urgency"
+                      options={URGENCY_OPTIONS.map((o) => ({
+                        code: o.code,
+                        label: o.label,
+                        icon: URGENCY_ICONS[o.code],
+                      }))}
+                      selected={state.urgency ? [state.urgency] : []}
+                      onToggle={(c) => update("urgency", c as UrgencyCode)}
+                      error={errors.urgency}
+                    />
+                  </div>
+                  <Field id="preferredDate" label="Want a specific day? (optional)">
+                    <input
+                      id="preferredDate"
+                      name="preferredDate"
+                      type="date"
+                      value={state.preferredDate}
+                      min={new Date().toISOString().split("T")[0]}
+                      onChange={(e) => update("preferredDate", e.target.value)}
+                      className={inputClass(false)}
+                    />
+                  </Field>
+                  {pickerAvailable && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setState((s) => ({ ...s, useFallbackTiming: false }))
+                      }
+                      className="text-[13px] font-semibold text-ink-3 underline underline-offset-2 hover:text-ink"
+                    >
+                      ← Back to available times
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Step 5 — Contact */}
