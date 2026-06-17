@@ -113,6 +113,17 @@ export function cartTotals(cart: Cart): {
   return { itemCount, subtotalCents, minutes }
 }
 
+// The job duration in minutes implied by a cart: the package block when a
+// package is chosen, else the summed à-la-carte minutes. Returns 0 for an empty
+// cart (a custom / "not sure" job has no known duration — the caller routes
+// those to the callback fallback rather than the slot picker).
+export function cartJobMinutes(cart: Cart): number {
+  if (cart.packageNumber != null) {
+    return PACKAGE_MINUTES[cart.packageNumber] ?? 0
+  }
+  return cartTotals(cart).minutes
+}
+
 // The package nudge. When a cart has à-la-carte items (and no package selected)
 // whose total minutes >= PACKAGE_MINUTES[1] (120), return the cheapest package
 // whose block minutes >= the cart minutes AND whose priceCents <= the à-la-carte

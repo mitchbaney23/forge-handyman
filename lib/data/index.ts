@@ -1,5 +1,6 @@
 import { getBackend } from '@/lib/data/backend'
 import * as pgActivitiesRead from '@/lib/data/pg/activities-read'
+import * as pgAppointments from '@/lib/data/pg/appointments'
 import * as pgAudit from '@/lib/data/pg/audit'
 import * as pgCustomers from '@/lib/data/pg/customers'
 import * as pgExport from '@/lib/data/pg/export'
@@ -11,6 +12,7 @@ import * as sheetExport from '@/lib/sheet/export'
 import * as sheetQueries from '@/lib/sheet/queries'
 import * as sheetRepo from '@/lib/sheet/repo'
 import type { Activity } from '@/lib/data/pg/activities-read'
+import type { AppointmentRow, TechnicianRow } from '@/lib/data/pg/appointments'
 import type {
   CustomerDetail,
   CustomerStats,
@@ -46,6 +48,9 @@ export type {
   CustomerStats,
 } from '@/lib/data/pg/customers'
 export type { Activity } from '@/lib/data/pg/activities-read'
+
+// Phase C scheduling — postgres-only (see the dispatched exports at the bottom).
+export type { AppointmentRow, TechnicianRow } from '@/lib/data/pg/appointments'
 
 // ---------------------------------------------------------------------------
 // Pure helpers + constants — backend-independent, re-exported directly.
@@ -221,4 +226,43 @@ export async function addJobNote(
   } catch {
     return { ok: false }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Appointments / scheduling (lib/data/pg/appointments.ts) — Phase C.
+// Postgres-only: sheet mode no-ops (returns null/empty) since prod is on pg.
+// ---------------------------------------------------------------------------
+
+export async function claimSlot(args: {
+  jobId: string
+  technicianId: string
+  startsAt: string
+  endsAt: string
+  googleEventId?: string
+}): Promise<AppointmentRow | null> {
+  return getBackend() === 'postgres' ? pgAppointments.claimSlot(args) : null
+}
+
+export async function linkAppointment(
+  id: string,
+  fields: { jobId?: string; googleEventId?: string },
+): Promise<void> {
+  if (getBackend() === 'postgres') await pgAppointments.linkAppointment(id, fields)
+}
+
+export async function releaseSlot(id: string): Promise<void> {
+  if (getBackend() === 'postgres') await pgAppointments.releaseSlot(id)
+}
+
+export async function listAppointmentsInRange(
+  fromIso: string,
+  toIso: string,
+): Promise<AppointmentRow[]> {
+  return getBackend() === 'postgres'
+    ? pgAppointments.listAppointmentsInRange(fromIso, toIso)
+    : []
+}
+
+export async function getDefaultTechnician(): Promise<TechnicianRow | null> {
+  return getBackend() === 'postgres' ? pgAppointments.getDefaultTechnician() : null
 }

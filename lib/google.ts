@@ -35,7 +35,11 @@ function getBusinessEmail(): string {
   return email;
 }
 
-function getAuth(): JWT {
+// Service-account auth via domain-wide delegation. `subject` is the
+// @forgehandyman.com user to impersonate; defaults to BUSINESS_EMAIL. Passing a
+// technician's calendar email is the multi-employee mechanism — the service
+// account reads that employee's availability/free-busy and writes their bookings.
+export function getAuth(subject?: string): JWT {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
@@ -49,7 +53,7 @@ function getAuth(): JWT {
     email: clientEmail,
     key: privateKey,
     scopes: SCOPES,
-    subject: getBusinessEmail(),
+    subject: subject && subject.trim() ? subject.trim() : getBusinessEmail(),
   });
 }
 
@@ -407,6 +411,62 @@ export async function createCalendarEvent(data: ContactSubmission): Promise<void
       },
     },
   });
+}
+
+// A firm, customer-chosen booking. Unlike createCalendarEvent (a tentative 9am
+// lead placeholder), this uses the exact selected start/end and lands on the
+// technician's own calendar (impersonated via `subject`), so the next free/busy
+// query immediately reflects it. Returns the created event id (stored on the
+// appointment row for later reschedule/cancel).
+export async function createBookingEvent(args: {
+  subject: string; // the technician's @forgehandyman.com calendar email
+  startsAt: string; // ISO
+  endsAt: string; // ISO
+  data: ContactSubmission;
+}): Promise<string> {
+  const auth = getAuth(args.subject);
+  const calendar = google.calendar({ version: "v3", auth });
+
+  const { data } = args;
+  const description = [
+    `Customer: ${data.name}`,
+    `Phone: ${data.phone}`,
+    `Email: ${data.email}`,
+    `Address: ${data.address}`,
+    `Referral: ${data.referralSource}`,
+    "",
+    "Description of Work:",
+    data.description,
+  ].join("\n");
+
+  const event = await calendar.events.insert({
+    calendarId: "primary", // the impersonated technician's own calendar
+    requestBody: {
+      summary: `${data.serviceType} — ${data.name}`,
+      description,
+      location: data.address,
+      start: { dateTime: args.startsAt },
+      end: { dateTime: args.endsAt },
+      reminders: {
+        useDefault: false,
+        overrides: [{ method: "popup", minutes: 60 }],
+      },
+    },
+  });
+  return event.data.id ?? "";
+}
+
+// Delete a booking event (compensation when a booking fails after the event was
+// created, or a later cancellation). Best-effort: a 404/410 (already gone) is
+// swallowed by the caller.
+export async function deleteBookingEvent(args: {
+  subject: string;
+  eventId: string;
+}): Promise<void> {
+  if (!args.eventId) return;
+  const auth = getAuth(args.subject);
+  const calendar = google.calendar({ version: "v3", auth });
+  await calendar.events.delete({ calendarId: "primary", eventId: args.eventId });
 }
 
 function buildEventStart(preferredDate: string): Date {

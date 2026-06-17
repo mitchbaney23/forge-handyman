@@ -24,6 +24,10 @@ export const ACTIONS = {
   // Job lifecycle (admin job actions + Stripe webhook)
   JOB_BOOKED: 'job.booked',
   JOB_STATUS_CHANGED: 'job.status_changed',
+
+  // Scheduling (Phase C self-scheduling)
+  APPOINTMENT_SCHEDULED: 'appointment.scheduled',
+  APPOINTMENT_CANCELLED: 'appointment.cancelled',
   JOB_COMPLETED: 'job.completed',
   JOB_FIRST_TOUCH_RECORDED: 'job.first_touch_recorded',
 
