@@ -161,7 +161,8 @@ export async function listAppointmentsInRange(
   return ((data ?? []) as DbAppointmentRow[]).map(mapAppointment)
 }
 
-// The single active technician (David) until a multi-tech assignment UI exists.
+// The single active technician (David) until per-job assignment exists. v1
+// resolves the first active tech for availability + booking.
 export async function getDefaultTechnician(): Promise<TechnicianRow | null> {
   const client = getSupabaseClient()
   const { data, error } = await client
@@ -173,4 +174,66 @@ export async function getDefaultTechnician(): Promise<TechnicianRow | null> {
   if (error) throw new Error(`pg/appointments: getDefaultTechnician failed: ${error.message}`)
   const rows = (data ?? []) as DbTechnicianRow[]
   return rows.length > 0 ? mapTechnician(rows[0]) : null
+}
+
+// All technicians (admin team list), newest-managed first.
+export async function listTechnicians(): Promise<TechnicianRow[]> {
+  const client = getSupabaseClient()
+  const { data, error } = await client
+    .from('technicians')
+    .select('*')
+    .order('created_at', { ascending: true })
+  if (error) throw new Error(`pg/appointments: listTechnicians failed: ${error.message}`)
+  return ((data ?? []) as DbTechnicianRow[]).map(mapTechnician)
+}
+
+// Create a technician. calendar_email defaults to their email (the
+// @forgehandyman.com account the service account impersonates). The availability
+// calendar is provisioned separately and linked via updateTechnician.
+export async function createTechnician(args: {
+  name: string
+  email: string
+  telegramChatId?: string
+}): Promise<TechnicianRow> {
+  const client = getSupabaseClient()
+  const email = args.email.trim().toLowerCase()
+  const { data, error } = await client
+    .from('technicians')
+    .insert({
+      name: args.name.trim(),
+      email,
+      calendar_email: email,
+      telegram_chat_id: (args.telegramChatId ?? '').trim(),
+      active: true,
+    })
+    .select('*')
+    .single()
+  if (error) throw new Error(`pg/appointments: createTechnician failed: ${error.message}`)
+  return mapTechnician(data as DbTechnicianRow)
+}
+
+// Patch a technician (link the provisioned availability calendar, toggle active,
+// edit fields).
+export async function updateTechnician(
+  id: string,
+  fields: {
+    name?: string
+    telegramChatId?: string
+    calendarEmail?: string
+    availabilityCalendarId?: string
+    active?: boolean
+  },
+): Promise<void> {
+  if (!isUuid(id)) return
+  const update: Record<string, string | boolean> = {}
+  if (fields.name != null) update.name = fields.name.trim()
+  if (fields.telegramChatId != null) update.telegram_chat_id = fields.telegramChatId.trim()
+  if (fields.calendarEmail != null) update.calendar_email = fields.calendarEmail.trim().toLowerCase()
+  if (fields.availabilityCalendarId != null)
+    update.availability_calendar_id = fields.availabilityCalendarId
+  if (fields.active != null) update.active = fields.active
+  if (Object.keys(update).length === 0) return
+  const client = getSupabaseClient()
+  const { error } = await client.from('technicians').update(update).eq('id', id)
+  if (error) throw new Error(`pg/appointments: updateTechnician failed: ${error.message}`)
 }

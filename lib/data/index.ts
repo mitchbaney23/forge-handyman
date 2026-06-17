@@ -266,3 +266,28 @@ export async function listAppointmentsInRange(
 export async function getDefaultTechnician(): Promise<TechnicianRow | null> {
   return getBackend() === 'postgres' ? pgAppointments.getDefaultTechnician() : null
 }
+
+export async function listTechnicians(): Promise<TechnicianRow[]> {
+  return getBackend() === 'postgres' ? pgAppointments.listTechnicians() : []
+}
+
+export async function createTechnician(args: {
+  name: string
+  email: string
+  telegramChatId?: string
+}): Promise<TechnicianRow | null> {
+  return getBackend() === 'postgres' ? pgAppointments.createTechnician(args) : null
+}
+
+export async function updateTechnician(
+  id: string,
+  fields: {
+    name?: string
+    telegramChatId?: string
+    calendarEmail?: string
+    availabilityCalendarId?: string
+    active?: boolean
+  },
+): Promise<void> {
+  if (getBackend() === 'postgres') await pgAppointments.updateTechnician(id, fields)
+}
