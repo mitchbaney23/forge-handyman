@@ -56,6 +56,42 @@ export async function getAvailabilityWindows(
   return windows
 }
 
+// Auto-provision a technician's "Forge Availability" calendar so onboarding
+// never involves hunting for a Calendar ID. Impersonates the new tech (DWD),
+// creates a dedicated secondary calendar on their account, shares it back to
+// BUSINESS_EMAIL (so the owner can manage their open windows), and returns the
+// new calendar's id to store on the technician row.
+export async function createAvailabilityCalendar(subject: string): Promise<string> {
+  const auth = getAuth(subject)
+  const calendar = google.calendar({ version: 'v3', auth })
+  const created = await calendar.calendars.insert({
+    requestBody: {
+      summary: 'Forge Availability',
+      description:
+        'Open-for-jobs windows for self-scheduling. Events here = bookable time; ' +
+        'your primary-calendar events automatically block conflicts.',
+      timeZone: 'America/New_York',
+    },
+  })
+  const calendarId = created.data.id
+  if (!calendarId) throw new Error('createAvailabilityCalendar: no calendar id returned')
+
+  // Share to the owner (best-effort — provisioning still succeeds if the grant
+  // fails; the tech can share it manually).
+  const businessEmail = process.env.BUSINESS_EMAIL
+  if (businessEmail && businessEmail.toLowerCase() !== subject.trim().toLowerCase()) {
+    try {
+      await calendar.acl.insert({
+        calendarId,
+        requestBody: { role: 'writer', scope: { type: 'user', value: businessEmail } },
+      })
+    } catch {
+      // non-fatal: owner can be granted access later
+    }
+  }
+  return calendarId
+}
+
 // The technician's busy intervals in the range, via the free/busy API on their
 // primary calendar. Returns opaque busy blocks only — never event titles or
 // details (privacy: customers must not learn what David is doing).

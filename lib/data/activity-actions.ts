@@ -28,6 +28,11 @@ export const ACTIONS = {
   // Scheduling (Phase C self-scheduling)
   APPOINTMENT_SCHEDULED: 'appointment.scheduled',
   APPOINTMENT_CANCELLED: 'appointment.cancelled',
+
+  // Team / technicians (admin onboarding)
+  TECHNICIAN_ADDED: 'technician.added',
+  TECHNICIAN_CALENDAR_PROVISIONED: 'technician.calendar_provisioned',
+  TECHNICIAN_UPDATED: 'technician.updated',
   JOB_COMPLETED: 'job.completed',
   JOB_FIRST_TOUCH_RECORDED: 'job.first_touch_recorded',
 
