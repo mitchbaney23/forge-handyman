@@ -10,8 +10,10 @@ import {
   addJobNote,
   appendAuditRow,
   findRowByJobId,
+  getAppointmentByJobId,
   updateRowByJobId,
 } from "@/lib/data";
+import { performCancellation } from "@/lib/scheduling/cancel";
 import { adminActor } from "@/lib/data/activity-actions";
 import { getBackend } from "@/lib/data/backend";
 import { canAdminTransition } from "@/lib/jobs/status-machine";
@@ -454,4 +456,34 @@ export async function addJobNoteAction(
   logger.info({ jobId, actor: auth.email }, "admin: job note added");
   revalidatePath(`/admin/jobs/${jobId}`);
   return { ok: true, message: "Note added." };
+}
+
+export async function cancelBooking(jobId: string): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdmin(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  if (getBackend() !== "postgres") {
+    return { ok: false, error: "Bookings are only available on the Postgres backend." };
+  }
+
+  const appt = await getAppointmentByJobId(jobId);
+  if (!appt) return { ok: false, error: "No active booking found for this job." };
+
+  const result = await performCancellation(appt.id, adminActor(auth.email));
+  if (!result.ok) {
+    return {
+      ok: false,
+      error:
+        result.reason === "already_cancelled"
+          ? "That booking was already cancelled."
+          : "Couldn't cancel the booking. Please try again.",
+    };
+  }
+
+  logger.info({ jobId, actor: auth.email }, "admin: booking cancelled");
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/admin");
+  return { ok: true, message: "Booking cancelled — the time slot is open again." };
 }

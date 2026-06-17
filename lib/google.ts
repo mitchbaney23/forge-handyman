@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import type { JWT } from "google-auth-library";
+import { formatEtDay, formatEtTime } from "@/lib/scheduling/time";
 
 export type ContactSubmission = {
   name: string;
@@ -375,6 +376,63 @@ export async function sendNotificationEmail(data: ContactSubmission): Promise<vo
     userId: "me",
     requestBody: { raw },
   });
+}
+
+// Transactional booking confirmation sent to the CUSTOMER (not the business)
+// when a self-scheduled appointment is confirmed. Includes the firm time + a
+// signed self-cancel link. Best-effort caller — a send failure must not undo a
+// confirmed booking.
+export async function sendBookingConfirmationToCustomer(args: {
+  data: ContactSubmission;
+  startsAt: string;
+  endsAt: string;
+  cancelUrl: string;
+}): Promise<void> {
+  const { data, startsAt, endsAt, cancelUrl } = args;
+  if (!data.email) return;
+  const auth = getAuth();
+  const gmail = google.gmail({ version: "v1", auth });
+  const businessEmail = getBusinessEmail();
+
+  const firstName = (data.name || "there").split(/\s+/)[0] || "there";
+  const start = new Date(startsAt);
+  const end = new Date(endsAt);
+  const whenLabel = `${formatEtDay(start)}, ${formatEtTime(start)}–${formatEtTime(end)}`;
+
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2937;">
+      <h1 style="font-size:22px;color:#1B3A5C;">You're booked! 🔨</h1>
+      <p style="font-size:15px;line-height:1.6;">Hi ${escapeHtml(firstName)}, thanks for booking with Forge Handyman Service. Here are your details:</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+        <tr><td style="padding:8px 12px;background:#F3F4F6;font-weight:700;width:120px;">When</td><td style="padding:8px 12px;">${escapeHtml(whenLabel)} (Eastern)</td></tr>
+        <tr><td style="padding:8px 12px;background:#F3F4F6;font-weight:700;">Service</td><td style="padding:8px 12px;">${escapeHtml(data.serviceType) || "&mdash;"}</td></tr>
+        <tr><td style="padding:8px 12px;background:#F3F4F6;font-weight:700;">Where</td><td style="padding:8px 12px;">${escapeHtml(data.address) || "&mdash;"}</td></tr>
+      </table>
+      <p style="font-size:15px;line-height:1.6;">Need to make a change? Please give at least 24 hours' notice when you can. You can <a href="${escapeHtml(cancelUrl)}" style="color:#C2491D;font-weight:700;">cancel your appointment here</a>, or call us at (555) 123-4567.</p>
+      <p style="font-size:13px;color:#6b7280;">Forge Handyman Service · Garner, Clayton &amp; South Raleigh, NC</p>
+    </div>`;
+
+  const text = [
+    `You're booked with Forge Handyman Service.`,
+    ``,
+    `When: ${whenLabel} (Eastern)`,
+    `Service: ${data.serviceType || "—"}`,
+    `Where: ${data.address || "—"}`,
+    ``,
+    `Need to change it? Please give at least 24 hours' notice. Cancel here: ${cancelUrl}`,
+    `Or call us at (555) 123-4567.`,
+  ].join("\n");
+
+  const raw = encodeRfc2822({
+    to: data.email,
+    from: businessEmail,
+    replyTo: businessEmail,
+    subject: `You're booked — ${whenLabel}`,
+    html,
+    text,
+  });
+
+  await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
 }
 
 export async function createCalendarEvent(data: ContactSubmission): Promise<void> {

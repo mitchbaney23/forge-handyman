@@ -2,11 +2,18 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { JobActions } from "./JobActions";
+import { CancelBookingButton } from "./CancelBookingButton";
 import { addJobNoteAction } from "./actions";
 import { ActivityTimeline } from "@/components/admin/ActivityTimeline";
 import { AddNoteForm } from "@/components/admin/AddNoteForm";
 import { StatusBadge } from "@/components/admin/StatusBadge";
-import { crmEnabled, findRowByJobId, listActivitiesForJob } from "@/lib/data";
+import {
+  crmEnabled,
+  findRowByJobId,
+  getAppointmentByJobId,
+  listActivitiesForJob,
+} from "@/lib/data";
+import { formatEtDay, formatEtTime } from "@/lib/scheduling/time";
 
 export const metadata: Metadata = {
   title: "Job — Forge Admin",
@@ -35,6 +42,7 @@ export default async function JobDetailPage({
   const activities = timelineEnabled
     ? await listActivitiesForJob(jobId)
     : [];
+  const appointment = timelineEnabled ? await getAppointmentByJobId(jobId) : null;
 
   return (
     <div className="space-y-6">
@@ -105,6 +113,17 @@ export default async function JobDetailPage({
         </div>
 
         <div className="space-y-6">
+          {appointment && (
+            <Panel title="Appointment">
+              <Detail
+                label="Scheduled"
+                value={`${formatEtDay(new Date(appointment.startsAt))} · ${formatEtTime(
+                  new Date(appointment.startsAt),
+                )}–${formatEtTime(new Date(appointment.endsAt))}`}
+              />
+              <CancelBookingButton jobId={decoded} />
+            </Panel>
+          )}
           <Panel title="Actions">
             <JobActions
               jobId={decoded}

@@ -218,6 +218,33 @@ export async function dispatchBookingToDavid(
 }
 
 /**
+ * Tells David a booking was cancelled (by him/Mitch or by the customer) so he
+ * knows the slot is free again. Best-effort.
+ */
+export async function notifyCancellation(
+  row: ContactRow,
+  slot: { startsAt: string; endsAt: string },
+  actor: string,
+): Promise<DispatchResult> {
+  const davidChatId = process.env.TELEGRAM_DAVID_CHAT_ID;
+  if (!davidChatId) return { ok: false, reason: "no-chat-id" };
+  const start = new Date(slot.startsAt);
+  const by = actor.startsWith("customer") ? "the customer" : "you";
+  const text = [
+    `❌ <b>Booking cancelled — ${escapeHtml(row.name || "(no name)")}</b>`,
+    "",
+    `🗓 ${escapeHtml(formatEtDay(start))} · ${escapeHtml(formatEtTime(start))}`,
+    `📍 ${escapeHtml(row.address || "—")}`,
+    "",
+    `<i>Cancelled by ${by} — this time is open again.</i>`,
+  ].join("\n");
+  const sent = await sendMessage(davidChatId, text);
+  if (!sent) return { ok: false, reason: "send-failed" };
+  logger.info({ jobId: row.job_id, messageId: sent.message_id }, "telegram-dispatch: cancellation sent to David");
+  return { ok: true, messageId: sent.message_id };
+}
+
+/**
  * Sends Mitch an FYI copy of a confirmed booking. Best-effort.
  */
 export async function notifyMitchBooking(
