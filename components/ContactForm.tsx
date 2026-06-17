@@ -3,15 +3,11 @@
 import Script from "next/script";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
-  CONTACT_METHODS,
-  CONTACT_TIMES,
   PROPERTY_TYPES,
   REFERRAL_SOURCES,
   SERVICE_MENU,
   SERVICE_PACKAGES,
   URGENCY_OPTIONS,
-  type ContactMethodCode,
-  type ContactTimeCode,
   type PropertyTypeCode,
   type UrgencyCode,
 } from "@/lib/constants";
@@ -87,8 +83,6 @@ type FormState = {
   // True when the customer is on the "request a callback" timing path (custom
   // job, no fitting slot, or "none of these work") rather than the slot picker.
   useFallbackTiming: boolean;
-  bestContactTime: ContactTimeCode;
-  bestContactMethod: ContactMethodCode;
   referralSource: string;
 };
 
@@ -105,8 +99,6 @@ const initial: FormState = {
   urgency: "",
   selectedSlot: null,
   useFallbackTiming: false,
-  bestContactTime: "any",
-  bestContactMethod: "any",
   referralSource: "",
 };
 
@@ -744,8 +736,6 @@ export function ContactForm() {
             !state.useFallbackTiming && state.selectedSlot
               ? state.selectedSlot
               : undefined,
-          bestContactTime: state.bestContactTime,
-          bestContactMethod: state.bestContactMethod,
           referralSource: state.referralSource,
           website: honeypotRef.current?.value ?? "",
           turnstileToken: turnstileToken || undefined,
@@ -1581,59 +1571,22 @@ export function ContactForm() {
               </Field>
 
               <div className="border-t-2 border-dashed border-line pt-4">
-                <p className="mb-3 text-[13px] font-bold uppercase tracking-[0.1em] text-ink-3">
-                  Optional — helps us reach you faster
-                </p>
-                <div className="space-y-4">
-                  <div>
-                    <label className="mb-2 block text-[13.5px] font-bold text-ink">
-                      Best time to reach you
-                    </label>
-                    <ChoiceGroup
-                      idBase="bestContactTime"
-                      options={CONTACT_TIMES.map((o) => ({
-                        code: o.code,
-                        label: o.label,
-                      }))}
-                      selected={[state.bestContactTime]}
-                      onToggle={(c) =>
-                        update("bestContactTime", c as ContactTimeCode)
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-[13.5px] font-bold text-ink">
-                      Preferred contact method
-                    </label>
-                    <ChoiceGroup
-                      idBase="bestContactMethod"
-                      options={CONTACT_METHODS.map((o) => ({
-                        code: o.code,
-                        label: o.label,
-                      }))}
-                      selected={[state.bestContactMethod]}
-                      onToggle={(c) =>
-                        update("bestContactMethod", c as ContactMethodCode)
-                      }
-                    />
-                  </div>
-                  <Field id="referralSource" label="How did you hear about us?">
-                    <select
-                      id="referralSource"
-                      name="referralSource"
-                      value={state.referralSource}
-                      onChange={(e) => update("referralSource", e.target.value)}
-                      className={inputClass(false)}
-                    >
-                      <option value="">Prefer not to say</option>
-                      {REFERRAL_SOURCES.map((source) => (
-                        <option key={source} value={source}>
-                          {source}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                </div>
+                <Field id="referralSource" label="How did you hear about us? (optional)">
+                  <select
+                    id="referralSource"
+                    name="referralSource"
+                    value={state.referralSource}
+                    onChange={(e) => update("referralSource", e.target.value)}
+                    className={inputClass(false)}
+                  >
+                    <option value="">Prefer not to say</option>
+                    {REFERRAL_SOURCES.map((source) => (
+                      <option key={source} value={source}>
+                        {source}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
               </div>
 
               {TURNSTILE_SITE_KEY && (

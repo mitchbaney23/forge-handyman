@@ -117,8 +117,11 @@ export const contactSchema = z
         endsAt: z.string().datetime(),
       })
       .optional(),
-    bestContactTime: contactTimeSchema,
-    bestContactMethod: contactMethodSchema,
+    // No longer collected on the form (customers pick a real slot now); kept
+    // optional with an 'any' default for back-compat with the stored columns
+    // and any in-flight clients.
+    bestContactTime: contactTimeSchema.optional().default('any'),
+    bestContactMethod: contactMethodSchema.optional().default('any'),
     referralSource: z
       .string()
       .max(80)
