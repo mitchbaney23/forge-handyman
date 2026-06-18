@@ -52,6 +52,7 @@ const CATEGORY_CODE_BY_SECTION: Record<ServiceCategory, ServiceCategoryCode> = {
   'Painting & Drywall Repair': 'drywall_paint',
   'Minor Plumbing': 'plumbing',
   'TV Mounting': 'mounting',
+  'Auto Maintenance': 'maintenance',
 }
 
 const PACKAGE_BY_NUMBER: Map<number, ServicePackage> = new Map(
