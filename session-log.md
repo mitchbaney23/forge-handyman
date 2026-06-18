@@ -28,7 +28,9 @@ lives in the memory files (see "Pointers") — read those first.
 | **Self-scheduling (Phase C)** | **Live but DORMANT** — picker falls back to callback until David's availability calendar exists |
 | **Team onboarding** (`/admin/technicians`) | **Live** — add a tech → auto-provisions their availability calendar |
 | Address autocomplete + "use my location" | **Fixed & working** (was a Google Cloud key/API config issue) |
-| Contact-step trim (drop best-time/method) | **Committed, NOT deployed** — branch `feat/booking-card-capture` (`0e9047b`) |
+| Contact-step trim (drop best-time/method) | **Live** (deployed with cancellation) |
+| **Booking cancellation** (admin + customer self-serve) | **Live** — admin button on job page; customer cancel link in a confirmation email → `/booking/cancel` |
+| Availability freshness | **Real-time** (`no-store`, no cache) |
 | Stripe | **TEST mode** (no live keys) — card capture **deferred** (see decisions) |
 | Phone number on site | still `(555) 123-4567` placeholder |
 | Supabase | one project (`nkvsgvlyxwdsvklxypwu`) = prod **and** local `.env.local` |
@@ -90,6 +92,21 @@ step (redundant now customers pick a real slot); kept "how did you hear about
 us." Server schema keeps those fields optional (default `'any'`) for back-compat;
 lead dispatch hides the pref line when default. On `feat/booking-card-capture`
 (`0e9047b`) — **ready to merge/deploy**.
+
+### Booking cancellation + real-time availability → LIVE (`172d79a`)
+- **Real-time:** availability endpoint is `no-store` — cancellations/new bookings
+  show in the picker immediately.
+- **Admin:** "Cancel booking" on `/admin/jobs/[id]` → `performCancellation`
+  (cancel row + delete calendar event + job→Cancelled + log + notify David).
+- **Customer self-serve:** every booking sends the customer a confirmation email
+  (`sendBookingConfirmationToCustomer`) with the firm time + a signed cancel link
+  (`lib/scheduling/cancel-token.ts`, reuses `UNSUBSCRIBE_HMAC_SECRET`) → public
+  `/booking/cancel` page. The email also carries the "please give 24h notice"
+  policy (no fee, per the decision below).
+- **Gotcha:** deleting a calendar event does NOT cancel a booking — the
+  `appointments` row is the source of truth. Cancel via the button / customer link.
+- **Follow-up:** notify the *customer* by email when *David* cancels (today only
+  David is pinged).
 
 ### Decisions made today
 - **Travel time:** keep the **flat 30-min buffer** for now. Distance-aware
