@@ -86,12 +86,14 @@ export function buildDispatchMessage(row: ContactRow): string {
     .filter(Boolean).length;
   const returning =
     row.is_returning_customer === "true" || Number(row.prior_job_count || "0") > 0;
-  const contactPref = [
-    CONTACT_METHOD_LABEL[row.best_contact_method || "any"],
-    CONTACT_TIME_LABEL[row.best_contact_time || "any"],
-  ]
-    .filter(Boolean)
-    .join(", ");
+  // Contact preference is no longer collected (customers pick a real slot); only
+  // show it for legacy leads that carry a non-default value.
+  const method = row.best_contact_method || "any";
+  const time = row.best_contact_time || "any";
+  const contactPref =
+    method === "any" && time === "any"
+      ? ""
+      : [CONTACT_METHOD_LABEL[method], CONTACT_TIME_LABEL[time]].filter(Boolean).join(", ");
 
   const lines = [
     `🔨 <b>New job — ${escapeHtml(row.name || "(no name)")}</b>`,
@@ -99,7 +101,9 @@ export function buildDispatchMessage(row: ContactRow): string {
     `📍 <a href="${mapsLink(row.address || "")}">${escapeHtml(row.address || "—")}</a>`,
     `🛠 ${escapeHtml(serviceLabel(row))}`,
     `📅 Preferred: ${escapeHtml(formatDate(row.preferred_date || ""))}`,
-    row.phone ? `📞 ${escapeHtml(row.phone)} · ${escapeHtml(contactPref)}` : "",
+    row.phone
+      ? `📞 ${escapeHtml(row.phone)}${contactPref ? " · " + escapeHtml(contactPref) : ""}`
+      : "",
     photoCount > 0 ? `📷 ${photoCount} photo${photoCount === 1 ? "" : "s"}` : "",
     returning
       ? `↩️ <i>Returning customer · ${escapeHtml(String(row.prior_job_count || "1"))} prior</i>`
@@ -214,6 +218,33 @@ export async function dispatchBookingToDavid(
     { jobId: row.job_id, messageId: sent.message_id },
     "telegram-dispatch: booking card sent to David",
   );
+  return { ok: true, messageId: sent.message_id };
+}
+
+/**
+ * Tells David a booking was cancelled (by him/Mitch or by the customer) so he
+ * knows the slot is free again. Best-effort.
+ */
+export async function notifyCancellation(
+  row: ContactRow,
+  slot: { startsAt: string; endsAt: string },
+  actor: string,
+): Promise<DispatchResult> {
+  const davidChatId = process.env.TELEGRAM_DAVID_CHAT_ID;
+  if (!davidChatId) return { ok: false, reason: "no-chat-id" };
+  const start = new Date(slot.startsAt);
+  const by = actor.startsWith("customer") ? "the customer" : "you";
+  const text = [
+    `❌ <b>Booking cancelled — ${escapeHtml(row.name || "(no name)")}</b>`,
+    "",
+    `🗓 ${escapeHtml(formatEtDay(start))} · ${escapeHtml(formatEtTime(start))}`,
+    `📍 ${escapeHtml(row.address || "—")}`,
+    "",
+    `<i>Cancelled by ${by} — this time is open again.</i>`,
+  ].join("\n");
+  const sent = await sendMessage(davidChatId, text);
+  if (!sent) return { ok: false, reason: "send-failed" };
+  logger.info({ jobId: row.job_id, messageId: sent.message_id }, "telegram-dispatch: cancellation sent to David");
   return { ok: true, messageId: sent.message_id };
 }
 

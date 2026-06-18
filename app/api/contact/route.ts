@@ -15,9 +15,11 @@ import {
   createBookingEvent,
   createCalendarEvent,
   deleteBookingEvent,
+  sendBookingConfirmationToCustomer,
   sendNotificationEmail,
   type ContactSubmission,
 } from '@/lib/google'
+import { buildCancelUrl } from '@/lib/scheduling/cancel-token'
 import {
   getAvailabilityWindows,
   getBusyIntervals,
@@ -115,8 +117,11 @@ export const contactSchema = z
         endsAt: z.string().datetime(),
       })
       .optional(),
-    bestContactTime: contactTimeSchema,
-    bestContactMethod: contactMethodSchema,
+    // No longer collected on the form (customers pick a real slot now); kept
+    // optional with an 'any' default for back-compat with the stored columns
+    // and any in-flight clients.
+    bestContactTime: contactTimeSchema.optional().default('any'),
+    bestContactMethod: contactMethodSchema.optional().default('any'),
     referralSource: z
       .string()
       .max(80)
@@ -442,6 +447,17 @@ async function handleScheduledBooking(args: {
     await sendNotificationEmail(submission)
   } catch (err) {
     logger.error({ err, jobId }, 'contact-form: booking notification email failed')
+  }
+  // Customer confirmation w/ self-cancel link (transactional).
+  try {
+    await sendBookingConfirmationToCustomer({
+      data: submission,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      cancelUrl: buildCancelUrl(appt.id),
+    })
+  } catch (err) {
+    logger.error({ err, jobId }, 'contact-form: customer confirmation email failed')
   }
   if (process.env.DISPATCH_DISABLED !== 'true') {
     try {

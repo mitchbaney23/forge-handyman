@@ -82,9 +82,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(result, {
       headers: {
         ...rateLimitHeaders(rl),
-        // Near-live; the booking submit re-checks atomically, so a minute of
-        // staleness only costs a repick on the rare race.
-        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=30',
+        // Always live — read the calendar + bookings fresh on every load so a
+        // cancellation or new booking shows immediately. The booking submit
+        // re-checks atomically, so there's no correctness downside; traffic is
+        // low enough that the extra Google calls are fine.
+        'Cache-Control': 'no-store',
       },
     })
   } catch (err) {

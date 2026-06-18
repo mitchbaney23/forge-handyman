@@ -161,6 +161,55 @@ export async function listAppointmentsInRange(
   return ((data ?? []) as DbAppointmentRow[]).map(mapAppointment)
 }
 
+export async function getAppointmentById(id: string): Promise<AppointmentRow | null> {
+  if (!isUuid(id)) return null
+  const client = getSupabaseClient()
+  const { data, error } = await client.from('appointments').select('*').eq('id', id).maybeSingle()
+  if (error) throw new Error(`pg/appointments: getAppointmentById failed: ${error.message}`)
+  return data ? mapAppointment(data as DbAppointmentRow) : null
+}
+
+// The live (Booked) appointment for a job, if any — used by the admin job page.
+export async function getAppointmentByJobId(jobId: string): Promise<AppointmentRow | null> {
+  if (!isUuid(jobId)) return null
+  const client = getSupabaseClient()
+  const { data, error } = await client
+    .from('appointments')
+    .select('*')
+    .eq('job_id', jobId)
+    .eq('status', 'Booked')
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error) throw new Error(`pg/appointments: getAppointmentByJobId failed: ${error.message}`)
+  const rows = (data ?? []) as DbAppointmentRow[]
+  return rows.length > 0 ? mapAppointment(rows[0]) : null
+}
+
+// Cancel an appointment (status -> 'Cancelled'); returns the row as it was so
+// the caller can clean up the calendar event + job. Only flips a 'Booked' row
+// (idempotent: a re-cancel returns null).
+export async function cancelAppointment(id: string): Promise<AppointmentRow | null> {
+  if (!isUuid(id)) return null
+  const client = getSupabaseClient()
+  const { data, error } = await client
+    .from('appointments')
+    .update({ status: 'Cancelled' })
+    .eq('id', id)
+    .eq('status', 'Booked')
+    .select('*')
+    .maybeSingle()
+  if (error) throw new Error(`pg/appointments: cancelAppointment failed: ${error.message}`)
+  return data ? mapAppointment(data as DbAppointmentRow) : null
+}
+
+export async function getTechnicianById(id: string): Promise<TechnicianRow | null> {
+  if (!isUuid(id)) return null
+  const client = getSupabaseClient()
+  const { data, error } = await client.from('technicians').select('*').eq('id', id).maybeSingle()
+  if (error) throw new Error(`pg/appointments: getTechnicianById failed: ${error.message}`)
+  return data ? mapTechnician(data as DbTechnicianRow) : null
+}
+
 // The single active technician (David) until per-job assignment exists. v1
 // resolves the first active tech for availability + booking.
 export async function getDefaultTechnician(): Promise<TechnicianRow | null> {

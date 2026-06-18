@@ -267,6 +267,22 @@ export async function getDefaultTechnician(): Promise<TechnicianRow | null> {
   return getBackend() === 'postgres' ? pgAppointments.getDefaultTechnician() : null
 }
 
+export async function getAppointmentById(id: string): Promise<AppointmentRow | null> {
+  return getBackend() === 'postgres' ? pgAppointments.getAppointmentById(id) : null
+}
+
+export async function getAppointmentByJobId(jobId: string): Promise<AppointmentRow | null> {
+  return getBackend() === 'postgres' ? pgAppointments.getAppointmentByJobId(jobId) : null
+}
+
+export async function cancelAppointment(id: string): Promise<AppointmentRow | null> {
+  return getBackend() === 'postgres' ? pgAppointments.cancelAppointment(id) : null
+}
+
+export async function getTechnicianById(id: string): Promise<TechnicianRow | null> {
+  return getBackend() === 'postgres' ? pgAppointments.getTechnicianById(id) : null
+}
+
 export async function listTechnicians(): Promise<TechnicianRow[]> {
   return getBackend() === 'postgres' ? pgAppointments.listTechnicians() : []
 }
