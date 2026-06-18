@@ -12,7 +12,9 @@ still TEST mode.
 This file is the handoff for the next session. The terse cross-session state also
 lives in the memory files (see "Pointers") — read those first.
 
-`main` HEAD = `056f06b`. Production auto-deploys from a `main` push (Vercel).
+`main` HEAD = `73b41e4`. Production auto-deploys from a `main` push (Vercel).
+**Everything below is LIVE in prod** — the only thing left to start taking
+bookings is configuring David's calendar (Pending item #1).
 
 ---
 
@@ -86,12 +88,11 @@ Mitch enabled the APIs + fixed the key restrictions; I added `places.googleapis.
 to the CSP `connect-src`. **Confirmed working** (live probe returns real
 suggestions). See memory `reference_maps_api_config.md`.
 
-### Contact-step trim → committed, NOT deployed
+### Contact-step trim → LIVE (deployed with cancellation)
 Removed "best time to reach you" + "preferred contact method" from the final form
 step (redundant now customers pick a real slot); kept "how did you hear about
 us." Server schema keeps those fields optional (default `'any'`) for back-compat;
-lead dispatch hides the pref line when default. On `feat/booking-card-capture`
-(`0e9047b`) — **ready to merge/deploy**.
+lead dispatch hides the pref line when default.
 
 ### Booking cancellation + real-time availability → LIVE (`172d79a`)
 - **Real-time:** availability endpoint is `no-store` — cancellations/new bookings
@@ -112,11 +113,11 @@ lead dispatch hides the pref line when default. On `feat/booking-card-capture`
 - **Travel time:** keep the **flat 30-min buffer** for now. Distance-aware
   drive-time (Google Distance Matrix) deferred until David's Saturdays pack with
   multiple jobs — design is captured but not built.
-- **Card capture: DEFERRED.** Mitch chose **no no-show fee yet** ("please give
-  24h notice"), so a card-on-file would be friction with no teeth → skip it.
-  Build card-on-file **and** the fee together when busier. (Recommended a plain
-  "please give 24 hours notice to cancel/reschedule" text line on the booking —
-  **not yet built**, awaiting Mitch's go.)
+- **Card capture: DEFERRED.** Mitch chose **no no-show fee yet**, so a
+  card-on-file would be friction with no teeth → skip it. Build card-on-file
+  **and** the fee together when busier. The **"please give 24 hours' notice"**
+  policy is now delivered via the customer confirmation email + the
+  `/booking/cancel` page copy (no card needed).
 - **Supabase Pro recommended** — the free tier auto-pauses after ~7 days idle;
   the daily review-requests cron currently keeps it awake as a side effect, but
   Pro is the only guaranteed no-pause fix now that this DB is business-critical.
@@ -125,24 +126,24 @@ lead dispatch hides the pref line when default. On `feat/booking-card-capture`
 
 ## Pending — needs Mitch (action items)
 
-1. **★ Make booking go live: add David in `/admin → Team`** (name,
-   `david@forgehandyman.com`) → it auto-creates his "Forge Availability"
+1. **★ THE NEXT STEP — make booking go live: add David in `/admin → Team`**
+   (name, `david@forgehandyman.com`) → it auto-creates his "Forge Availability"
    calendar → drop a **recurring Saturday 9–2 "Open for jobs"** event on it →
    the slot picker goes live. Then run one **test booking** end-to-end (pings
-   David's Telegram — coordinate). This is the single step left for bookings.
-2. **Deploy the contact-step trim** — merge `feat/booking-card-capture`
-   (`0e9047b`) → `main` (awaiting "deploy it"). Optionally add the 24h-notice
-   text first.
-3. **Supabase Pro** upgrade (avoid free-tier auto-pause).
-4. **Stripe go-live** — `docs/go-live-runbook.md` (business verification + live
+   David's Telegram — coordinate). Everything else is built; this is the one
+   thing standing between you and real appointments.
+2. **Supabase Pro** upgrade (avoid free-tier auto-pause).
+3. **Stripe go-live** — `docs/go-live-runbook.md` (business verification + live
    restricted key + live webhook; code auto-selects live keys when present).
    Run the 5-scenario **sandbox dress rehearsal** on test-mode prod first.
    THEN build **card-on-file + no-show fee** when busier.
-5. **Twilio phone number** → replaces `(555) 123-4567` in `BUSINESS.phone`.
-6. **Real mailing address** — `BUSINESS.mailingAddress` still `PO Box 0000`
+4. **Twilio phone number** → replaces `(555) 123-4567` in `BUSINESS.phone`.
+5. **Real mailing address** — `BUSINESS.mailingAddress` still `PO Box 0000`
    (CAN-SPAM).
-7. **Separate dev Supabase project** — local `.env.local` currently points at
+6. **Separate dev Supabase project** — local `.env.local` currently points at
    the *production* DB.
+7. **Notify the customer when David cancels** — today an admin cancel only pings
+   David; the customer should get an email too.
 
 ---
 
@@ -150,9 +151,10 @@ lead dispatch hides the pref line when default. On `feat/booking-card-capture`
 
 | Branch | HEAD | Meaning |
 |---|---|---|
-| `main` | `056f06b` | **production** — cutover + cart + self-scheduling + onboarding + geocoding fix, all live |
-| `feat/booking-card-capture` | `0e9047b` | contact-step trim — committed, NOT merged/deployed |
-| (older, merged) | | `feat/self-scheduling` `cb3e961`, `feat/technician-onboarding` `b318a59`, `feat/booking-cart`, `feat/services-menu` |
+| `main` | `73b41e4` | **production** — everything below is merged + live |
+| (all merged into main) | | `feat/booking-cancellation` (cancellation + real-time + trim), `feat/booking-card-capture` (trim), `feat/self-scheduling`, `feat/technician-onboarding`, `feat/booking-cart`, `feat/services-menu` |
+
+No open/unmerged work branches — `main` is the full picture.
 
 ---
 
