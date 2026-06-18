@@ -33,6 +33,7 @@ const SECTION_ICONS: Record<string, IconName> = {
   brush: "brush",
   wrench: "wrench",
   panel: "panel",
+  car: "car",
 };
 
 const PROPERTY_ICONS: Record<PropertyTypeCode, IconName> = {
@@ -1075,6 +1076,11 @@ export function ContactForm() {
                           {section.category}
                         </span>
                       </div>
+                      {section.note && (
+                        <p className="mb-2 text-[12px] italic leading-snug text-ink-3">
+                          {section.note}
+                        </p>
+                      )}
                       <div className="space-y-2">
                         {section.items.map((item) => {
                           const isSel = state.cart.items.some(

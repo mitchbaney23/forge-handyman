@@ -39,7 +39,8 @@ export type ServiceKey =
   | "install-assembly"
   | "paint-drywall"
   | "minor-plumbing"
-  | "tv-mounting";
+  | "tv-mounting"
+  | "auto-maintenance";
 
 export type Service = {
   key: ServiceKey;
@@ -50,14 +51,16 @@ export type Service = {
   category: ServiceCategory;
 };
 
-// The five service sections (the "menu" sections). Outdoor & seasonal work
+// The service sections (the "menu" sections). Outdoor & seasonal work
 // (decks, fences, pressure washing) was dropped 2026-06 to focus the offering.
+// Auto Maintenance added 2026-06 — driveway car care that needs no lift.
 export type ServiceCategory =
   | "General Repairs"
   | "Installation & Furniture Assembly"
   | "Painting & Drywall Repair"
   | "Minor Plumbing"
-  | "TV Mounting";
+  | "TV Mounting"
+  | "Auto Maintenance";
 
 // Homepage "what we do" cards — one per menu section.
 export const SERVICES: Service[] = [
@@ -106,6 +109,15 @@ export const SERVICES: Service[] = [
     icon: "panel",
     category: "TV Mounting",
   },
+  {
+    key: "auto-maintenance",
+    title: "Auto Maintenance",
+    short: "Wiper blades, batteries, filters, and bulbs — routine car care in your driveway.",
+    long:
+      "Windshield wipers, battery swaps, cabin and engine air filters, headlight bulbs, and cloudy-lens restoration — the routine car care that needs no lift, done right in your driveway.",
+    icon: "car",
+    category: "Auto Maintenance",
+  },
 ];
 
 // Flat-rate pricing, derived from an $85/hr target labor rate with a $95
@@ -149,6 +161,9 @@ export type MenuSection = {
   category: ServiceCategory;
   icon: string;
   items: MenuItem[];
+  // Optional caption shown under the section heading — used by Auto Maintenance
+  // to flag that its small jobs sit below the $95 trip minimum and bundle best.
+  note?: string;
 };
 
 export const SERVICE_MENU: MenuSection[] = [
@@ -200,6 +215,19 @@ export const SERVICE_MENU: MenuSection[] = [
     items: [
       { id: "tv-standard", name: 'TV up to 55" (existing outlet)', price: "$135", priceCents: 13500, minutes: 90 },
       { id: "tv-large", name: 'TV 65"+ or over the fireplace', price: "$225", priceCents: 22500, minutes: 150 },
+    ],
+  },
+  {
+    category: "Auto Maintenance",
+    icon: "car",
+    note: "Quick driveway jobs — labor only, you supply the part. Bundle a few or add to any visit; the $95 trip minimum still applies.",
+    items: [
+      { id: "wiper-blades", name: "Windshield wiper blades (you supply blades)", price: "$45", priceCents: 4500, minutes: 20 },
+      { id: "engine-air-filter", name: "Engine air filter replacement", price: "$45", priceCents: 4500, minutes: 20 },
+      { id: "cabin-air-filter", name: "Cabin air filter replacement", price: "$55", priceCents: 5500, minutes: 30 },
+      { id: "auto-bulb", name: "Headlight / taillight bulb replacement", price: "$45", priceCents: 4500, minutes: 30 },
+      { id: "car-battery", name: "Car battery replacement (you supply battery)", price: "$75", priceCents: 7500, minutes: 30 },
+      { id: "headlight-restore", name: "Headlight restoration (cloudy lenses)", price: "$75", priceCents: 7500, minutes: 45 },
     ],
   },
 ];

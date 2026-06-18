@@ -72,6 +72,9 @@ export default function ServicesPage() {
                   {section.category}
                 </h2>
               </div>
+              {section.note && (
+                <p className="mt-3 text-[13.5px] italic text-ink-3">{section.note}</p>
+              )}
               <ul className="mt-4">
                 {section.items.map((item) => (
                   <li
