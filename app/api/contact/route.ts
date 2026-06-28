@@ -83,6 +83,10 @@ export const contactSchema = z
     serviceCategories: serviceCategoriesArraySchema.optional().default([]),
     cart: cartSchema.optional(),
     notSure: z.boolean().optional().default(false),
+    // Forge Family friends-and-family discount. Carried from the /family link
+    // (?family=1). Honor-system (no payment at booking), so the client flag is
+    // trusted — the server just reflects family pricing in the lead + summary.
+    family: z.boolean().optional().default(false),
     propertyType: propertyTypeSchema,
     preferredDate: z
       .union([
@@ -263,6 +267,7 @@ function payloadToSubmission(
     priorJobCount: enriched.priorJobCount,
     duplicateLast24hCount: enriched.duplicateLast24hCount,
     photoUrls: payload.photoUrls ?? [],
+    family: payload.family,
   }
 }
 
@@ -277,11 +282,16 @@ function payloadToRow(
   // When a cart is present, lead the description with its plain-text summary,
   // then append the customer's free-text note (if any). Otherwise the
   // description is the free-text note unchanged.
-  const description =
+  const cartDesc =
     payload.cart && !isCartEmpty(payload.cart)
-      ? formatCartSummary(payload.cart) +
+      ? formatCartSummary(payload.cart, { family: payload.family }) +
         (payload.description ? '\n\n' + payload.description : '')
       : payload.description
+  // Tag family leads so David sees the discount at a glance (flows to the
+  // notification email, Telegram card, and admin via the description).
+  const description = payload.family
+    ? `🏷️ FORGE FAMILY — 30% off applied\n\n${cartDesc}`
+    : cartDesc
 
   return {
     submitted_at: submittedAt,

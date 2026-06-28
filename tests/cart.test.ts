@@ -9,6 +9,7 @@ import {
   type Cart,
 } from '@/lib/cart'
 import { SERVICE_MENU, SERVICE_PACKAGES } from '@/lib/constants'
+import { familyCents } from '@/lib/family-pricing'
 
 // Pure unit tests for the cart logic. No mocks — the cart reads SERVICE_MENU /
 // SERVICE_PACKAGES straight from constants, so the ids and numbers below are
@@ -103,6 +104,32 @@ describe('cartTotals', () => {
       subtotalCents: 0,
       minutes: 0,
     })
+  })
+})
+
+describe('Forge Family pricing in the cart', () => {
+  const fan = menuItem('ceiling-fan') // 13500 cents
+  const cart: Cart = { items: [{ id: 'ceiling-fan', qty: 2 }], packageNumber: null }
+
+  it('cartTotals discounts the subtotal per line with { family: true }', () => {
+    const base = cartTotals(cart)
+    const fam = cartTotals(cart, { family: true })
+    // Same items + minutes; only the money changes.
+    expect(fam.itemCount).toBe(base.itemCount)
+    expect(fam.minutes).toBe(base.minutes)
+    expect(fam.subtotalCents).toBe(familyCents(fan.priceCents) * 2)
+    expect(fam.subtotalCents).toBeLessThan(base.subtotalCents)
+  })
+
+  it('formatCartSummary renders family prices with { family: true }', () => {
+    const summary = formatCartSummary(cart, { family: true })
+    expect(summary).toContain(`$${(familyCents(fan.priceCents) / 100).toString()}`)
+    expect(summary).toContain(fan.name)
+  })
+
+  it('defaults to base pricing when no opts are passed (back-compat)', () => {
+    expect(cartTotals(cart).subtotalCents).toBe(fan.priceCents * 2)
+    expect(formatCartSummary(cart)).toContain(fan.price)
   })
 })
 

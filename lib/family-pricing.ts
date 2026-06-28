@@ -41,6 +41,14 @@ function familyDisplay(baseDisplay: string, cents: number): string {
   return `${prefix}$${cents / 100}`;
 }
 
+// Public helper: the family price as a display string, derived from a base
+// display string + base cents. Preserves a leading "from ". Used by the cart +
+// booking form so the discount shown on /family follows the friend into
+// checkout (single source of truth — same rounding as the /family page).
+export function familyPriceLabel(baseDisplay: string, baseCents: number): string {
+  return familyDisplay(baseDisplay, familyCents(baseCents));
+}
+
 // A menu item / package carries its family price in the usual `price` /
 // `priceCents` fields, plus the original (`basePrice` / `baseCents`) so the page
 // can show the strike-through and the savings.

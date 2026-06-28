@@ -19,6 +19,7 @@ import {
   suggestPackage,
   type Cart,
 } from "@/lib/cart";
+import { familyPriceLabel, FAMILY_DISCOUNT_LABEL } from "@/lib/family-pricing";
 import { formatEtDay, formatEtTime } from "@/lib/scheduling/time";
 import { Icon, type IconName } from "@/lib/icons";
 import { NailProgress } from "@/components/NailProgress";
@@ -86,6 +87,9 @@ type FormState = {
   // job, no fitting slot, or "none of these work") rather than the slot picker.
   useFallbackTiming: boolean;
   referralSource: string;
+  // Forge Family friends-and-family pricing, set from the /family link
+  // (?family=1) — shows discounted prices through the cart + tags the lead.
+  family: boolean;
 };
 
 const initial: FormState = {
@@ -102,6 +106,7 @@ const initial: FormState = {
   selectedSlot: null,
   useFallbackTiming: false,
   referralSource: "",
+  family: false,
 };
 
 // Shape returned by /api/scheduling/availability.
@@ -250,8 +255,11 @@ function validate(state: FormState): FieldErrors {
   return errors;
 }
 
-export function ContactForm() {
-  const [state, setState] = useState<FormState>(initial);
+export function ContactForm({ initialFamily = false }: { initialFamily?: boolean }) {
+  const [state, setState] = useState<FormState>(() => ({
+    ...initial,
+    family: initialFamily,
+  }));
   const [errors, setErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState<Status>("idle");
   const [serverMessage, setServerMessage] = useState<string>("");
@@ -311,6 +319,18 @@ export function ContactForm() {
 
   // A known-duration cart (not the custom/"not sure" path) can self-schedule.
   const canSchedule = !state.notSure && !isCartEmpty(state.cart) && cartJobMinutes(state.cart) > 0;
+  const family = state.family;
+  // Render a price with the Forge Family treatment: base struck through, the
+  // discounted price in orange. Plain base price when not a family booking.
+  const renderPrice = (baseDisplay: string, baseCents: number) =>
+    family ? (
+      <>
+        <span className="font-normal text-ink-3 line-through">{baseDisplay}</span>{" "}
+        <span className="text-orange">{familyPriceLabel(baseDisplay, baseCents)}</span>
+      </>
+    ) : (
+      <>{baseDisplay}</>
+    );
   // True when the slot picker has real openings to show (vs. the callback fallback).
   const pickerAvailable =
     !!slotData &&
@@ -731,6 +751,7 @@ export function ContactForm() {
           propertyType: state.propertyType,
           cart: state.cart,
           notSure: state.notSure,
+          family: state.family,
           description: state.description,
           preferredDate: state.preferredDate,
           urgency: state.urgency || undefined,
@@ -1000,6 +1021,15 @@ export function ContactForm() {
             <p className="mt-1 text-sm text-ink-2">{STEPS[step].subtitle}</p>
           </div>
 
+          {family && (
+            <div className="mt-4 flex items-center gap-2 rounded-[7px] border-2 border-orange bg-orange/[0.07] px-3.5 py-2.5">
+              <Icon name="hammer" className="h-4 w-4 flex-none text-orange" />
+              <p className="text-[13px] font-semibold text-ink">
+                Forge Family — {FAMILY_DISCOUNT_LABEL} off applied to every price.
+              </p>
+            </div>
+          )}
+
           <div className="mt-5">
             {/* Step 1 — Service (the cart picker) */}
             <div hidden={step !== 0} className="panel-enter space-y-4">
@@ -1048,7 +1078,7 @@ export function ContactForm() {
                             </span>
                           </span>
                           <span className="mt-0.5 text-[13px] font-semibold text-ink-2">
-                            {pkg.hours} hrs · {pkg.price}
+                            {pkg.hours} hrs · {renderPrice(pkg.price, pkg.priceCents)}
                           </span>
                           <span className="mt-1 text-[12.5px] text-ink-3">
                             {pkg.blurb}
@@ -1115,7 +1145,7 @@ export function ContactForm() {
                                 {item.name}
                               </span>
                               <span className="flex-none font-bold text-ink">
-                                {item.price}
+                                {renderPrice(item.price, item.priceCents)}
                               </span>
                             </button>
                           );
@@ -1140,7 +1170,11 @@ export function ContactForm() {
                       <p className="flex-1 text-[13.5px] text-ink">
                         You&rsquo;ve got enough for{" "}
                         <span className="font-bold">
-                          {pkg.name} ({pkg.price})
+                          {pkg.name} (
+                          {family
+                            ? familyPriceLabel(pkg.price, pkg.priceCents)
+                            : pkg.price}
+                          )
                         </span>{" "}
                         — switch and we&rsquo;ll knock out the whole list.
                       </p>
@@ -1170,12 +1204,15 @@ export function ContactForm() {
                           #{pkg.number} {pkg.name}
                         </span>
                         <span>
-                          {pkg.hours} hrs · {pkg.price}
+                          {pkg.hours} hrs · {renderPrice(pkg.price, pkg.priceCents)}
                         </span>
                       </div>
                     );
                   }
                   const totals = cartTotals(state.cart);
+                  const famSubtotalCents = family
+                    ? cartTotals(state.cart, { family: true }).subtotalCents
+                    : totals.subtotalCents;
                   const hrs = Math.round((totals.minutes / 60) * 10) / 10;
                   return (
                     <div className="flex items-center justify-between rounded-[7px] border-2 border-ink bg-paper-2 px-3.5 py-2.5 text-sm font-bold text-ink">
@@ -1183,7 +1220,16 @@ export function ContactForm() {
                         {totals.itemCount} item
                         {totals.itemCount === 1 ? "" : "s"} · ~{hrs} hrs
                       </span>
-                      <span>${totals.subtotalCents / 100}</span>
+                      <span>
+                        {family && (
+                          <span className="mr-1.5 font-normal text-ink-3 line-through">
+                            ${totals.subtotalCents / 100}
+                          </span>
+                        )}
+                        <span className={family ? "text-orange" : undefined}>
+                          ${famSubtotalCents / 100}
+                        </span>
+                      </span>
                     </div>
                   );
                 })()}
