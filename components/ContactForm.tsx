@@ -3,6 +3,7 @@
 import Script from "next/script";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
+  BUSINESS,
   PROPERTY_TYPES,
   REFERRAL_SOURCES,
   SERVICE_MENU,
@@ -764,7 +765,7 @@ export function ContactForm() {
         if (data?.maintenance) {
           setServerMessage(
             data?.error ||
-              "We're updating our booking system right now. Please call us at (555) 123-4567.",
+              `We're updating our booking system right now. Please call us at ${BUSINESS.phone}.`,
           );
           resetTurnstile();
           return;
@@ -838,7 +839,7 @@ export function ContactForm() {
     } catch {
       setStatus("error");
       setServerMessage(
-        "Network error — please try again or call (555) 123-4567.",
+        `Network error — please try again or call ${BUSINESS.phone}.`,
       );
       resetTurnstile();
     }
@@ -865,10 +866,10 @@ export function ContactForm() {
           That said — we occasionally make exceptions for bigger jobs. Give David
           a call at{" "}
           <a
-            href="tel:+15551234567"
+            href={BUSINESS.phoneHref}
             className="font-semibold text-orange underline underline-offset-[3px]"
           >
-            (555) 123-4567
+            {BUSINESS.phone}
           </a>{" "}
           and we&rsquo;ll see what we can do.
         </p>
@@ -903,10 +904,10 @@ export function ContactForm() {
             . David will see you then — we&rsquo;ll text if anything changes. Need
             to adjust? Call{" "}
             <a
-              href="tel:+15551234567"
+              href={BUSINESS.phoneHref}
               className="font-semibold text-orange underline underline-offset-[3px]"
             >
-              (555) 123-4567
+              {BUSINESS.phone}
             </a>
             .
           </p>
@@ -915,10 +916,10 @@ export function ContactForm() {
             David will review your details and get back to you shortly with a free
             estimate. For urgent requests, call us at{" "}
             <a
-              href="tel:+15551234567"
+              href={BUSINESS.phoneHref}
               className="font-semibold text-orange underline underline-offset-[3px]"
             >
-              (555) 123-4567
+              {BUSINESS.phone}
             </a>
             .
           </p>

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { z } from 'zod'
 import { checkServiceArea } from '@/lib/geocoding'
-import { SERVICE_LABEL_BY_CODE, type ServiceCategoryCode } from '@/lib/constants'
+import { BUSINESS, SERVICE_LABEL_BY_CODE, type ServiceCategoryCode } from '@/lib/constants'
 import {
   cartJobMinutes,
   deriveServiceCategories,
@@ -486,7 +486,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (isContactFormDisabled()) {
     logger.info({ ip }, 'contact-form: submission rejected — CONTACT_FORM_DISABLED')
     return jsonError(
-      "We're updating our booking system right now. Please call us at (555) 123-4567 and we'll get you taken care of.",
+      `We're updating our booking system right now. Please call us at ${BUSINESS.phone} and we'll get you taken care of.`,
       503,
       { maintenance: true },
     )
@@ -530,7 +530,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       'contact-form: rate limited',
     )
     return jsonError(
-      'Too many requests. Please wait a bit before submitting again, or call us at (555) 123-4567.',
+      `Too many requests. Please wait a bit before submitting again, or call us at ${BUSINESS.phone}.`,
       429,
       undefined,
       rateLimitHeaders(blocking),
@@ -639,7 +639,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     })
     logger.error({ err }, 'contact-form: Gmail send failed')
     return jsonError(
-      "We couldn't send your request right now. Please call (555) 123-4567 or try again in a few minutes.",
+      `We couldn't send your request right now. Please call ${BUSINESS.phone} or try again in a few minutes.`,
       502,
     )
   }

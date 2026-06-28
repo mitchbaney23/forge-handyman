@@ -1,8 +1,8 @@
 export const BUSINESS = {
   name: "Forge Handyman Service",
   tagline: "Honest Work. Built to Last.",
-  phone: "(555) 123-4567",
-  phoneHref: "tel:+15551234567",
+  phone: "(919) 275-2823",
+  phoneHref: "tel:+19192752823",
   email: "david@forgehandyman.com",
   emailHref: "mailto:david@forgehandyman.com",
   owner: "David Baney",
