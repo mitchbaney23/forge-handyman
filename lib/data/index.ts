@@ -201,6 +201,26 @@ export async function updateCustomerNotes(
     : { updated: false }
 }
 
+// Postgres-only (no sheet customers table). Sheet mode returns null — the
+// manual Add Customer surface is gated on crmEnabled() so this is never reached
+// there; null is the honest "no such customer" answer if it ever is.
+export async function findCustomerByEmail(email: string): Promise<{ id: string } | null> {
+  return getBackend() === 'postgres' ? pgCustomers.findCustomerByEmail(email) : null
+}
+
+// Postgres-only standalone customer insert. Sheet mode fails loud rather than
+// silently dropping the write — the UI only exposes this in postgres mode, so
+// reaching it on a sheet deployment is a programmer error, not a data state.
+export async function insertCustomer(input: {
+  name?: string
+  phone?: string
+  email?: string
+  notes?: string
+}): Promise<{ id: string } | { duplicate: true }> {
+  if (getBackend() === 'postgres') return pgCustomers.insertCustomer(input)
+  throw new Error('insertCustomer: customers are only available on the Postgres backend')
+}
+
 export async function listActivitiesForJob(jobId: string): Promise<Activity[]> {
   return getBackend() === 'postgres' ? pgActivitiesRead.listActivitiesForJob(jobId) : []
 }

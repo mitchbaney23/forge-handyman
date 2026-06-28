@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { listJobs, type JobRow } from "@/lib/data";
+import { PipelineBoard, type BoardJob } from "@/components/admin/PipelineBoard";
 
 export const metadata: Metadata = {
   title: "Pipeline — Forge Admin",
@@ -9,22 +9,6 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-const COLUMNS: { status: string; matches: string[]; staleAfterHours: number }[] = [
-  { status: "New", matches: ["New"], staleAfterHours: 24 },
-  { status: "Quoted", matches: ["Quoted", "Pending Follow-Up"], staleAfterHours: 7 * 24 },
-  { status: "Booked", matches: ["Booked"], staleAfterHours: 14 * 24 },
-  { status: "In Progress", matches: ["In Progress"], staleAfterHours: 48 },
-  { status: "Complete", matches: ["Complete"], staleAfterHours: 365 * 24 },
-  // Needs attention: a balance charge bounced — surface fast, don't drop it.
-  { status: "Payment Failed", matches: ["Payment Failed"], staleAfterHours: 24 },
-  // Closed out (cancelled or refunded) — visible, not silently dropped.
-  {
-    status: "Closed",
-    matches: ["Cancelled", "Refunded", "Partial Refund"],
-    staleAfterHours: 365 * 24,
-  },
-];
 
 export default async function PipelinePage() {
   let jobs: JobRow[] = [];
@@ -38,20 +22,22 @@ export default async function PipelinePage() {
   if (loadError) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-900">
-        <div className="font-semibold">Couldn&rsquo;t load jobs from the sheet.</div>
+        <div className="font-semibold">Couldn&rsquo;t load jobs.</div>
         <div className="mt-2 font-mono text-xs">{loadError}</div>
       </div>
     );
   }
 
+  const boardJobs: BoardJob[] = jobs.map((j) => ({
+    jobId: j.job_id || "",
+    name: j.name || "",
+    serviceType: j.service_type || "",
+    status: j.status || "",
+    submittedAt: j.submitted_at || "",
+  }));
+
   // eslint-disable-next-line react-hooks/purity -- server component, runs per-request, Date.now is intentional
   const now = Date.now();
-  const grouped = COLUMNS.map((col) => {
-    const inCol = jobs.filter((j) => col.matches.includes(j.status));
-    // Oldest first — stalled jobs surface to the top.
-    inCol.sort((a, b) => (a.submitted_at || "").localeCompare(b.submitted_at || ""));
-    return { ...col, jobs: inCol };
-  });
 
   return (
     <div className="space-y-6">
@@ -61,7 +47,9 @@ export default async function PipelinePage() {
           Where every job sits
         </h1>
         <p className="mt-2 text-sm text-ink/60">
-          Stalled jobs (older than the per-column threshold) get a
+          Drag a card between columns to move a deal, or use{" "}
+          <span className="font-medium text-ink/75">Move to…</span> on a card
+          (handy on your phone). Stalled deals get a
           <span className="mx-1 inline-block rounded bg-amber-200 px-1.5 py-0.5 text-xs font-semibold text-amber-900">
             stalled
           </span>
@@ -69,94 +57,7 @@ export default async function PipelinePage() {
         </p>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-5">
-        {grouped.map((col) => (
-          <PipelineColumn key={col.status} {...col} now={now} />
-        ))}
-      </div>
+      <PipelineBoard jobs={boardJobs} now={now} />
     </div>
   );
-}
-
-function PipelineColumn({
-  status,
-  jobs,
-  staleAfterHours,
-  now,
-}: {
-  status: string;
-  jobs: JobRow[];
-  staleAfterHours: number;
-  now: number;
-}) {
-  return (
-    <div className="rounded-xl border border-navy/10 bg-navy/[0.03] p-3">
-      <div className="mb-3 flex items-center justify-between px-1">
-        <h2 className="text-sm font-semibold text-navy">{status}</h2>
-        <span className="text-xs font-medium text-ink/55">{jobs.length}</span>
-      </div>
-      {jobs.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-navy/15 bg-white/50 p-4 text-center text-xs text-ink/50">
-          Empty
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {jobs.map((job) => (
-            <PipelineCard
-              key={job.rowNumber}
-              job={job}
-              now={now}
-              staleAfterHours={staleAfterHours}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PipelineCard({
-  job,
-  now,
-  staleAfterHours,
-}: {
-  job: JobRow;
-  now: number;
-  staleAfterHours: number;
-}) {
-  const submittedAt = job.submitted_at ? new Date(job.submitted_at).getTime() : 0;
-  const ageHours = submittedAt ? Math.floor((now - submittedAt) / 3_600_000) : 0;
-  const isStale = submittedAt > 0 && ageHours > staleAfterHours;
-
-  return (
-    <Link
-      href={`/admin/jobs/${encodeURIComponent(job.job_id || "")}`}
-      className={`block rounded-lg border bg-white p-3 transition-colors hover:border-navy/30 ${
-        isStale ? "border-amber-300" : "border-navy/10"
-      }`}
-    >
-      <div className="truncate text-sm font-semibold text-navy">
-        {job.name || "(no name)"}
-      </div>
-      <div className="mt-0.5 truncate text-xs text-ink/60">
-        {job.service_type}
-      </div>
-      <div className="mt-2 flex items-center justify-between text-[10px] text-ink/55">
-        <span>{formatAge(ageHours)}</span>
-        {isStale && (
-          <span className="rounded bg-amber-200 px-1.5 py-0.5 font-semibold text-amber-900">
-            stalled
-          </span>
-        )}
-      </div>
-    </Link>
-  );
-}
-
-function formatAge(hours: number): string {
-  if (hours < 1) return "just now";
-  if (hours < 24) return `${hours}h old`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d old`;
-  return `${Math.floor(days / 30)}mo old`;
 }

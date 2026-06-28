@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { cancelBooking, type ActionResult } from "./actions";
+import type { ActionResult } from "@/lib/admin/guard";
+import { cancelBooking } from "./actions";
 
 export function CancelBookingButton({ jobId }: { jobId: string }) {
   const [confirming, setConfirming] = useState(false);

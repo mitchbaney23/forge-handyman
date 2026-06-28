@@ -2,12 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { statusOptionsFor } from "@/lib/jobs/status-machine";
+import type { ActionResult } from "@/lib/admin/guard";
 import {
   dispatchToDavid,
   markComplete,
   recordFirstTouch,
   updateJobStatus,
-  type ActionResult,
 } from "./actions";
 
 export function JobActions({

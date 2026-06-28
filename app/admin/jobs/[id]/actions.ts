@@ -1,11 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getServerSession } from "next-auth";
 import * as Sentry from "@sentry/nextjs";
-import { authOptions, isAllowlistedEmail } from "@/lib/auth";
 import { logger } from "@/lib/security/logger";
-import { checkLimit } from "@/lib/security/rate-limit";
 import {
   addJobNote,
   appendAuditRow,
@@ -13,10 +10,15 @@ import {
   getAppointmentByJobId,
   updateRowByJobId,
 } from "@/lib/data";
+import {
+  rateLimitAdmin,
+  requireAdmin,
+  type ActionResult,
+} from "@/lib/admin/guard";
+import { moveJobStatus } from "@/lib/crm/mutations";
 import { performCancellation } from "@/lib/scheduling/cancel";
 import { adminActor } from "@/lib/data/activity-actions";
 import { getBackend } from "@/lib/data/backend";
-import { canAdminTransition } from "@/lib/jobs/status-machine";
 import {
   claimChargeAttempt,
   findLiveAttempt,
@@ -29,35 +31,15 @@ import { dispatchJobToDavid } from "@/lib/telegram/dispatch";
 // payments.purpose for the guard row.
 const BALANCE_PURPOSE = "balance-charge";
 
-export type ActionResult =
-  | { ok: true; message?: string }
-  | { ok: false; error: string };
+// NOTE: ActionResult is intentionally NOT re-exported here. This is a
+// "use server" module, so Turbopack treats every export as a Server Action —
+// a type re-export breaks the generated action proxy at build. Importers take
+// the type straight from @/lib/admin/guard.
 
-async function requireAdmin(): Promise<{ email: string } | null> {
-  const session = await getServerSession(authOptions);
-  const email = session?.user?.email ?? null;
-  if (!email || !isAllowlistedEmail(email)) return null;
-  return { email };
-}
-
-async function rateLimitAdmin(email: string): Promise<boolean> {
-  const result = await checkLimit("admin-action", email);
-  return result.success;
-}
-
-const VALID_STATUSES = new Set([
-  "New",
-  "Quoted",
-  "Pending Follow-Up",
-  "Booked",
-  "In Progress",
-  "Complete",
-  "Cancelled",
-  "Payment Failed",
-  "Refunded",
-  "Partial Refund",
-]);
-
+// Thin UI wrapper over the shared moveJobStatus core (lib/crm/mutations.ts):
+// admin gate + rate-limit + revalidate around the one code path the pipeline
+// board and a future MCP server also use. The state-machine guard, validation,
+// and activity logging all live in the core.
 export async function updateJobStatus(
   jobId: string,
   newStatus: string,
@@ -67,42 +49,16 @@ export async function updateJobStatus(
   if (!(await rateLimitAdmin(auth.email))) {
     return { ok: false, error: "Too many actions. Slow down a moment." };
   }
-  if (!VALID_STATUSES.has(newStatus)) {
-    return { ok: false, error: `Invalid status: ${newStatus}` };
-  }
-  const found = await findRowByJobId(jobId);
-  if (!found) return { ok: false, error: "Job not found" };
-
-  const before = found.row.status;
-  if (before === newStatus) return { ok: true, message: "No change." };
-  // Integrity guard (Phase B2): block dangerous human transitions — notably
-  // hand-setting 'Complete' (which would bypass markComplete's balance charge).
-  // Webhook status writes bypass this; they call updateRowByJobId directly.
-  if (!canAdminTransition(before, newStatus)) {
-    return {
-      ok: false,
-      error:
-        newStatus === "Complete"
-          ? "Use “Mark Complete” to complete a job — it charges the saved-card balance."
-          : `Can't move a job from “${before}” to “${newStatus}”.`,
-    };
-  }
-  await updateRowByJobId(jobId, { status: newStatus });
-  await appendAuditRow({
-    actor: auth.email,
-    action: "job.status_changed",
-    target: jobId,
+  const res = await moveJobStatus({
     jobId,
-    before,
-    after: newStatus,
+    newStatus,
+    actor: adminActor(auth.email),
   });
-  logger.info(
-    { jobId, actor: auth.email, from: before, to: newStatus },
-    "admin: status changed",
-  );
+  if (!res.ok) return { ok: false, error: res.error };
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
-  return { ok: true, message: `Status set to ${newStatus}.` };
+  revalidatePath("/admin/pipeline");
+  return { ok: true, message: res.message };
 }
 
 export async function dispatchToDavid(jobId: string): Promise<ActionResult> {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { getSupabaseClient } from '@/lib/data/pg/client'
 import { isUuid, toContactRow, type DbJob } from '@/lib/data/pg/mappers'
 import type { JobRow } from '@/lib/sheet/queries'
@@ -320,4 +321,57 @@ export async function updateCustomerNotes(
     .select('id')
   if (error) throw new Error(`pg/customers: updateCustomerNotes update failed: ${error.message}`)
   return { updated: (data?.length ?? 0) > 0 }
+}
+
+// One customer row by email. citext .eq() makes the match case-insensitive,
+// mirroring the customers_email_uniq index + the sheet's trim+lowercase email
+// matching. Empty email -> null WITHOUT querying (a blank lookup found nothing;
+// it must never collapse onto the unknown:/redacted: sentinels). Used by the
+// manual "Add customer" path for duplicate detection and to resolve the id of a
+// customer just upserted via appendContactRow.
+export async function findCustomerByEmail(email: string): Promise<{ id: string } | null> {
+  const trimmed = (email ?? '').trim()
+  if (trimmed === '') return null
+  const client = getSupabaseClient()
+  const { data, error } = await client
+    .from('customers')
+    .select('id')
+    .eq('email', trimmed)
+    .maybeSingle()
+  if (error) throw new Error(`pg/customers: findCustomerByEmail query failed: ${error.message}`)
+  return data ? { id: (data as { id: string }).id } : null
+}
+
+// Insert a STANDALONE customer (no job) — the genuinely-new write the manual
+// "Add customer" surface needs. appendContactRow (pg/repo.ts) only ever creates
+// a customer as a SIDE EFFECT of a job; this is the bare-customer primitive.
+// name/phone/notes default to '' (the table defaults); email is required by the
+// schema (NOT NULL citext) — an empty email gets the migration's
+// 'unknown:<uuid>' sentinel so distinct email-less manual adds never collapse
+// onto one shared row. A citext-unique (23505) conflict returns { duplicate }
+// rather than throwing, so the caller can point at the existing record.
+export async function insertCustomer(input: {
+  name?: string
+  phone?: string
+  email?: string
+  notes?: string
+}): Promise<{ id: string } | { duplicate: true }> {
+  const client = getSupabaseClient()
+  const email = (input.email ?? '').trim()
+  const payload = {
+    email: email === '' ? `unknown:${randomUUID()}` : email,
+    name: input.name ?? '',
+    phone: input.phone ?? '',
+    notes: input.notes ?? '',
+  }
+  const { data, error } = await client
+    .from('customers')
+    .insert(payload)
+    .select('id')
+    .single()
+  if (error) {
+    if (error.code === '23505') return { duplicate: true }
+    throw new Error(`pg/customers: insertCustomer insert failed: ${error.message}`)
+  }
+  return { id: (data as { id: string }).id }
 }
