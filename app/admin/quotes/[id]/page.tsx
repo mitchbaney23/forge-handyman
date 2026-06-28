@@ -14,6 +14,7 @@ import {
 import { authOptions } from "@/lib/auth";
 import { logger } from "@/lib/security/logger";
 import { appendAuditRow, findRowByJobId } from "@/lib/data";
+import { estimateCentsFromDescription } from "@/lib/cart";
 
 export const metadata: Metadata = {
   title: "Send Quote — Forge Admin",
@@ -52,6 +53,10 @@ export default async function QuotePage({
   const found = await findRowByJobId(decoded);
   if (!found) notFound();
   const { row } = found;
+
+  // For self-scheduled jobs, the price they picked lives in the description's
+  // cart summary — pull it back out to pre-fill the quote amount.
+  const estimateCents = estimateCentsFromDescription(row.description);
 
   // Audit log on quote-builder open (Amendment §21.5.5).
   const session = await getServerSession(authOptions);
@@ -172,6 +177,9 @@ export default async function QuotePage({
         customerEmail={row.email || ""}
         serviceType={categoryLabels}
         initialDescription={row.description || ""}
+        prefillDepositDollars={
+          estimateCents != null ? estimateCents / 100 : undefined
+        }
       />
     </div>
   );

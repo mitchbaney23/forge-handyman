@@ -16,15 +16,21 @@ export function QuoteComposer({
   customerEmail,
   serviceType,
   initialDescription,
+  prefillDepositDollars,
 }: {
   jobId: string;
   customerName: string;
   customerEmail: string;
   serviceType: string;
   initialDescription: string;
+  // For self-scheduled jobs: the price the customer already selected, pre-filled
+  // as the deposit so the quote is a review-and-send. Undefined for custom jobs.
+  prefillDepositDollars?: number;
 }) {
-  const [deposit, setDeposit] = useState("");
-  const [balance, setBalance] = useState("");
+  const [deposit, setDeposit] = useState(
+    prefillDepositDollars ? String(prefillDepositDollars) : "",
+  );
+  const [balance, setBalance] = useState(prefillDepositDollars ? "0" : "");
   const [tier, setTier] = useState<"small" | "medium" | "large">("medium");
   const [description, setDescription] = useState(initialDescription);
   const [pending, startTransition] = useTransition();
@@ -97,6 +103,12 @@ export function QuoteComposer({
           at <span className="font-medium text-ink">{customerEmail}</span> for{" "}
           <span className="font-medium text-ink">{serviceType}</span>.
         </p>
+        {prefillDepositDollars ? (
+          <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Pre-filled with the ${prefillDepositDollars} they selected at booking
+            — review and adjust the deposit/balance split if you like.
+          </p>
+        ) : null}
       </div>
 
       <div>
