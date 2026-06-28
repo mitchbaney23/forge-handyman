@@ -108,7 +108,8 @@ export default function FamilyPage() {
 
       <CTABanner
         heading="Ready to book?"
-        subheading="Pick from the menu or tell us what you're working on."
+        subheading="Your Forge Family pricing comes with you — pick from the menu or tell us what you're working on."
+        bookHref="/contact?family=1"
       />
     </>
   );

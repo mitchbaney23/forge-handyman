@@ -24,6 +24,9 @@ export type ContactSubmission = {
   priorJobCount?: number;
   duplicateLast24hCount?: number;
   photoUrls?: string[];
+  // Forge Family friends-and-family booking — drives a "rate locked in" line
+  // in the customer confirmation email.
+  family?: boolean;
 };
 
 const SCOPES = [
@@ -409,6 +412,7 @@ export async function sendBookingConfirmationToCustomer(args: {
         <tr><td style="padding:8px 12px;background:#F3F4F6;font-weight:700;">Service</td><td style="padding:8px 12px;">${escapeHtml(data.serviceType) || "&mdash;"}</td></tr>
         <tr><td style="padding:8px 12px;background:#F3F4F6;font-weight:700;">Where</td><td style="padding:8px 12px;">${escapeHtml(data.address) || "&mdash;"}</td></tr>
       </table>
+      ${data.family ? '<p style="font-size:15px;line-height:1.6;color:#C2491D;font-weight:700;">✨ Your Forge Family rate (30% off) is locked in.</p>' : ""}
       <p style="font-size:15px;line-height:1.6;">Need to make a change? Please give at least 24 hours' notice when you can. You can <a href="${escapeHtml(cancelUrl)}" style="color:#C2491D;font-weight:700;">cancel your appointment here</a>, or call us at ${BUSINESS.phone}.</p>
       <p style="font-size:13px;color:#6b7280;">Forge Handyman Service · Garner, Clayton &amp; South Raleigh, NC</p>
     </div>`;
@@ -419,6 +423,7 @@ export async function sendBookingConfirmationToCustomer(args: {
     `When: ${whenLabel} (Eastern)`,
     `Service: ${data.serviceType || "—"}`,
     `Where: ${data.address || "—"}`,
+    ...(data.family ? [``, `Your Forge Family rate (30% off) is locked in.`] : []),
     ``,
     `Need to change it? Please give at least 24 hours' notice. Cancel here: ${cancelUrl}`,
     `Or call us at ${BUSINESS.phone}.`,

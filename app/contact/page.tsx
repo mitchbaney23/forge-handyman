@@ -10,7 +10,16 @@ export const metadata: Metadata = {
   alternates: { canonical: "/contact" },
 };
 
-export default function ContactPage() {
+export default async function ContactPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // Forge Family link arrives as /contact?family=1 — read it server-side so the
+  // booking form renders family pricing on first paint (no flash, no effect).
+  const sp = await searchParams;
+  const famParam = Array.isArray(sp.family) ? sp.family[0] : sp.family;
+  const initialFamily = famParam === "1" || famParam === "true";
   return (
     <>
       <PageHeader stamp="Book a Job" title="Tell us what needs doing">
@@ -27,7 +36,7 @@ export default function ContactPage() {
 
       <section className="bg-paper">
         <div className="container-page section grid items-start gap-[34px] lg:grid-cols-[1.7fr_1fr]">
-          <ContactForm />
+          <ContactForm initialFamily={initialFamily} />
           <aside>
             <InfoCard icon="phone" title="Call Us">
               <a

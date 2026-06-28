@@ -7,6 +7,7 @@ import {
   type ServiceCategoryCode,
   type ServicePackage,
 } from '@/lib/constants'
+import { familyCents, familyPriceLabel } from '@/lib/family-pricing'
 
 // THE CART PAYLOAD CONTRACT — the form, the API, and the tests all agree on
 // this exact shape. The client sends `cart: Cart` (it no longer sends
@@ -96,19 +97,26 @@ export function resolveCart(cart: Cart): {
   return { lines, pkg: resolvePackage(cart.packageNumber) }
 }
 
-// À-la-carte totals only — does NOT include the package.
-export function cartTotals(cart: Cart): {
+// À-la-carte totals only — does NOT include the package. Pass { family: true }
+// to total at Forge Family rates (each line discounted + $5-rounded, exactly as
+// the /family page shows) — keeps the booking estimate in sync with the promise.
+export function cartTotals(
+  cart: Cart,
+  opts?: { family?: boolean },
+): {
   itemCount: number
   subtotalCents: number
   minutes: number
 } {
+  const family = opts?.family ?? false
   const { lines } = resolveCart(cart)
   let itemCount = 0
   let subtotalCents = 0
   let minutes = 0
   for (const line of lines) {
     itemCount += line.qty
-    subtotalCents += line.priceCents * line.qty
+    const unitCents = family ? familyCents(line.priceCents) : line.priceCents
+    subtotalCents += unitCents * line.qty
     minutes += line.minutes * line.qty
   }
   return { itemCount, subtotalCents, minutes }
@@ -160,15 +168,20 @@ function formatHours(minutes: number): string {
 }
 
 // Human-readable plain-text summary for the email body / calendar description.
-export function formatCartSummary(cart: Cart): string {
+// Pass { family: true } to render Forge Family prices so the lead David sees
+// matches what the friend was quoted at booking.
+export function formatCartSummary(cart: Cart, opts?: { family?: boolean }): string {
+  const family = opts?.family ?? false
   const { lines, pkg } = resolveCart(cart)
+  const priceOf = (display: string, cents: number) =>
+    family ? familyPriceLabel(display, cents) : display
 
   if (pkg) {
     // Package-led summary. If à-la-carte items ride along, list them after.
-    const header = `PACKAGE: #${pkg.number} ${pkg.name} (${pkg.hours} hrs) — ${pkg.price}`
+    const header = `PACKAGE: #${pkg.number} ${pkg.name} (${pkg.hours} hrs) — ${priceOf(pkg.price, pkg.priceCents)}`
     if (lines.length === 0) return header
     const bullets = lines.map(
-      (line) => `• ${line.name} ×${line.qty} — ${line.price}`,
+      (line) => `• ${line.name} ×${line.qty} — ${priceOf(line.price, line.priceCents)}`,
     )
     return [header, '', ...bullets].join('\n')
   }
@@ -176,9 +189,9 @@ export function formatCartSummary(cart: Cart): string {
   if (lines.length === 0) return ''
 
   const bullets = lines.map(
-    (line) => `• ${line.name} ×${line.qty} — ${line.price}`,
+    (line) => `• ${line.name} ×${line.qty} — ${priceOf(line.price, line.priceCents)}`,
   )
-  const { itemCount, subtotalCents, minutes } = cartTotals(cart)
+  const { itemCount, subtotalCents, minutes } = cartTotals(cart, { family })
   const estimate = `Estimated: ${itemCount} item${itemCount === 1 ? '' : 's'} · ~${formatHours(
     minutes,
   )} hrs · ${centsToDollars(subtotalCents)} (final on site)`
