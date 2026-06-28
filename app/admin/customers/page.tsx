@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AddCustomerForm } from "@/components/admin/AddCustomerForm";
 import { CustomerTable } from "@/components/admin/CustomerTable";
 import { crmEnabled, listCustomers, type CustomerSummary } from "@/lib/data";
 
@@ -53,13 +54,15 @@ export default async function CustomersPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <header>
         <p className="eyebrow">Customers</p>
         <h1 className="mt-1 text-2xl font-semibold text-navy sm:text-3xl">
           Customer profiles
         </h1>
       </header>
+
+      <AddCustomerForm />
 
       <CustomerTable customers={customers} />
     </div>
