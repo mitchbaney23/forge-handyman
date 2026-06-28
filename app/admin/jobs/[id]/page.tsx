@@ -69,13 +69,16 @@ export default async function JobDetailPage({
           <div className="flex flex-col items-end gap-3">
             <StatusBadge status={row.status} />
             {(row.status === "New" ||
+              row.status === "Booked" ||
               row.status === "Quoted" ||
               row.status === "Pending Follow-Up") && (
               <Link
                 href={`/admin/quotes/${encodeURIComponent(decoded)}`}
                 className="btn-primary text-sm"
               >
-                {row.status === "New" ? "Send Quote" : "Re-send Quote"}
+                {row.status === "New" || row.status === "Booked"
+                  ? "Send Quote"
+                  : "Re-send Quote"}
               </Link>
             )}
           </div>
