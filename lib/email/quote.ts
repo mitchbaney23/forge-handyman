@@ -32,6 +32,15 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#039;')
 }
 
+// RFC 2047 encoded-word for non-ASCII subject headers so em-dashes / accented
+// names don't mojibake in email clients (the "Ã¢Â€Â" garble). Pure-ASCII passes
+// through unchanged. Mirrors lib/google.ts's encoder.
+function encodeMimeHeader(value: string): string {
+  if (!value) return value
+  if (Array.from(value).every((ch) => ch.charCodeAt(0) <= 0x7f)) return value
+  return `=?UTF-8?B?${Buffer.from(value, 'utf-8').toString('base64')}?=`
+}
+
 export interface QuoteEmailInput {
   toEmail: string
   toName: string
@@ -165,7 +174,7 @@ function encodeRfc2822(message: {
     `To: ${message.to}`,
     `From: ${message.from}`,
     `Reply-To: ${message.replyTo}`,
-    `Subject: ${message.subject}`,
+    `Subject: ${encodeMimeHeader(message.subject)}`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     '',
