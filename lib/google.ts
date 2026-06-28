@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import type { JWT } from "google-auth-library";
 import { formatEtDay, formatEtTime } from "@/lib/scheduling/time";
+import { BUSINESS } from "@/lib/constants";
 
 export type ContactSubmission = {
   name: string;
@@ -408,7 +409,7 @@ export async function sendBookingConfirmationToCustomer(args: {
         <tr><td style="padding:8px 12px;background:#F3F4F6;font-weight:700;">Service</td><td style="padding:8px 12px;">${escapeHtml(data.serviceType) || "&mdash;"}</td></tr>
         <tr><td style="padding:8px 12px;background:#F3F4F6;font-weight:700;">Where</td><td style="padding:8px 12px;">${escapeHtml(data.address) || "&mdash;"}</td></tr>
       </table>
-      <p style="font-size:15px;line-height:1.6;">Need to make a change? Please give at least 24 hours' notice when you can. You can <a href="${escapeHtml(cancelUrl)}" style="color:#C2491D;font-weight:700;">cancel your appointment here</a>, or call us at (555) 123-4567.</p>
+      <p style="font-size:15px;line-height:1.6;">Need to make a change? Please give at least 24 hours' notice when you can. You can <a href="${escapeHtml(cancelUrl)}" style="color:#C2491D;font-weight:700;">cancel your appointment here</a>, or call us at ${BUSINESS.phone}.</p>
       <p style="font-size:13px;color:#6b7280;">Forge Handyman Service · Garner, Clayton &amp; South Raleigh, NC</p>
     </div>`;
 
@@ -420,7 +421,7 @@ export async function sendBookingConfirmationToCustomer(args: {
     `Where: ${data.address || "—"}`,
     ``,
     `Need to change it? Please give at least 24 hours' notice. Cancel here: ${cancelUrl}`,
-    `Or call us at (555) 123-4567.`,
+    `Or call us at ${BUSINESS.phone}.`,
   ].join("\n");
 
   const raw = encodeRfc2822({

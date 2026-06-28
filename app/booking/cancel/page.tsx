@@ -3,6 +3,7 @@ import { verifyCancelToken } from "@/lib/scheduling/cancel-token";
 import { getAppointmentById } from "@/lib/data";
 import { formatEtDay, formatEtTime } from "@/lib/scheduling/time";
 import { CancelByTokenButton } from "./CancelByTokenButton";
+import { BUSINESS } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Cancel appointment — Forge Handyman Service",
@@ -38,8 +39,8 @@ export default async function CancelBookingPage({
         <p className="mx-auto mt-2.5 max-w-[44ch] text-[15px] text-ink-2">
           The cancellation link is invalid or has expired. To change an
           appointment, call us at{" "}
-          <a href="tel:+15551234567" className="font-semibold text-orange underline underline-offset-[3px]">
-            (555) 123-4567
+          <a href={BUSINESS.phoneHref} className="font-semibold text-orange underline underline-offset-[3px]">
+            {BUSINESS.phone}
           </a>
           .
         </p>
@@ -57,8 +58,8 @@ export default async function CancelBookingPage({
         </h1>
         <p className="mx-auto mt-2.5 max-w-[44ch] text-[15px] text-ink-2">
           It may have already been removed. Call us at{" "}
-          <a href="tel:+15551234567" className="font-semibold text-orange underline underline-offset-[3px]">
-            (555) 123-4567
+          <a href={BUSINESS.phoneHref} className="font-semibold text-orange underline underline-offset-[3px]">
+            {BUSINESS.phone}
           </a>{" "}
           if you need a hand.
         </p>
