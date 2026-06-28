@@ -6,6 +6,7 @@ import {
   deriveServiceCategories,
   formatCartSummary,
   isCartEmpty,
+  estimateCentsFromDescription,
   type Cart,
 } from '@/lib/cart'
 import { SERVICE_MENU, SERVICE_PACKAGES } from '@/lib/constants'
@@ -130,6 +131,52 @@ describe('Forge Family pricing in the cart', () => {
   it('defaults to base pricing when no opts are passed (back-compat)', () => {
     expect(cartTotals(cart).subtotalCents).toBe(fan.priceCents * 2)
     expect(formatCartSummary(cart)).toContain(fan.price)
+  })
+})
+
+describe('estimateCentsFromDescription (quote pre-fill)', () => {
+  it('reads the package price from a package summary', () => {
+    const pkg = SERVICE_PACKAGES.find((p) => p.number === 1)!
+    const summary = formatCartSummary({ items: [], packageNumber: 1 })
+    expect(estimateCentsFromDescription(summary)).toBe(pkg.priceCents)
+  })
+
+  it('reads the à-la-carte total from an item summary', () => {
+    const fan = menuItem('ceiling-fan')
+    const summary = formatCartSummary({
+      items: [{ id: 'ceiling-fan', qty: 2 }],
+      packageNumber: null,
+    })
+    expect(estimateCentsFromDescription(summary)).toBe(fan.priceCents * 2)
+  })
+
+  it('reads the FAMILY total when the summary was family-priced', () => {
+    const fan = menuItem('ceiling-fan')
+    const summary = formatCartSummary(
+      { items: [{ id: 'ceiling-fan', qty: 2 }], packageNumber: null },
+      { family: true },
+    )
+    expect(estimateCentsFromDescription(summary)).toBe(familyCents(fan.priceCents) * 2)
+  })
+
+  it('returns null for a custom / no-summary description', () => {
+    expect(
+      estimateCentsFromDescription('Not sure what my fence needs — can you take a look?'),
+    ).toBeNull()
+    expect(estimateCentsFromDescription('')).toBeNull()
+    expect(estimateCentsFromDescription(null)).toBeNull()
+  })
+
+  it('reads the total from a real stored description (family tag + note appended)', () => {
+    const fan = menuItem('ceiling-fan')
+    const summary = formatCartSummary(
+      { items: [{ id: 'ceiling-fan', qty: 1 }], packageNumber: null },
+      { family: true },
+    )
+    // Mirrors what the contact route stores: family tag, summary, free-text note
+    // (the note even contains a stray "$" to prove it doesn't get picked up).
+    const stored = `🏷️ FORGE FAMILY — 30% off applied\n\n${summary}\n\nNote: my budget is around $200, please bring a ladder.`
+    expect(estimateCentsFromDescription(stored)).toBe(familyCents(fan.priceCents))
   })
 })
 

@@ -223,3 +223,28 @@ export function deriveServiceCategories(cart: Cart): string[] {
 export function isCartEmpty(cart: Cart): boolean {
   return cart.items.length === 0 && cart.packageNumber == null
 }
+
+function dollarsStrToCents(s: string): number {
+  return Math.round(parseFloat(s) * 100)
+}
+
+// Pull the numeric estimate (in cents) back out of a job's description, which
+// leads with the priced cart summary that formatCartSummary() wrote at booking
+// (family-aware). Lets the quote composer pre-fill the amount for a
+// self-scheduled job so it's a review-and-send, not a retype. Returns null for
+// custom / "not sure" jobs (no priced summary to read). The structured cart
+// isn't persisted yet (Phase D), so this reads the summary we already store.
+export function estimateCentsFromDescription(
+  description: string | null | undefined,
+): number | null {
+  if (!description) return null
+  // À-la-carte summary ends with: "Estimated: N items · ~H hrs · $TOTAL (final on site)"
+  const alc = description.match(
+    /Estimated:[^$]*\$(\d+(?:\.\d{2})?)\s*\(final on site\)/,
+  )
+  if (alc) return dollarsStrToCents(alc[1])
+  // Package summary leads with: "PACKAGE: #N Name (H hrs) — $PRICE"
+  const pkg = description.match(/PACKAGE:[^$]*\$(\d+(?:\.\d{2})?)/)
+  if (pkg) return dollarsStrToCents(pkg[1])
+  return null
+}
