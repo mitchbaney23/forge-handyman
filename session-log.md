@@ -1,149 +1,117 @@
 # Forge Handyman — Session Log
 
-**Session span:** 2026-06-12 → 2026-06-17
+**Session span:** 2026-06-26 → 2026-06-28
 **Driver:** Mitch Baney (owner; directs, doesn't write code)
-**What this multi-day session did:** Took Forge from a marketing site + Google-
-Sheet CRM to an agent-native **Postgres CRM (LIVE)**, launched a flat-rate
-**service menu (LIVE)** + time-aware **booking cart (LIVE)**, built and shipped
-**customer self-scheduling (Phase C, LIVE but dormant)** with **self-service team
-onboarding**, and fixed the site's **geocoding/Maps** integration. Stripe is
-still TEST mode.
+**What this session did:** Took Forge from "built but unverified" to **live and
+ready to invite friends-and-family**. Ran a full go-live audit, removed the
+July 4 holiday from availability, put the **real phone number** live, made
+**Forge Family 30% off carry all the way through booking**, made **self-scheduled
+jobs quotable** (with the amount pre-filled from the cart), went **LIVE on
+Stripe**, and fixed a quote-email encoding bug. Surfaced (not yet fixed) several
+real **Stripe money-path bugs** to address before taking real card volume.
 
-This file is the handoff for the next session. The terse cross-session state also
-lives in the memory files (see "Pointers") — read those first.
-
-`main` HEAD = `73b41e4`. Production auto-deploys from a `main` push (Vercel).
-**Everything below is LIVE in prod** — the only thing left to start taking
-bookings is configuring David's calendar (Pending item #1).
+`main` HEAD = `7cd6f08`. Production auto-deploys from a `main` push (Vercel).
+Read the memory files first (see Pointers) — they hold the cross-session state.
 
 ---
 
-## TL;DR — current state (2026-06-17)
+## TL;DR — current state (2026-06-28)
 
 | Thing | State |
 |---|---|
 | Marketing site + booking form | **Live** (forgehandyman.com) |
-| Flat-rate **service menu** | **Live** |
-| **Booking cart** ("Build your job") | **Live** |
-| Postgres CRM (Phases A + B) | **Live on Postgres** (`DATA_BACKEND=postgres`) |
-| Data cutover to Postgres | **Done — fresh start** (Sheet leads NOT migrated; empty pg) |
-| **Self-scheduling (Phase C)** | **Live but DORMANT** — picker falls back to callback until David's availability calendar exists |
-| **Team onboarding** (`/admin/technicians`) | **Live** — add a tech → auto-provisions their availability calendar |
-| Address autocomplete + "use my location" | **Fixed & working** (was a Google Cloud key/API config issue) |
-| Contact-step trim (drop best-time/method) | **Live** (deployed with cancellation) |
-| **Booking cancellation** (admin + customer self-serve) | **Live** — admin button on job page; customer cancel link in a confirmation email → `/booking/cancel` |
-| Availability freshness | **Real-time** (`no-store`, no cache) |
-| Stripe | **TEST mode** (no live keys) — card capture **deferred** (see decisions) |
-| Phone number on site | still `(555) 123-4567` placeholder |
-| Supabase | one project (`nkvsgvlyxwdsvklxypwu`) = prod **and** local `.env.local` |
+| **Self-scheduling** | **LIVE & WORKING** — David is a configured technician; real Saturday slots. **July 4 removed** (holiday) → earliest bookable = **Sat Jul 11**. Window is Sat ~9am–5pm ET |
+| **Real phone number** | **Live everywhere** — `(919) 275-2823`, single-sourced from `BUSINESS.phone`/`phoneHref` in lib/constants.ts (fake `(555)` fully gone) |
+| **Forge Family 30% off at booking** | **LIVE** — `/family` "Book a Job" → `/contact?family=1`; cart shows family prices + banner + family-rate total; lead tagged "FORGE FAMILY"; confirmation email notes the rate |
+| **Quoting self-scheduled jobs** | **Live** — "Send Quote" now shows on **Booked** jobs; quote amount **pre-fills from the cart** they picked (family-aware) |
+| **Stripe** | **LIVE MODE** — Mitch added live keys + (per Mitch) the live webhook. Quote→deposit→balance path is live but **NOT yet $1-tested** and has **known money-path bugs** (see Pending #1) |
+| Code health | typecheck clean · **165 tests pass** · lint clean (2 cosmetic warnings) |
+| **Twilio SMS** | **DEFERRED** — going Google Voice for the callable number. Twilio toll-free number bought, verification **PAUSED**. SMS-consent form line built but **HELD on branch `feat/sms-consent`** (NOT deployed) |
+| Mailing address | still `PO Box 0000` placeholder — Mitch getting a real PO box |
+| Supabase | one project = prod **and** local `.env.local`; Pro upgrade still recommended |
 
 ---
 
-## 2026-06-17 — what shipped today
+## What shipped this session (all merged to main + deployed, verified live)
 
-### Cutover → Postgres is LIVE (fresh start)
-Flipped prod from Sheet to Supabase Postgres. Added `SUPABASE_URL`,
-`SUPABASE_SERVICE_ROLE_KEY` (sensitive), `DATA_BACKEND=postgres` to Vercel
-Production; deployed (`8542038`). `/api/health` → `backend: postgres`, no
-downtime. Chose **fresh start** (no Sheet migration → sidestepped the Google-key
-blocker). Old Sheet leads remain in the Sheet, un-imported.
+1. **Real phone number** (`76c850a`) — replaced `(555) 123-4567` site-wide incl.
+   the confirmation/cancel emails, error strings, SEO/JSON-LD; routed every
+   hardcoded copy through the `BUSINESS` constant. Verified live.
+2. **Forge Family 30% off through the booking flow** (`a6c0e9f`) — `family` flag
+   carried from the `/family` link, read server-side (no flash), cart renders
+   family prices (struck base + orange) + "30% off applied" banner + family-rate
+   total; server tags the lead "FORGE FAMILY" + itemizes at family prices;
+   confirmation email notes the rate. All math derives from `familyCents()` in
+   lib/family-pricing.ts (same rounding as the /family page). +tests.
+3. **Quote self-scheduled jobs + pre-fill** (`e624f7a`) — "Send Quote" shows on
+   `Booked` jobs; `estimateCentsFromDescription()` reads the price back out of the
+   stored cart summary to pre-fill the quote (structured cart still not persisted
+   — Phase D). +tests.
+4. **Stripe → LIVE** — Mitch added `STRIPE_SECRET_KEY_LIVE` (+ publishable + per
+   Mitch the live webhook secret) to Vercel; the redeploy flipped the app to live
+   mode (`getStripeMode()` returns 'live' once the live secret key is present).
+5. **Quote email subject mojibake fix** (`7cd6f08`) — the subject dropped a raw
+   em-dash into the header with no encoding (`Ã¢Â€Â"` garble); now RFC-2047
+   encoded-word, mirroring lib/google.ts. (Body was always fine.)
 
-### Booking cart + form refinements → LIVE
-Merged the cart (`ecc4a7b`). Earlier: made the booking **description optional**
-on the menu path (required only on "not sure / custom"), reframed the **photo**
-copy for flat-rate.
-
-### Self-scheduling (Phase C) → LIVE, dormant (`f678d7a`)
-Customers pick a real open slot and are **auto-confirmed** (calendar event +
-appointment + job→Booked + firm Telegram card to David, no approve/decline).
-- **Calendar-driven, per-technician** (the multi-employee model): the service
-  account impersonates each `@forgehandyman.com` tech via domain-wide delegation
-  to read availability + free/busy and write bookings. NO hardcoded hours.
-- **Availability model:** events on a tech's **"Forge Availability" calendar** =
-  open windows; their **primary-calendar** events = conflicts (free/busy);
-  existing Forge appointments also block. Slots are sized to the **cart's job
-  duration** + a flat 30-min travel buffer.
-- Built: `lib/scheduling/{config,slots(pure+7 tests),time,availability}`,
-  `app/api/scheduling/availability` (rate-limited), migration
-  `20260617120000_appointments.sql` (appointments table + partial-unique index +
-  `claim_slot` RPC mirroring the payments double-charge guard + technician
-  calendar columns), `lib/data/pg/appointments.ts`, `lib/google` `getAuth(subject)`
-  + `createBookingEvent`/`deleteBookingEvent`, the contact-route booking flow
-  (claim → freebusy re-check → event → Booked → dispatch, compensating on
-  failure), the "Pick your time" form step + fallbacks, firm Telegram cards, a
-  `google-calendar` health check.
-- Migration **applied to prod** by Mitch (`supabase db push`). Verified green.
-
-### Team onboarding `/admin/technicians` → LIVE (`f171640`)
-Add-technician form (name, `@forgehandyman.com` email, optional Telegram id) →
-server **auto-creates their "Forge Availability" calendar** (Calendar API, DWD)
-and stores its id — no Calendar-ID hunting, no SQL. Per-row "Provision calendar"
-retry + activate/deactivate. New "Team" nav link.
-
-### Geocoding / Maps fix (`056f06b` + Mitch's Google Cloud changes)
-Address autocomplete + "use my location" were dead. Root causes: **Places API
-(New) disabled** in the project, the **key's API-restrictions** list didn't
-include Places (New) / Geocoding, and CSP didn't allow `places.googleapis.com`.
-Mitch enabled the APIs + fixed the key restrictions; I added `places.googleapis.com`
-to the CSP `connect-src`. **Confirmed working** (live probe returns real
-suggestions). See memory `reference_maps_api_config.md`.
-
-### Contact-step trim → LIVE (deployed with cancellation)
-Removed "best time to reach you" + "preferred contact method" from the final form
-step (redundant now customers pick a real slot); kept "how did you hear about
-us." Server schema keeps those fields optional (default `'any'`) for back-compat;
-lead dispatch hides the pref line when default.
-
-### Booking cancellation + real-time availability → LIVE (`172d79a`)
-- **Real-time:** availability endpoint is `no-store` — cancellations/new bookings
-  show in the picker immediately.
-- **Admin:** "Cancel booking" on `/admin/jobs/[id]` → `performCancellation`
-  (cancel row + delete calendar event + job→Cancelled + log + notify David).
-- **Customer self-serve:** every booking sends the customer a confirmation email
-  (`sendBookingConfirmationToCustomer`) with the firm time + a signed cancel link
-  (`lib/scheduling/cancel-token.ts`, reuses `UNSUBSCRIBE_HMAC_SECRET`) → public
-  `/booking/cancel` page. The email also carries the "please give 24h notice"
-  policy (no fee, per the decision below).
-- **Gotcha:** deleting a calendar event does NOT cancel a booking — the
-  `appointments` row is the source of truth. Cancel via the button / customer link.
-- **Follow-up:** notify the *customer* by email when *David* cancels (today only
-  David is pinged).
-
-### Decisions made today
-- **Travel time:** keep the **flat 30-min buffer** for now. Distance-aware
-  drive-time (Google Distance Matrix) deferred until David's Saturdays pack with
-  multiple jobs — design is captured but not built.
-- **Card capture: DEFERRED.** Mitch chose **no no-show fee yet**, so a
-  card-on-file would be friction with no teeth → skip it. Build card-on-file
-  **and** the fee together when busier. The **"please give 24 hours' notice"**
-  policy is now delivered via the customer confirmation email + the
-  `/booking/cancel` page copy (no card needed).
-- **Supabase Pro recommended** — the free tier auto-pauses after ~7 days idle;
-  the daily review-requests cron currently keeps it awake as a side effect, but
-  Pro is the only guaranteed no-pause fix now that this DB is business-critical.
+Also: a full **go-live audit** (multi-agent) confirmed the booking path is sound
+and surfaced the real blockers that got fixed above; and a **Stripe money-path
+verification** surfaced the bugs in Pending #1.
 
 ---
 
-## Pending — needs Mitch (action items)
+## Decisions made this session
 
-1. **★ THE NEXT STEP — make booking go live: add David in `/admin → Team`**
-   (name, `david@forgehandyman.com`) → it auto-creates his "Forge Availability"
-   calendar → drop a **recurring Saturday 9–2 "Open for jobs"** event on it →
-   the slot picker goes live. Then run one **test booking** end-to-end (pings
-   David's Telegram — coordinate). Everything else is built; this is the one
-   thing standing between you and real appointments.
-2. **Supabase Pro** upgrade (avoid free-tier auto-pause).
-3. **Stripe go-live** — `docs/go-live-runbook.md` (business verification + live
-   restricted key + live webhook; code auto-selects live keys when present).
-   Run the 5-scenario **sandbox dress rehearsal** on test-mode prod first.
-   THEN build **card-on-file + no-show fee** when busier.
-4. **Twilio phone number** → replaces `(555) 123-4567` in `BUSINESS.phone`.
-5. **Real mailing address** — `BUSINESS.mailingAddress` still `PO Box 0000`
-   (CAN-SPAM).
-6. **Separate dev Supabase project** — local `.env.local` currently points at
-   the *production* DB.
-7. **Notify the customer when David cancels** — today an admin cancel only pings
-   David; the customer should get an email too.
+- **Phone:** Google Voice for the callable business number = `(919) 275-2823`
+  (now live on the site). Twilio is only for *automated SMS* later — **not needed
+  to launch** (bookings confirm via email + Telegram).
+- **Twilio SMS DEFERRED:** not required for the friends launch. Toll-free number
+  bought + mid-verification, then **paused**. The SMS booking-confirmation feature
+  is **not built**. An SMS-consent disclosure for the booking form is committed but
+  **HELD on `feat/sms-consent`** — deploy it only when SMS actually goes live (no
+  point telling customers they'll get texts before we send any).
+- **Family pricing:** auto-apply end-to-end (chosen over "manual discount at
+  invoice" and over "auto-send a quote on booking").
+- **Quoting self-scheduled customers:** required — "any time someone self
+  schedules they need a quote afterward." Shipped the button + pre-fill; chose
+  pre-fill-from-cart over fully-automatic-quote-on-booking.
+- **Feedback captured:** don't spin up multi-agent workflows for simple
+  verifications / config confirmations — ask or probe directly (see
+  `feedback_workflow_restraint.md`).
+
+---
+
+## Pending — needs Mitch / next session (action items)
+
+1. **★ Stripe money-path bugs — fix before real card volume (offered, NOT built).**
+   All silent, all code, none affect the friends *scheduling* launch (no payment
+   there). Double-charge protection IS solid (verified). The real ones:
+   - **Refunds don't update the job** — `charge.refunded` keys off
+     `charge.metadata.jobId`, which Stripe never sets on the Charge (it's on the
+     PaymentIntent). Every dashboard refund silently no-ops the status/ledger.
+     (lib/stripe/webhook-handlers.ts:259)
+   - **Webhook dedup not rolled back on failure** — the idempotency key is marked
+     processed *before* the handler runs; if a handler throws (500), Stripe's retry
+     is deduped and dropped → a deposit can be paid but the job never flips to
+     Booked, silently. (lib/webhooks/idempotency.ts + the webhook route)
+   - **Unguarded `paymentIntents.retrieve`** in the deposit webhook can trigger
+     exactly that on a transient Stripe blip. (webhook-handlers.ts:57)
+   - **No reconciliation backstop** if a crash lands between a successful balance
+     charge and the DB write (recoverable only via the webhook).
+2. **$1 live Stripe smoke test** — send a quote ($1+$1) to himself → pay deposit
+   with a real card → confirm job → **Booked** + card saved → **Mark Complete** →
+   balance charges → refund both → confirm **Refunded**. This validates the live
+   webhook + happy path. (Note: the refund-status bug above means the "Refunded"
+   step won't flip the job until that fix lands.)
+3. **Real mailing address** — swap `PO Box 0000` in lib/constants.ts when the PO
+   box is set up (CAN-SPAM; legal pages + automated-email footers).
+4. **Twilio SMS (when ready)** — finish the toll-free verification, deploy
+   `feat/sms-consent`, then build the SMS feature (`lib/twilio/` doesn't exist).
+5. **Supabase Pro** — avoid free-tier auto-pause now that the DB is business-critical.
+6. **Hours mismatch** — site advertises Saturday **9–2** but David's availability
+   calendar is **9–5**. Reconcile (calendar or the BUSINESS.hours copy).
+7. **Separate dev Supabase project** — local `.env.local` still points at the
+   *production* DB.
 
 ---
 
@@ -151,61 +119,43 @@ lead dispatch hides the pref line when default.
 
 | Branch | HEAD | Meaning |
 |---|---|---|
-| `main` | `73b41e4` | **production** — everything below is merged + live |
-| (all merged into main) | | `feat/booking-cancellation` (cancellation + real-time + trim), `feat/booking-card-capture` (trim), `feat/self-scheduling`, `feat/technician-onboarding`, `feat/booking-cart`, `feat/services-menu` |
-
-No open/unmerged work branches — `main` is the full picture.
+| `main` | `7cd6f08` | **production** — everything in "What shipped" is merged + live |
+| `feat/sms-consent` | `3d99fc3` | SMS-consent line for the booking form — **HELD, not deployed** (deploy when Twilio SMS goes live). Touches ContactForm.tsx; trivial merge (separate region) |
+| (merged into main) | | `fix/real-phone-number`, `feat/family-pricing-at-booking`, `fix/quote-booked-jobs`, `fix/email-subject-encoding` |
 
 ---
 
 ## Gotchas the next session must know
 
-- **Prod pushes + `supabase db push` are gated by the auto-mode classifier** —
-  it blocks pushing to `main` / migrating the prod DB without an **explicit,
-  per-action "yes deploy/push this"** from Mitch. "do it all" / "build it" is NOT
-  enough. Ask for the specific go each time (or Mitch adds a Bash permission rule).
-- **Maps API key** (`…TAAM`, project `103758953430`): needs Places API (New) +
-  Geocoding API + Maps JS enabled in the project **AND** listed in the **key's
-  API-restrictions**; CSP must allow `maps.googleapis.com` + `places.googleapis.com`.
-  Referrer-restricted keys can't be probed via the Geocoding REST API. See
-  `reference_maps_api_config.md`.
-- **`DATA_BACKEND=postgres` is LIVE** now (no longer sheet). Local `.env.local`
-  = the **production** Supabase project — local work hits live data.
-- **Self-scheduling availability:** events on the "Forge Availability" calendar =
-  openings; primary-calendar events = conflicts. Empty calendar = zero bookable
-  time (opt-in), not infinite. Booking picker stays in callback-fallback until a
-  technician with an availability calendar exists.
-- **Vercel Sensitive env vars are write-only** (`vercel env pull` → `""`).
-- **Vercel Hobby cron is daily-only**; a sub-daily cron silently fails the deploy.
-- Both CLIs authed locally: `supabase` (org `hedvxndzzieuvomqvqed`) + `vercel`
-  (`mitchbaney23`).
-
----
-
-## The plan from here
-
-- **Phase C — DONE** (self-scheduling shipped). Remaining polish: David's full
-  Telegram **daily agenda** view; customer self-serve reschedule/cancel links;
-  distance-aware **travel time**; multi-tech assignment UI.
-- **Card-on-file + no-show fee** — deferred until busier (design ready).
-- **Phase D** — price book → quotes (`catalog_items`); persist the structured
-  cart (`cart_json`) so quotes build from the customer's selections.
-- **Phase E** — MCP server + approval queue + scheduled routines (Claude co-runs
-  leads/follow-ups). The activities table + `claude` actor are already laid.
-- **Phase F** — invoicing + per-job costing + reporting (margin by job type,
-  lead-source ROI — the kept "how did you hear about us" feeds this).
+- **Prod is LIVE on Stripe.** Real cards will be charged through the quote flow.
+  Treat the money path carefully; fix Pending #1 before real volume.
+- **`STRIPE_SECRET_KEY_LIVE` flips the whole app to live mode** the instant it's
+  set; the webhook then *requires* `STRIPE_WEBHOOK_SECRET_LIVE` (throws without it).
+  Health check does NOT verify the webhook secret — the $1 test is the real proof.
+- **Prod pushes are gated** — the auto-mode classifier blocks pushing to `main` /
+  migrating the prod DB without an explicit, per-action "yes deploy this" from
+  Mitch. "build it" is not enough.
+- **`feat/sms-consent` must stay out of deploys** until SMS goes live — every
+  merge-to-main this session explicitly verified it wasn't included.
+- **Self-scheduling:** events on the tech's "Forge Availability" calendar = open
+  windows (must be **timed**, not all-day); primary-calendar events block. July 4
+  was removed by deleting that day's occurrence.
+- **DATA_BACKEND=postgres is LIVE.** Local `.env.local` = the **production**
+  Supabase project — local work hits live data.
+- **Vercel Sensitive env vars are write-only**; **Hobby cron is daily-only**.
+- **Don't use multi-agent workflows for simple checks** (Mitch's feedback) — ask
+  or run a quick probe instead.
 
 ---
 
 ## Pointers
 
 - **Memory (auto-loaded):** `~/.claude/projects/-Users-mbaney-forge-handyman/memory/`
-  — `MEMORY.md` index, `project_crm_build.md` (live build state),
-  `reference_maps_api_config.md` (Maps key setup), `user_mitch.md`, feedback.
-- **Plan file:** `~/.claude/plans/hey-claude-i-actually-inherited-gosling.md`
-  (the self-scheduling design).
-- **Docs:** `docs/go-live-runbook.md`, `docs/stage-13-postgres-design.md`,
+  — `MEMORY.md` index, `project_crm_build.md` (live build state, updated this
+  session), `project_forge_family.md` (family pricing + the auto-apply decision),
+  `feedback_workflow_restraint.md`, `feedback_no_checkpoint_questions.md`,
+  `reference_maps_api_config.md`, `user_mitch.md`.
+- **Docs:** `docs/go-live-runbook.md` (Stripe go-live), `docs/stage-13-postgres-design.md`,
   `docs/stage-14-crm-interface-design.md`.
 - **How we work:** design → adversarial critique → build → independently-verified
-  review → live verification → commit. It has caught a real bug in every phase.
-  Keep doing it.
+  review → live verification → commit. Keep doing it.
