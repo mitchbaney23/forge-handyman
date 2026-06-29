@@ -10,7 +10,7 @@ export const BUSINESS = {
   city: "Garner",
   region: "NC",
   country: "US",
-  serviceAreaLine: "Serving Garner, Clayton & South Raleigh, NC",
+  serviceAreaLine: "Serving Garner, Raleigh, Cary, Clayton, Knightdale & Wendell, NC",
   // CAN-SPAM requires a valid physical postal address in commercial email,
   // and the legal pages reference it. REPLACE THIS PLACEHOLDER with Forge's
   // real PO box or business address before going live.

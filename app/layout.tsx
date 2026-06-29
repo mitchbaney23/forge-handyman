@@ -25,15 +25,18 @@ const siteUrl = BUSINESS.siteUrl;
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: `${BUSINESS.name} — Handyman in Garner & Clayton, NC`,
+    default: `${BUSINESS.name} — Handyman in Garner, Raleigh & Cary, NC`,
     template: `%s | ${BUSINESS.name}`,
   },
   description:
-    "Forge Handyman Service — honest work and fair prices from a 40-year veteran craftsman. Serving Garner, Clayton & South Raleigh, NC.",
+    "Forge Handyman Service — honest work and fair prices from a 40-year veteran craftsman. Serving Garner, Raleigh, Cary, Clayton, Knightdale & Wendell, NC.",
   keywords: [
     "handyman Garner NC",
+    "handyman Raleigh NC",
+    "handyman Cary NC",
     "handyman Clayton NC",
-    "handyman South Raleigh",
+    "handyman Knightdale NC",
+    "handyman Wendell NC",
     "deck repair Garner",
     "drywall repair Clayton",
     "home repair Wake County",
@@ -54,13 +57,13 @@ export const metadata: Metadata = {
     siteName: BUSINESS.name,
     title: `${BUSINESS.name} — Honest Work. Built to Last.`,
     description:
-      "Trusted local handyman serving Garner, Clayton, and South Raleigh. Free estimates, fully insured, 40+ years of craftsmanship.",
+      "Trusted local handyman serving Garner, Raleigh, Cary, Clayton, Knightdale, and Wendell. Free estimates, fully insured, 40+ years of craftsmanship.",
   },
   twitter: {
     card: "summary_large_image",
     title: `${BUSINESS.name} — Honest Work. Built to Last.`,
     description:
-      "Trusted local handyman serving Garner, Clayton, and South Raleigh. Free estimates, fully insured.",
+      "Trusted local handyman serving Garner, Raleigh, Cary, Clayton, Knightdale, and Wendell. Free estimates, fully insured.",
   },
   robots: {
     index: true,

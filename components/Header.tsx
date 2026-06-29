@@ -41,7 +41,7 @@ export function Header() {
         <div className="container-page flex h-10 items-center justify-between">
           <span className="flex items-center gap-2">
             <Icon name="map-pin" className="h-3.5 w-3.5 text-ember" />
-            Serving Garner, Clayton & South Raleigh, NC
+            Serving Garner, Raleigh, Cary, Clayton, Knightdale & Wendell, NC
           </span>
           <span className="flex items-center gap-5">
             <a href={BUSINESS.phoneHref} className="hover:text-ember">
