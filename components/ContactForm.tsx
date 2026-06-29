@@ -381,13 +381,16 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
   // On entering the timing step (index 3), load availability for a schedulable
   // cart; a custom/unschedulable cart goes straight to the callback fallback.
 
-  // Turnstile — renders into the container on the FINAL panel. Like the
-  // address input, that panel stays mounted (display:none) so this one-shot
-  // effect attaches at mount and the token resolves in the background before
-  // the user reaches the last step. Keep the container on the final panel so
-  // any interactive challenge is visible exactly when it's needed.
+  // Turnstile — render the widget only once the FINAL panel is actually
+  // VISIBLE (the user reaches the contact step). The panels stay mounted via
+  // `hidden` (display:none), and Cloudflare Turnstile rendered into a
+  // display:none container measures 0×0 — so an interactive challenge never
+  // appears and the user hits "complete the verification challenge" with
+  // nothing to complete. Gating on `step` fixes that; the cleanup tears the
+  // widget down when leaving the step and it re-renders fresh on return.
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY) return;
+    if (step !== STEPS.length - 1) return;
     if (!turnstileContainerRef.current) return;
     if (turnstileWidgetIdRef.current) return;
 
@@ -432,7 +435,7 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
       }
       turnstileWidgetIdRef.current = null;
     };
-  }, []);
+  }, [step]);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setState((s) => ({ ...s, [key]: value }));
@@ -841,6 +844,11 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
           distanceMiles: data.distanceMiles,
           radiusMiles: data.radiusMiles,
         });
+        // The server already verified (and consumed) the Turnstile token before
+        // the service-area check, so a corrected re-submit must get a FRESH
+        // token — otherwise it re-sends a spent one and the server 403s. This is
+        // the one success-ish path that was missing the reset.
+        resetTurnstile();
         return;
       }
       setBookedSlot(
