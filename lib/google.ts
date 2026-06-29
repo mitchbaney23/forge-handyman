@@ -441,6 +441,63 @@ export async function sendBookingConfirmationToCustomer(args: {
   await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
 }
 
+function buildLeadAckHtml(data: ContactSubmission): string {
+  const firstName = (data.name || "there").split(/\s+/)[0] || "there";
+  const serviceFragment = data.serviceType
+    ? ` for <strong>${escapeHtml(data.serviceType)}</strong>`
+    : "";
+  return `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2937;">
+      <h1 style="font-size:22px;color:#1B3A5C;">Thanks, ${escapeHtml(firstName)} — we got it! 🔨</h1>
+      <p style="font-size:15px;line-height:1.6;">Thanks for reaching out to Forge Handyman Service. We&rsquo;ve received your request${serviceFragment}, and David will personally review it and get back to you <strong>within one business day</strong> with a free estimate and to find a time that works.</p>
+      ${data.family ? '<p style="font-size:15px;line-height:1.6;color:#C2491D;font-weight:700;">✨ Your Forge Family rate (30% off) will be applied to your quote.</p>' : ""}
+      <p style="font-size:15px;line-height:1.6;">Need us sooner, or want to add a detail? Just reply to this email or call us at ${BUSINESS.phone}.</p>
+      <p style="font-size:13px;color:#6b7280;">Forge Handyman Service · Garner, Clayton &amp; South Raleigh, NC</p>
+    </div>`;
+}
+
+function buildLeadAckText(data: ContactSubmission): string {
+  return [
+    `Thanks for reaching out to Forge Handyman Service.`,
+    ``,
+    `We've received your request${
+      data.serviceType ? ` for ${data.serviceType}` : ""
+    }, and David will personally review it and get back to you within one business day with a free estimate and to find a time that works.`,
+    ...(data.family
+      ? [``, `Your Forge Family rate (30% off) will be applied to your quote.`]
+      : []),
+    ``,
+    `Need us sooner, or want to add a detail? Just reply to this email or call us at ${BUSINESS.phone}.`,
+    ``,
+    `— Forge Handyman Service · Garner, Clayton & South Raleigh, NC`,
+  ].join("\n");
+}
+
+// Transactional acknowledgment sent to the CUSTOMER for every in-area lead that
+// did NOT self-schedule a slot (callback / flexible / custom / "not sure"). The
+// booking path sends its own "You're booked" confirmation, so between the two
+// every customer we serve gets an HTML email back. Best-effort caller — a send
+// failure must not fail the submission (the lead is already captured).
+export async function sendLeadAcknowledgmentToCustomer(
+  data: ContactSubmission,
+): Promise<void> {
+  if (!data.email) return;
+  const auth = getAuth();
+  const gmail = google.gmail({ version: "v1", auth });
+  const businessEmail = getBusinessEmail();
+
+  const raw = encodeRfc2822({
+    to: data.email,
+    from: businessEmail,
+    replyTo: businessEmail,
+    subject: "We got your request — Forge Handyman Service",
+    html: buildLeadAckHtml(data),
+    text: buildLeadAckText(data),
+  });
+
+  await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
+}
+
 export async function createCalendarEvent(data: ContactSubmission): Promise<void> {
   const auth = getAuth();
   const calendar = google.calendar({ version: "v3", auth });
