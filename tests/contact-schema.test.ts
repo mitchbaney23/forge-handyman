@@ -79,3 +79,38 @@ describe('contactSchema — description requiredness by path', () => {
     }
   })
 })
+
+// Security: the form's client-side validation (required/pattern) is just UX —
+// the API is the real gate. This proves the exact "test" from the security
+// review (submit a garbage email + blank name) is rejected SERVER-SIDE.
+describe('contactSchema — server-side input validation (security)', () => {
+  it('rejects a garbage email like "notanemail"', () => {
+    const result = contactSchema.safeParse({
+      ...base,
+      email: 'notanemail',
+      cart: cartWithItem,
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path.includes('email'))).toBe(true)
+    }
+  })
+
+  it('rejects a blank name', () => {
+    const result = contactSchema.safeParse({
+      ...base,
+      name: '',
+      cart: cartWithItem,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a blank / malformed phone', () => {
+    const result = contactSchema.safeParse({
+      ...base,
+      phone: '',
+      cart: cartWithItem,
+    })
+    expect(result.success).toBe(false)
+  })
+})

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { uploadPhoto } from '@/lib/drive/upload'
+import { sniffImageType } from '@/lib/security/image-sniff'
 import { logger } from '@/lib/security/logger'
 import {
   checkLimit,
@@ -83,6 +84,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (err) {
     Sentry.captureException(err, { tags: { route: 'upload-photo', step: 'arrayBuffer' } })
     return jsonError("Couldn't read file.", 500)
+  }
+
+  // Defense in depth: the file.type check above trusts the client-sent
+  // Content-Type. Verify the ACTUAL leading bytes are a real image so a spoofed
+  // non-image (e.g. an HTML/SVG payload labelled image/jpeg) is rejected before
+  // it's stored, regardless of what the client claimed.
+  if (!sniffImageType(new Uint8Array(arrayBuffer))) {
+    return jsonError('That file doesn’t look like a valid image.', 415)
   }
 
   const safeName = (file.name || 'photo')
