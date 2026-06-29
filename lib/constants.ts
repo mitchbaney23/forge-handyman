@@ -67,9 +67,9 @@ export const SERVICES: Service[] = [
   {
     key: "general-repairs",
     title: "General Repairs",
-    short: "Sticky doors, loose railings, fresh caulk — the nagging fixes, done.",
+    short: "Sticky doors, worn door knobs, fresh caulk — the nagging fixes, done.",
     long:
-      "Sticking doors, fresh caulk, squeaky stairs, weatherstripping, and the growing list of small repairs most homeowners never get to. One visit, one invoice, done right.",
+      "Sticking doors, fresh caulk, door knobs and hardware, and the growing list of small repairs most homeowners never get to. One visit, one invoice, done right.",
     icon: "hammer",
     category: "General Repairs",
   },
@@ -173,8 +173,11 @@ export const SERVICE_MENU: MenuSection[] = [
     items: [
       { id: "door-fix", name: "Sticking or misaligned door", price: "$95", priceCents: 9500, minutes: 60 },
       { id: "recaulk", name: "Re-caulk tub, shower, or sink", price: "$125", priceCents: 12500, minutes: 90 },
-      { id: "handrail", name: "Squeaky stairs / loose handrail", price: "$110", priceCents: 11000, minutes: 60 },
-      { id: "weatherstrip", name: "Weatherstripping or door sweep", price: "$95", priceCents: 9500, minutes: 45 },
+      { id: "door-knob", name: "Door knob replacement", price: "$95", priceCents: 9500, minutes: 45 },
+      { id: "cabinet-repair", name: "Cabinet door or drawer repair", price: "$95", priceCents: 9500, minutes: 60 },
+      { id: "screen-repair", name: "Window or door screen repair", price: "$95", priceCents: 9500, minutes: 45 },
+      { id: "smoke-detector", name: "Smoke & CO detector swap", price: "$95", priceCents: 9500, minutes: 30 },
+      { id: "grab-bar", name: "Grab bar / safety bar install", price: "$110", priceCents: 11000, minutes: 60 },
     ],
   },
   {
@@ -193,10 +196,10 @@ export const SERVICE_MENU: MenuSection[] = [
     category: "Painting & Drywall Repair",
     icon: "brush",
     items: [
-      { id: "patch-small", name: "Drywall patch — small (doorknob)", price: "$135", priceCents: 13500, minutes: 90 },
+      { id: "patch-small", name: "Drywall patch — small hole (patch only)", price: "$135", priceCents: 13500, minutes: 90 },
       { id: "patch-paint", name: "Drywall patch + texture & paint", price: "$275", priceCents: 27500, minutes: 180 },
       { id: "room-walls", name: "Single room — walls", price: "$475", priceCents: 47500, minutes: 330 },
-      { id: "trim-doors", name: "Trim & doors (per room)", price: "$215", priceCents: 21500, minutes: 150 },
+      { id: "trim-doors", name: "Paint — trim & doors (per room)", price: "$215", priceCents: 21500, minutes: 150 },
     ],
   },
   {
@@ -204,8 +207,9 @@ export const SERVICE_MENU: MenuSection[] = [
     icon: "wrench",
     items: [
       { id: "faucet-repair", name: "Leaky faucet / running toilet", price: "$95", priceCents: 9500, minutes: 60 },
+      { id: "showerhead", name: "Showerhead swap", price: "$95", priceCents: 9500, minutes: 20 },
       { id: "faucet-replace", name: "Faucet replacement", price: "$175", priceCents: 17500, minutes: 120 },
-      { id: "toilet-install", name: "Toilet install (you supply the toilet)", price: "$225", priceCents: 22500, minutes: 150 },
+      { id: "toilet-install", name: "Toilet install", price: "$225", priceCents: 22500, minutes: 150 },
       { id: "disposal", name: "Garbage disposal install", price: "$175", priceCents: 17500, minutes: 120 },
     ],
   },
@@ -213,20 +217,21 @@ export const SERVICE_MENU: MenuSection[] = [
     category: "TV Mounting",
     icon: "panel",
     items: [
-      { id: "tv-standard", name: 'TV up to 55" (existing outlet)', price: "$135", priceCents: 13500, minutes: 90 },
-      { id: "tv-large", name: 'TV 65"+ or over the fireplace', price: "$225", priceCents: 22500, minutes: 150 },
+      { id: "tv-standard", name: 'TV up to 60" (existing outlet)', price: "$135", priceCents: 13500, minutes: 90 },
+      { id: "tv-large", name: 'TV over 60" or over the fireplace', price: "$225", priceCents: 22500, minutes: 150 },
+      { id: "soundbar", name: "Soundbar mount", price: "$95", priceCents: 9500, minutes: 45 },
     ],
   },
   {
     category: "Auto Maintenance",
     icon: "car",
-    note: "Quick driveway jobs — labor only, you supply the part. Bundle a few or add to any visit; the $95 trip minimum still applies.",
+    note: "Quick driveway jobs — bundle a few or add to any visit; the $95 trip minimum still applies.",
     items: [
-      { id: "wiper-blades", name: "Windshield wiper blades (you supply blades)", price: "$45", priceCents: 4500, minutes: 20 },
+      { id: "wiper-blades", name: "Windshield wiper blades", price: "$45", priceCents: 4500, minutes: 20 },
       { id: "engine-air-filter", name: "Engine air filter replacement", price: "$45", priceCents: 4500, minutes: 20 },
       { id: "cabin-air-filter", name: "Cabin air filter replacement", price: "$55", priceCents: 5500, minutes: 30 },
       { id: "auto-bulb", name: "Headlight / taillight bulb replacement", price: "$45", priceCents: 4500, minutes: 30 },
-      { id: "car-battery", name: "Car battery replacement (you supply battery)", price: "$75", priceCents: 7500, minutes: 30 },
+      { id: "car-battery", name: "Car battery replacement", price: "$75", priceCents: 7500, minutes: 30 },
       { id: "headlight-restore", name: "Headlight restoration (cloudy lenses)", price: "$75", priceCents: 7500, minutes: 45 },
     ],
   },

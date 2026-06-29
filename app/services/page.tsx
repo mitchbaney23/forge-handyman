@@ -58,6 +58,23 @@ export default function ServicesPage() {
             </div>
           </Reveal>
 
+          {/* Parts & fixtures policy — stated once, up front, so item names
+              stay clean (no "(you supply X)" after every line). */}
+          <Reveal>
+            <div className="flex items-start gap-3 rounded-lg border-2 border-dashed border-ink bg-card px-5 py-4">
+              <div className="flex h-[36px] w-[36px] flex-none items-center justify-center rounded-lg bg-orange/[0.12] text-orange">
+                <Icon name="tag" className="h-[20px] w-[20px]" />
+              </div>
+              <p className="text-[14.5px] leading-snug text-ink-2">
+                <span className="font-semibold text-ink">Parts &amp; fixtures:</span>{" "}
+                posted prices are labor plus basic materials. Bigger parts —
+                faucets, fans, TVs, detectors, batteries — you supply, or add{" "}
+                <span className="font-semibold text-ink">part pickup</span> to any
+                job for a small fee.
+              </p>
+            </div>
+          </Reveal>
+
           {/* À la carte menu */}
           {SERVICE_MENU.map((section) => (
             <Reveal key={section.category}>
