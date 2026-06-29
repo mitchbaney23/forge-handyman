@@ -1,6 +1,10 @@
 // Garner, NC — the center point we measure distance from.
 export const SERVICE_AREA_CENTER = { lat: 35.7113, lng: -78.6141 };
-export const DEFAULT_RADIUS_MILES = 15;
+// 20 mi (straight-line) from Garner covers the full metro coverage zone:
+// Garner, Raleigh (incl. far-north Wakefield ≈ 18.2 mi), Cary (far-west ≈ 17.2),
+// Clayton, Knightdale, and Wendell (far-east ≈ 16.2) — the farthest named edge
+// plus buffer. Override per-environment with SERVICE_AREA_RADIUS_MILES.
+export const DEFAULT_RADIUS_MILES = 20;
 
 export type LatLng = { lat: number; lng: number };
 

@@ -76,7 +76,7 @@ export default async function ContactPage({
             <InfoCard icon="map-pin" title="Service Area">
               <p className="text-[13.5px] text-ink-2">
                 {BUSINESS.serviceAreaLine}. Bookings are limited to roughly a
-                15-mile radius of Garner so we can stay local and responsive.
+                20-mile radius of Garner so we can stay local and responsive.
               </p>
             </InfoCard>
           </aside>
