@@ -64,21 +64,39 @@ export function NailProgress({ step, totalSteps, done = false }: Props) {
           strokeLinecap="round"
         />
 
-        {/* claw hammer (jabs down on each advance).
-            Shape: Phosphor "hammer" (fill weight), MIT-licensed — recolored to
-            the Workshop palette and rotated to strike the nail. (Sourced via the
-            vector-assets skill so it reads as a hammer at every size.) */}
+        {/* Hammer (jabs down to strike the nail on each advance). A simple
+            head+handle silhouette — like the 🔨 emoji — reads unambiguously at
+            this small size, where a detailed claw hammer turns to mush. Posed
+            head-down over the nail with a slight cocked-back tilt; the strike
+            keyframes (globals.css) drive the head onto the nail head. */}
         <g
           key={`${step}-${done}`}
           className={`nail-hammer ${step > 0 || done ? "striking" : ""}`}
         >
-          <g transform="translate(124 26) rotate(95) scale(0.19) translate(-128 -128)">
-            <path
+          <g transform="rotate(13 130 28)">
+            {/* handle (wood), angled up from the head */}
+            <rect
+              x="125.5"
+              y="-10"
+              width="9"
+              height="38"
+              rx="4"
+              fill="#8A5A2B"
+              stroke="#24211B"
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+            />
+            {/* head (orange), centered over the nail */}
+            <rect
+              x="107"
+              y="13"
+              width="46"
+              height="17"
+              rx="4.5"
               fill="#BF5700"
               stroke="#24211B"
-              strokeWidth="10"
+              strokeWidth="2.5"
               strokeLinejoin="round"
-              d="M251.34,112,183.88,44.08a96.1,96.1,0,0,0-135.77,0l-.09.09L34.25,58.4A8,8,0,0,0,45.74,69.53L59.47,55.35a79.92,79.92,0,0,1,18.71-13.9L124.68,88l-96,96a16,16,0,0,0,0,22.63l20.69,20.69a16,16,0,0,0,22.63,0l96-96,32,32a16,16,0,0,0,22.63,0l28.69-28.69A16,16,0,0,0,251.34,112Zm-89,2.33L140,136.67,119.31,116l22.35-22.35a8,8,0,0,0,0-11.32L94.32,35a80,80,0,0,1,78.23,20.41l44.22,44.51L188,128.66l-14.34-14.34A8,8,0,0,0,162.34,114.32Zm49,37.66-12-12L228,111.25l12,12Z"
             />
           </g>
         </g>
