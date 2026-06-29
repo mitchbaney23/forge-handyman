@@ -9,7 +9,7 @@ import { Icon, type IconName } from "@/lib/icons";
 export const metadata: Metadata = {
   title: "Service Menu — Flat-Rate Handyman Pricing",
   description:
-    "Forge Handyman's flat-rate service menu: general repairs, installation & assembly, painting & drywall, minor plumbing, and TV mounting. Honest prices posted up front, no surprises. Free estimates in Garner, Clayton & South Raleigh.",
+    "Forge Handyman's flat-rate service menu: general repairs, installation & assembly, painting & drywall, minor plumbing, and TV mounting. Honest prices posted up front, no surprises. Free estimates in Garner, Raleigh, Cary, Clayton, Knightdale & Wendell.",
   alternates: { canonical: "/services" },
 };
 
