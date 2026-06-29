@@ -16,6 +16,7 @@ import {
   createCalendarEvent,
   deleteBookingEvent,
   sendBookingConfirmationToCustomer,
+  sendLeadAcknowledgmentToCustomer,
   sendNotificationEmail,
   type ContactSubmission,
 } from '@/lib/google'
@@ -652,6 +653,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       `We couldn't send your request right now. Please call ${BUSINESS.phone} or try again in a few minutes.`,
       502,
     )
+  }
+
+  // Customer acknowledgment — this lead path is the non-booking case (callback /
+  // flexible / custom / "not sure"); the booking path sends its own "You're
+  // booked" email, so between the two every customer we serve gets a reply.
+  // Best-effort: the lead is captured and the business notified, so a failure
+  // here must never fail the submission.
+  try {
+    await sendLeadAcknowledgmentToCustomer(submission)
+  } catch (err) {
+    Sentry.captureException(err, {
+      tags: { route: 'contact-form', step: 'customer-ack-email' },
+    })
+    logger.error({ err, jobId }, 'contact-form: customer acknowledgment email failed')
   }
 
   const [calendarResult, sheetResult] = await Promise.allSettled([
