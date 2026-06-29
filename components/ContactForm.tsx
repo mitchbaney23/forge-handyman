@@ -139,7 +139,7 @@ const STEPS: {
   {
     id: "location",
     title: "Where's the work?",
-    subtitle: "We serve Garner, Raleigh, Cary, Clayton, Knightdale & Wendell, NC.",
+    subtitle: "We serve Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs & Fuquay-Varina, NC.",
     fields: ["address", "propertyType"],
   },
   {

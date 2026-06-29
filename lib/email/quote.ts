@@ -121,7 +121,7 @@ function buildQuoteHtml(data: QuoteEmailInput): string {
             </tr>
             <tr>
               <td style="background:#F3F4F6;padding:16px 28px;font-size:12px;color:#6b7280;text-align:center;">
-                Forge Handyman Service · Serving Garner, Raleigh, Cary, Clayton, Knightdale &amp; Wendell, NC
+                Forge Handyman Service · Serving Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs &amp; Fuquay-Varina, NC
               </td>
             </tr>
           </table>
@@ -157,7 +157,7 @@ function buildQuoteText(data: QuoteEmailInput): string {
     '',
     '— The Forge team',
     '',
-    'Forge Handyman Service · Serving Garner, Raleigh, Cary, Clayton, Knightdale & Wendell, NC',
+    'Forge Handyman Service · Serving Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs & Fuquay-Varina, NC',
   ].join('\n')
 }
 
