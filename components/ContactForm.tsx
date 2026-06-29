@@ -346,35 +346,50 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
   async function fetchAvailability(): Promise<void> {
     setSlotLoading(true);
     setSlotError(false);
-    try {
-      const cartParam = encodeURIComponent(JSON.stringify(state.cart));
-      const res = await fetch(`/api/scheduling/availability?cart=${cartParam}`);
-      if (!res.ok) throw new Error(`availability ${res.status}`);
-      const data = (await res.json()) as AvailabilityResponse;
-      setSlotData(data);
-      const hasSlots = (data.slotsByDay ?? []).some((d) => d.slots.length > 0);
-      if (!hasSlots || data.tooLongForWindow || data.noTechnician) {
-        setState((s) => ({ ...s, useFallbackTiming: true, selectedSlot: null }));
-      } else {
-        setState((s) => {
-          // Drop a stale selection that's no longer offered (e.g. cart changed).
-          const stillOffered =
-            s.selectedSlot != null &&
-            data.slotsByDay.some((d) =>
-              d.slots.some((sl) => sl.startsAt === s.selectedSlot!.startsAt),
-            );
-          return {
-            ...s,
-            useFallbackTiming: false,
-            selectedSlot: stillOffered ? s.selectedSlot : null,
-          };
-        });
+    const cartParam = encodeURIComponent(JSON.stringify(state.cart));
+    // Retry a few times before giving up to the callback fallback. The first hit
+    // can cold-start the serverless function or catch a transient Google Calendar
+    // blip; without a retry that dumped the customer straight to "tell us your
+    // timeframe" (the "couldn't see times until the 3rd/4th try" report).
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetch(`/api/scheduling/availability?cart=${cartParam}`);
+        if (!res.ok) throw new Error(`availability ${res.status}`);
+        const data = (await res.json()) as AvailabilityResponse;
+        setSlotData(data);
+        const hasSlots = (data.slotsByDay ?? []).some((d) => d.slots.length > 0);
+        if (!hasSlots || data.tooLongForWindow || data.noTechnician) {
+          setState((s) => ({ ...s, useFallbackTiming: true, selectedSlot: null }));
+        } else {
+          setState((s) => {
+            // Drop a stale selection that's no longer offered (e.g. cart changed).
+            const stillOffered =
+              s.selectedSlot != null &&
+              data.slotsByDay.some((d) =>
+                d.slots.some((sl) => sl.startsAt === s.selectedSlot!.startsAt),
+              );
+            return {
+              ...s,
+              useFallbackTiming: false,
+              selectedSlot: stillOffered ? s.selectedSlot : null,
+            };
+          });
+        }
+        setSlotLoading(false);
+        return; // success — done
+      } catch {
+        if (attempt < MAX_ATTEMPTS) {
+          // brief backoff, then retry (covers cold start / transient blip)
+          await new Promise((r) => setTimeout(r, 500 * attempt));
+          continue;
+        }
+        // Exhausted retries — fall back to the callback path (recoverable via
+        // the "Try again" button on the timing step).
+        setSlotError(true);
+        setState((s) => ({ ...s, useFallbackTiming: true }));
+        setSlotLoading(false);
       }
-    } catch {
-      setSlotError(true);
-      setState((s) => ({ ...s, useFallbackTiming: true }));
-    } finally {
-      setSlotLoading(false);
     }
   }
 
@@ -1542,10 +1557,20 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
               ) : (
                 <div className="space-y-5">
                   {slotError ? (
-                    <p className="text-[12.5px] text-ink-3">
-                      We couldn&rsquo;t load live times just now — tell us your
-                      timeframe and we&rsquo;ll call to schedule.
-                    </p>
+                    <div className="space-y-2">
+                      <p className="text-[12.5px] text-ink-3">
+                        We couldn&rsquo;t load live times just now — try again, or
+                        tell us your timeframe below and we&rsquo;ll call to
+                        schedule.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void fetchAvailability()}
+                        className="text-[13px] font-semibold text-orange underline underline-offset-2 hover:text-ink"
+                      >
+                        ↻ Try loading times again
+                      </button>
+                    </div>
                   ) : canSchedule ? null : (
                     <p className="text-[12.5px] text-ink-3">
                       For a custom job we&rsquo;ll call to find a time that works.
