@@ -105,7 +105,7 @@ function textToHtml(plainText: string, unsubscribeUrl: string): string {
             <p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:#1f2937;">${escaped}</p>
           </td></tr>
           <tr><td style="background:#F3F4F6;padding:16px 28px;font-size:11px;color:#6b7280;text-align:center;line-height:1.5;">
-            Forge Handyman Service · Garner, Raleigh, Cary, Clayton, Knightdale &amp; Wendell, NC<br/>
+            Forge Handyman Service · Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs &amp; Fuquay-Varina, NC<br/>
             ${escapeHtml(BUSINESS.mailingAddress)}<br/>
             <a href="${unsubscribeUrl}" style="color:#6b7280;text-decoration:underline;">Unsubscribe from follow-ups</a>
           </td></tr>

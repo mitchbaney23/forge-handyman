@@ -22,7 +22,7 @@ export default function TermsPage() {
       <h2>Who we are &amp; where we work</h2>
       <p>
         Forge Handyman Service is a family-run handyman business based in Garner,
-        NC, serving Garner, Raleigh, Cary, Clayton, Knightdale, Wendell and the
+        NC, serving Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs, Fuquay-Varina and the
         surrounding Wake and Johnston County area. We may decline or refer out work that falls
         outside our service area or scope.
       </p>

@@ -260,7 +260,7 @@ function buildEmailHtml(data: ContactSubmission): string {
             </tr>
             <tr>
               <td style="background:#F3F4F6;padding:16px 28px;font-size:12px;color:#6b7280;text-align:center;">
-                Forge Handyman Service · Garner, Raleigh, Cary, Clayton, Knightdale &amp; Wendell, NC
+                Forge Handyman Service · Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs &amp; Fuquay-Varina, NC
               </td>
             </tr>
           </table>
@@ -414,7 +414,7 @@ export async function sendBookingConfirmationToCustomer(args: {
       </table>
       ${data.family ? '<p style="font-size:15px;line-height:1.6;color:#C2491D;font-weight:700;">✨ Your Forge Family rate (30% off) is locked in.</p>' : ""}
       <p style="font-size:15px;line-height:1.6;">Need to make a change? Please give at least 24 hours' notice when you can. You can <a href="${escapeHtml(cancelUrl)}" style="color:#C2491D;font-weight:700;">cancel your appointment here</a>, or call us at ${BUSINESS.phone}.</p>
-      <p style="font-size:13px;color:#6b7280;">Forge Handyman Service · Garner, Raleigh, Cary, Clayton, Knightdale &amp; Wendell, NC</p>
+      <p style="font-size:13px;color:#6b7280;">Forge Handyman Service · Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs &amp; Fuquay-Varina, NC</p>
     </div>`;
 
   const text = [
@@ -452,7 +452,7 @@ function buildLeadAckHtml(data: ContactSubmission): string {
       <p style="font-size:15px;line-height:1.6;">Thanks for reaching out to Forge Handyman Service. We&rsquo;ve received your request${serviceFragment}, and David will personally review it and get back to you <strong>within one business day</strong> with a free estimate and to find a time that works.</p>
       ${data.family ? '<p style="font-size:15px;line-height:1.6;color:#C2491D;font-weight:700;">✨ Your Forge Family rate (30% off) will be applied to your quote.</p>' : ""}
       <p style="font-size:15px;line-height:1.6;">Need us sooner, or want to add a detail? Just reply to this email or call us at ${BUSINESS.phone}.</p>
-      <p style="font-size:13px;color:#6b7280;">Forge Handyman Service · Garner, Raleigh, Cary, Clayton, Knightdale &amp; Wendell, NC</p>
+      <p style="font-size:13px;color:#6b7280;">Forge Handyman Service · Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs &amp; Fuquay-Varina, NC</p>
     </div>`;
 }
 
@@ -469,7 +469,7 @@ function buildLeadAckText(data: ContactSubmission): string {
     ``,
     `Need us sooner, or want to add a detail? Just reply to this email or call us at ${BUSINESS.phone}.`,
     ``,
-    `— Forge Handyman Service · Garner, Raleigh, Cary, Clayton, Knightdale & Wendell, NC`,
+    `— Forge Handyman Service · Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs & Fuquay-Varina, NC`,
   ].join("\n");
 }
 
