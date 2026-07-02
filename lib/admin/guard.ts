@@ -28,3 +28,11 @@ export async function rateLimitAdmin(email: string): Promise<boolean> {
   const result = await checkLimit("admin-action", email);
   return result.success;
 }
+
+// Separate, tighter bucket for actions that move real money (quote send,
+// balance charge, refund) — raising the cheap-action cap must never raise the
+// money cap with it.
+export async function rateLimitAdminMoney(email: string): Promise<boolean> {
+  const result = await checkLimit("admin-money", email);
+  return result.success;
+}

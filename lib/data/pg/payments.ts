@@ -162,6 +162,23 @@ export async function reconcileAttempt(
   if (error) throw new Error(`pg/payments: reconcileAttempt failed: ${error.message}`)
 }
 
+// Succeeded money-in rows for a job (deposit + balance-charge) — what the
+// admin refund UI offers to send back. Ordered oldest-first so the deposit
+// lists before the balance.
+export async function listRefundablePayments(jobId: string): Promise<PaymentRow[]> {
+  if (!isUuid(jobId)) return []
+  const client = getSupabaseClient()
+  const { data, error } = await client
+    .from('payments')
+    .select('*')
+    .eq('job_id', jobId)
+    .eq('status', 'succeeded')
+    .in('purpose', ['deposit', 'balance-charge'])
+    .order('created_at', { ascending: true })
+  if (error) throw new Error(`pg/payments: listRefundablePayments failed: ${error.message}`)
+  return ((data ?? []) as DbPaymentRow[]).map(mapPaymentRow)
+}
+
 // Record a non-guarded payment event (deposit collected via the hosted checkout
 // link, or a refund) for the financial ledger / future LTV. No conflict gate —
 // these aren't re-chargeable from our side. Best-effort: never the thing that

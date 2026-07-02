@@ -19,6 +19,7 @@ export type LimiterName =
   | 'contact-form-day'
   | 'admin-login'
   | 'admin-action'
+  | 'admin-money'
   | 'webhook-source'
   | 'public-api'
   | 'photo-upload'
@@ -37,7 +38,14 @@ function buildLimiter(name: LimiterName): Ratelimit {
     case 'admin-login':
       return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, '15 m'), prefix: 'rl:admin-login', analytics: true })
     case 'admin-action':
-      return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, '1 m'), prefix: 'rl:admin-action', analytics: true })
+      // Cheap mutations (status moves, notes, triage). 30/min so a busy triage
+      // pass over 10+ leads doesn't lock the admin out; money actions have
+      // their own tight bucket below.
+      return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(30, '1 m'), prefix: 'rl:admin-action', analytics: true })
+    case 'admin-money':
+      // Actions that move real money (quote send, balance charge, refund).
+      // Deliberately tight — nobody legitimately does six of these in a minute.
+      return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, '1 m'), prefix: 'rl:admin-money', analytics: true })
     case 'webhook-source':
       return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(100, '1 m'), prefix: 'rl:webhook', analytics: true })
     case 'public-api':

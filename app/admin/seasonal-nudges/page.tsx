@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { NudgeCard } from "./NudgeCard";
+import { SendAllButton } from "./SendAllButton";
 import { findNudgeCandidates } from "@/lib/automation/nudges";
 
 export const metadata: Metadata = {
@@ -65,6 +66,7 @@ export default async function SeasonalNudgesPage() {
         </div>
       ) : (
         <div className="space-y-4">
+          {candidates.length > 1 && <SendAllButton count={candidates.length} />}
           {candidates.map((c) => {
             const days = c.lastJobDate
               ? Math.floor(

@@ -114,3 +114,41 @@ describe('contactSchema — server-side input validation (security)', () => {
     expect(result.success).toBe(false)
   })
 })
+
+describe('contactSchema — accessNotes', () => {
+  it('defaults to empty when omitted', () => {
+    const result = contactSchema.safeParse({
+      ...base,
+      cart: cartWithItem,
+      notSure: false,
+      description: '',
+    })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.accessNotes).toBe('')
+  })
+
+  it('strips tags and collapses whitespace like description', () => {
+    const result = contactSchema.safeParse({
+      ...base,
+      cart: cartWithItem,
+      notSure: false,
+      description: '',
+      accessNotes: '  Gate <b>code</b>   1234\n\ndog in yard  ',
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.accessNotes).toBe('Gate code 1234 dog in yard')
+    }
+  })
+
+  it('rejects notes over 300 characters', () => {
+    const result = contactSchema.safeParse({
+      ...base,
+      cart: cartWithItem,
+      notSure: false,
+      description: '',
+      accessNotes: 'x'.repeat(301),
+    })
+    expect(result.success).toBe(false)
+  })
+})

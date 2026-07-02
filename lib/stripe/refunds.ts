@@ -5,7 +5,11 @@ import { logger } from '@/lib/security/logger'
 
 export interface RefundInput {
   jobId: string
-  chargeId: string
+  // One of the two is required. Deposit ledger rows only carry the
+  // PaymentIntent id (the hosted checkout owns the charge), so refunds must be
+  // addressable by either handle; Stripe accepts both.
+  chargeId?: string
+  paymentIntentId?: string
   amountCents?: number
   reason?: 'duplicate' | 'fraudulent' | 'requested_by_customer'
   notes?: string
@@ -19,18 +23,28 @@ export async function refundCharge(
   input: RefundInput,
   actor: string,
 ): Promise<RefundResult> {
+  const target = input.chargeId || input.paymentIntentId
+  if (!target) {
+    return {
+      status: 'failed',
+      failureCode: 'missing_target',
+      failureMessage: 'Refund needs a charge or payment-intent id.',
+    }
+  }
   const stripe = getStripe()
   const idempotencyKey = buildIdempotencyKey(
     'refund',
     input.jobId,
-    input.chargeId,
+    target,
     String(input.amountCents ?? 'full'),
   )
 
   try {
     const refund = await stripe.refunds.create(
       {
-        charge: input.chargeId,
+        ...(input.chargeId
+          ? { charge: input.chargeId }
+          : { payment_intent: input.paymentIntentId }),
         ...(input.amountCents !== undefined ? { amount: input.amountCents } : {}),
         ...(input.reason ? { reason: input.reason } : {}),
         metadata: {
@@ -45,7 +59,7 @@ export async function refundCharge(
       {
         jobId: input.jobId,
         refundId: refund.id,
-        chargeId: input.chargeId,
+        refundTarget: target,
         amountCents: refund.amount,
       },
       'stripe: refund issued',
@@ -58,7 +72,7 @@ export async function refundCharge(
       jobId: input.jobId,
       after: JSON.stringify({
         refundId: refund.id,
-        chargeId: input.chargeId,
+        refundTarget: target,
         amountCents: refund.amount,
         reason: input.reason ?? null,
       }),
@@ -75,7 +89,7 @@ export async function refundCharge(
       logger.error(
         {
           jobId: input.jobId,
-          chargeId: input.chargeId,
+          refundTarget: target,
           failureCode: err.code,
           failureMessage: err.message,
         },
@@ -88,7 +102,7 @@ export async function refundCharge(
         target: input.jobId,
         jobId: input.jobId,
         after: JSON.stringify({
-          chargeId: input.chargeId,
+          refundTarget: target,
           failureCode: err.code ?? null,
           failureMessage: err.message,
         }),

@@ -294,3 +294,25 @@ lost-write detector).
 | `SUPABASE_URL` | No | project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Yes** (name lacks SECRET/TOKEN — flagged in .env.example) | server-only, bypasses RLS, Production scope ONLY |
 | `DATA_BACKEND` | No | unset/`sheet` (default) \| `postgres`; any other value throws |
+
+## Sheets backend sunset (declared 2026-07-02)
+
+`DATA_BACKEND=postgres` has been live in production since the Stage 13
+cutover, and every business-critical surface (CRM, payments ledger, scheduling,
+activities) is postgres-only. The dual-backend dispatch in `lib/data/index.ts`
+now only adds cost: every new feature pays a "port it to sheet mode or gate it"
+tax.
+
+**Policy, effective immediately:**
+
+- **No new feature ships in sheet mode.** New surfaces are postgres-only behind
+  `getBackend()` / `crmEnabled()` gates (the existing pattern).
+- **Target removal: 2026-08-15** (~6 weeks of postgres-only prod behavior as
+  the safety window). At that point delete `lib/sheet/`, the `DATA_BACKEND`
+  switch, and the sheet branches in `lib/data/index.ts`.
+- **Backup continuity:** the daily `/api/cron/backup-sheet` CSV-export email is
+  backend-aware and stays — it exports the postgres tables after removal. The
+  Google Sheet itself becomes a frozen archive; Supabase Pro (PITR) is the
+  primary recovery story once enabled.
+- The removal itself is a normal gated deploy: needs Mitch's explicit go, after
+  a final CSV export is confirmed in the inbox.

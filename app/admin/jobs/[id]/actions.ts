@@ -12,6 +12,7 @@ import {
 } from "@/lib/data";
 import {
   rateLimitAdmin,
+  rateLimitAdminMoney,
   requireAdmin,
   type ActionResult,
 } from "@/lib/admin/guard";
@@ -22,9 +23,12 @@ import { getBackend } from "@/lib/data/backend";
 import {
   claimChargeAttempt,
   findLiveAttempt,
+  listRefundablePayments,
   recordPaymentOutcome,
 } from "@/lib/data/pg/payments";
 import { chargeBalance, type ChargeBalanceResult } from "@/lib/stripe/charges";
+import { refundCharge } from "@/lib/stripe/refunds";
+import { sendCompletionReceiptEmail } from "@/lib/email/completion-receipt";
 import { dispatchJobToDavid } from "@/lib/telegram/dispatch";
 
 // The deterministic Stripe idempotency key chargeBalance uses; also the
@@ -134,7 +138,8 @@ export async function recordFirstTouch(jobId: string): Promise<ActionResult> {
 export async function markComplete(jobId: string): Promise<ActionResult> {
   const auth = await requireAdmin();
   if (!auth) return { ok: false, error: "Not authorized" };
-  if (!(await rateLimitAdmin(auth.email))) {
+  // Money bucket: markComplete can charge the saved card.
+  if (!(await rateLimitAdminMoney(auth.email))) {
     return { ok: false, error: "Too many actions. Slow down a moment." };
   }
   const found = await findRowByJobId(jobId);
@@ -165,6 +170,8 @@ export async function markComplete(jobId: string): Promise<ActionResult> {
       paymentMethodId,
       serviceType: found.row.service_type || "",
       customerEmail: found.row.email || "",
+      customerName: found.row.name || "",
+      depositPaidCents: Number(found.row.deposit_paid_cents || "0"),
       adminEmail: auth.email,
     });
   }
@@ -234,6 +241,15 @@ export async function markComplete(jobId: string): Promise<ActionResult> {
         ? `Balance ${balanceCents} cents NOT charged (missing Stripe customer/payment method)`
         : undefined,
   });
+  await sendCompletionReceiptSafe({
+    jobId,
+    toEmail: found.row.email || "",
+    toName: found.row.name || "",
+    serviceType: found.row.service_type || "service",
+    depositPaidCents: Number(found.row.deposit_paid_cents || "0"),
+    balanceChargedCents: chargeResult?.status === "succeeded" ? balanceCents : 0,
+    balanceOwedCents: chargeResult?.status === "succeeded" ? 0 : balanceCents,
+  });
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
 
@@ -250,6 +266,44 @@ export async function markComplete(jobId: string): Promise<ActionResult> {
   };
 }
 
+// Best-effort completion receipt + review ask. Stamps review_sent_at ONLY on a
+// successful send, so the send-review-requests cron stays a backstop: it skips
+// stamped jobs and still picks up the ones where this email failed.
+async function sendCompletionReceiptSafe(args: {
+  jobId: string;
+  toEmail: string;
+  toName: string;
+  serviceType: string;
+  depositPaidCents: number;
+  balanceChargedCents: number;
+  balanceOwedCents: number;
+}): Promise<void> {
+  if (!args.toEmail) return;
+  try {
+    await sendCompletionReceiptEmail({
+      toEmail: args.toEmail,
+      toName: args.toName,
+      serviceType: args.serviceType,
+      depositPaidCents: args.depositPaidCents,
+      balanceChargedCents: args.balanceChargedCents,
+      balanceOwedCents: args.balanceOwedCents,
+    });
+    await updateRowByJobId(args.jobId, {
+      review_sent_at: new Date().toISOString(),
+    });
+    logger.info({ jobId: args.jobId }, "admin: completion receipt sent");
+  } catch (err) {
+    Sentry.captureException(err, {
+      tags: { route: "admin", action: "completionReceipt" },
+      extra: { jobId: args.jobId },
+    });
+    logger.warn(
+      { err, jobId: args.jobId },
+      "admin: completion receipt failed (review cron will still ask)",
+    );
+  }
+}
+
 // The postgres double-charge-guarded balance charge. Claims a payments attempt
 // (atomic gate), charges, records the outcome — and deliberately does NOT write
 // status=Complete (the payment_intent.succeeded webhook owns that, so there's
@@ -261,6 +315,8 @@ async function chargeBalanceGuarded(args: {
   paymentMethodId: string;
   serviceType: string;
   customerEmail: string;
+  customerName: string;
+  depositPaidCents: number;
   adminEmail: string;
 }): Promise<ActionResult> {
   const { jobId, balanceCents, customerId, paymentMethodId } = args;
@@ -376,12 +432,84 @@ async function chargeBalanceGuarded(args: {
     after: "Complete",
     notes: `Balance ${balanceCents} cents charged (guarded)`,
   });
+  await sendCompletionReceiptSafe({
+    jobId,
+    toEmail: args.customerEmail,
+    toName: args.customerName,
+    serviceType: args.serviceType || "service",
+    depositPaidCents: args.depositPaidCents,
+    balanceChargedCents: balanceCents,
+    balanceOwedCents: 0,
+  });
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
   return {
     ok: true,
     message: `Job marked complete. Balance of $${(balanceCents / 100).toFixed(2)} charged.`,
   };
+}
+
+// Refund a succeeded payment (deposit or balance) from the job page — no more
+// Stripe-dashboard trips. Full refund of the selected ledger row; the
+// charge.refunded webhook owns the job-status flip (Refunded / Partial Refund)
+// and the refund ledger row, so this action deliberately writes neither.
+export async function refundPayment(
+  jobId: string,
+  paymentId: string,
+): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  // Money bucket — this sends real dollars back.
+  if (!(await rateLimitAdminMoney(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  if (getBackend() !== "postgres") {
+    return { ok: false, error: "Refunds are only available on the Postgres backend." };
+  }
+
+  const payments = await listRefundablePayments(jobId);
+  const payment = payments.find((p) => p.id === paymentId);
+  if (!payment) {
+    return { ok: false, error: "No matching refundable payment on this job." };
+  }
+  if (!payment.stripeChargeId && !payment.stripePaymentIntentId) {
+    return {
+      ok: false,
+      error: "This payment has no Stripe reference — refund it from the Stripe dashboard.",
+    };
+  }
+
+  try {
+    const result = await refundCharge(
+      {
+        jobId,
+        chargeId: payment.stripeChargeId || undefined,
+        paymentIntentId: payment.stripePaymentIntentId || undefined,
+        reason: "requested_by_customer",
+        notes: `Admin refund of ${payment.purpose} from job page`,
+      },
+      auth.email,
+    );
+    if (result.status === "failed") {
+      return { ok: false, error: `Refund failed: ${result.failureMessage}` };
+    }
+    logger.info(
+      { jobId, paymentId, amountCents: result.amountCents, actor: auth.email },
+      "admin: refund issued",
+    );
+    revalidatePath(`/admin/jobs/${jobId}`);
+    return {
+      ok: true,
+      message: `Refund of $${(result.amountCents / 100).toFixed(2)} issued — the job status updates when Stripe confirms.`,
+    };
+  } catch (err) {
+    Sentry.captureException(err, {
+      tags: { route: "admin", action: "refundPayment" },
+      extra: { jobId, paymentId },
+    });
+    logger.error({ err, jobId, paymentId }, "admin: refundPayment threw");
+    return { ok: false, error: "Refund failed — see Sentry." };
+  }
 }
 
 // Append a free-form note to this job's activity timeline (a `note.added`

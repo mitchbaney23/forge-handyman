@@ -110,6 +110,20 @@ export const contactSchema = z
           .replace(/<[^>]*>/g, '')
           .replace(/\s+/g, ' '),
       ),
+    // Optional access details (gate code, parking, pets, lockbox). Folded into
+    // the stored description below so the Telegram card and admin job page
+    // surface it without a schema change. Same sanitization as description.
+    accessNotes: z
+      .string()
+      .max(300, 'Too long (max 300 characters)')
+      .optional()
+      .default('')
+      .transform((s) =>
+        s
+          .trim()
+          .replace(/<[^>]*>/g, '')
+          .replace(/\s+/g, ' '),
+      ),
     // Urgency is the fallback-path timing hint; a scheduled booking carries an
     // exact slot instead, so it's optional now.
     urgency: urgencySchema.optional(),
@@ -290,9 +304,14 @@ function payloadToRow(
       : payload.description
   // Tag family leads so David sees the discount at a glance (flows to the
   // notification email, Telegram card, and admin via the description).
-  const description = payload.family
+  const taggedDesc = payload.family
     ? `🏷️ FORGE FAMILY — 30% off applied\n\n${cartDesc}`
     : cartDesc
+  // Access notes ride the description too — David reads the dispatch card at
+  // the door, so "🔑 Access:" must be impossible to miss.
+  const description = payload.accessNotes
+    ? `${taggedDesc}${taggedDesc ? '\n\n' : ''}🔑 Access: ${payload.accessNotes}`
+    : taggedDesc
 
   return {
     submitted_at: submittedAt,
