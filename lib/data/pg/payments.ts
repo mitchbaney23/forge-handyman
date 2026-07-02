@@ -188,3 +188,47 @@ export async function recordPayment(args: {
   })
   if (error) throw new Error(`pg/payments: recordPayment failed: ${error.message}`)
 }
+
+// One ledger row per refunded charge. charge.refunded webhooks report a
+// CUMULATIVE amount_refunded, so a second partial refund (or a re-delivery
+// after the dedup TTL) must REPLACE the existing row's amount, not insert a
+// second row — LTV subtracts refund rows from collected revenue, and two
+// cumulative rows would double-count. Read-then-write is enough here: the
+// webhook idempotency layer serializes deliveries, and this ledger is
+// best-effort by contract (callers wrap it).
+export async function recordRefund(args: {
+  jobId: string
+  amountRefundedCents: number
+  stripeChargeId: string
+  stripePaymentIntentId?: string
+}): Promise<void> {
+  if (!isUuid(args.jobId)) return
+  const client = getSupabaseClient()
+  const { data, error } = await client
+    .from('payments')
+    .select('id')
+    .eq('job_id', args.jobId)
+    .eq('purpose', 'refund')
+    .eq('stripe_charge_id', args.stripeChargeId)
+    .limit(1)
+  if (error) throw new Error(`pg/payments: recordRefund lookup failed: ${error.message}`)
+  const existing = (data?.[0] ?? null) as { id: string } | null
+  if (existing) {
+    const { error: updateError } = await client
+      .from('payments')
+      .update({ amount_cents: args.amountRefundedCents })
+      .eq('id', existing.id)
+    if (updateError) throw new Error(`pg/payments: recordRefund update failed: ${updateError.message}`)
+    return
+  }
+  const { error: insertError } = await client.from('payments').insert({
+    job_id: args.jobId,
+    purpose: 'refund',
+    status: 'succeeded',
+    amount_cents: args.amountRefundedCents,
+    stripe_payment_intent_id: args.stripePaymentIntentId ?? '',
+    stripe_charge_id: args.stripeChargeId,
+    stripe_customer_id: '',
+  })
+  if (insertError) throw new Error(`pg/payments: recordRefund insert failed: ${insertError.message}`)
+}
