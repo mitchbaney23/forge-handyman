@@ -8,10 +8,14 @@ verified claims) that produced an approved **improvement roadmap** (plan file:
 two stages: **(a) the Stripe money-path fixes** and **(b) the quick-win batch**
 (lifecycle receipt emails, booking-form access notes, admin refund buttons,
 seasonal-nudge batch send, rate-limit split, real mailing address, Sheets
-sunset declared). Both merged to `main` + deployed. Every stage passed a
-2-reviewer adversarial review; all confirmed findings fixed pre-merge.
+sunset declared), then **(c) the daily lifecycle cron** (appointment
+reminders, quote-expiry nudges, stalled-deal digest, Stripe reconciliation
+backstop — `/api/cron/lifecycle`, 13:00 UTC daily). All merged to `main` +
+deployed. Every stage passed a 2-reviewer adversarial review; all confirmed
+findings fixed pre-merge.
 
-`main` HEAD = `fe14ce3`. Production auto-deploys from a `main` push (Vercel).
+`main` HEAD = the `feat/lifecycle-cron` merge. Production auto-deploys from a
+`main` push (Vercel).
 Read the memory files first (see Pointers) — `project_improvement_roadmap.md`
 holds the roadmap state.
 
@@ -29,7 +33,8 @@ holds the roadmap state.
 | **Admin rate limits** | **Split** — cheap mutations 30/min (`admin-action`), money actions 5/min (`admin-money`: quote send, markComplete, refund) |
 | **Mailing address** | **REAL** — 2012 Raccoon Run, Clayton, NC 27527 (was PO Box 0000; CAN-SPAM closed) |
 | **Sheets backend** | **Sunset declared** — no new sheet-mode features; target removal 2026-08-15 (docs/stage-13-postgres-design.md) |
-| Code health | typecheck clean · **218 tests pass** · lint clean (2 pre-existing cosmetic warnings) |
+| **Lifecycle cron** | **LIVE** — daily 9 AM ET: day-before reminders (ET-day bucketing = exactly-once), once-per-quote expiry nudges (reads `paymentLinkUrl`/`expiresAt` stamped in the `quote.sent` activity payload; legacy quotes get no-button fallback; `quote.nudge_sent` activity = durable guard), owner digest (only when non-empty), Stripe drift backstop (report-only → Sentry + digest; deposit-on-Cancelled flagged on purpose) |
+| Code health | typecheck clean · **234 tests pass** · lint clean (2 pre-existing cosmetic warnings) |
 | Supabase | still one project = prod **and** local `.env.local` (Pending #4) |
 
 **Roadmap corrections vs old pending list (verified in code):** the Saturday
@@ -83,13 +88,13 @@ unsubscribe link.
 6. **Twilio SMS** — unchanged: finish toll-free verification, then deploy
    `feat/sms-consent` and build the SMS legs.
 
-## Next code stage (roadmap (c), approved)
+## Next code stage (roadmap (c) remainder, approved)
 
-One daily **lifecycle cron** route: 24h appointment reminders (email now, SMS
-later), quote-expiry nudges (links die at 7 days), stalled-deal digest to
-Mitch, Stripe reconciliation backstop. Then the /admin metrics strip, per-town
-SEO pages, and an automated money-path webhook-replay test. Big bet after:
-David's field view (front of the CRM rebuild queue).
+The /admin metrics strip (revenue, quote→paid conversion, median cycle, lead
+source), per-town SEO pages (`/handyman/[town]` ×8 + real GBP review URL), and
+an automated money-path webhook-replay test. Big bet after: David's field view
+(front of the CRM rebuild queue), SMS legs on the lifecycle cron when Twilio
+lands.
 
 ---
 
@@ -97,9 +102,9 @@ David's field view (front of the CRM rebuild queue).
 
 | Branch | HEAD | Meaning |
 |---|---|---|
-| `main` | `fe14ce3` | **production** — everything above merged + live |
-| `feat/sms-consent` | `3d99fc3` | SMS-consent line — **HELD, not deployed** (verified excluded at both merges) |
-| (merged today) | | `fix/stripe-money-path`, `feat/quick-wins` |
+| `main` | lifecycle-cron merge | **production** — everything above merged + live |
+| `feat/sms-consent` | `3d99fc3` | SMS-consent line — **HELD, not deployed** (verified excluded at all three merges) |
+| (merged today) | | `fix/stripe-money-path`, `feat/quick-wins`, `feat/lifecycle-cron` |
 
 ---
 
