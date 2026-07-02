@@ -205,3 +205,37 @@ describe('reconcileAttempt / recordPayment', () => {
     expect(row.amount_cents).toBe(2500)
   })
 })
+
+describe('recordRefund', () => {
+  it('no-ops on a non-UUID jobId (no client call)', async () => {
+    const { recordRefund } = await import('@/lib/data/pg/payments')
+    await recordRefund({ jobId: 'garbage', amountRefundedCents: 500, stripeChargeId: 'ch_1' })
+    expect(captured.fromCalls).toHaveLength(0)
+  })
+
+  it('inserts a refund row when none exists for the charge', async () => {
+    selectResult = { data: [], error: null }
+    const { recordRefund } = await import('@/lib/data/pg/payments')
+    await recordRefund({
+      jobId: UUID,
+      amountRefundedCents: 2500,
+      stripeChargeId: 'ch_1',
+      stripePaymentIntentId: 'pi_1',
+    })
+    expect(captured.updates).toHaveLength(0)
+    expect(captured.inserts).toHaveLength(1)
+    const row = captured.inserts[0] as Record<string, unknown>
+    expect(row.purpose).toBe('refund')
+    expect(row.status).toBe('succeeded')
+    expect(row.amount_cents).toBe(2500)
+    expect(row.stripe_charge_id).toBe('ch_1')
+  })
+
+  it('REPLACES the existing row for the charge — amount_refunded is cumulative, a second row would double-count', async () => {
+    selectResult = { data: [{ id: 'pay-1' }], error: null }
+    const { recordRefund } = await import('@/lib/data/pg/payments')
+    await recordRefund({ jobId: UUID, amountRefundedCents: 5000, stripeChargeId: 'ch_1' })
+    expect(captured.inserts).toHaveLength(0)
+    expect(captured.updates).toEqual([{ amount_cents: 5000 }])
+  })
+})

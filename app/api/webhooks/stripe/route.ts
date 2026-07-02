@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import type Stripe from 'stripe'
 import { logger } from '@/lib/security/logger'
-import { checkAndMarkProcessed } from '@/lib/webhooks/idempotency'
+import { beginProcessing, markDone, releaseProcessing } from '@/lib/webhooks/idempotency'
 import { getStripe, getWebhookSecret } from '@/lib/stripe/client'
 import {
   handleChargeRefunded,
@@ -14,6 +14,10 @@ import {
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+// Must stay well under the idempotency layer's 10-min 'processing' TTL: if
+// this function could outlive the claim, a retry could run concurrently with
+// a still-executing first delivery.
+export const maxDuration = 60
 
 async function dispatch(event: Stripe.Event): Promise<void> {
   switch (event.type) {
@@ -65,10 +69,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  const { isFirst } = await checkAndMarkProcessed('stripe', event.id)
-  if (!isFirst) {
+  // Two-phase idempotency: claim -> handle -> markDone. A handler failure
+  // RELEASES the claim so Stripe's retry re-processes the event; the old
+  // mark-first scheme deduped the retry and silently dropped the event (e.g. a
+  // paid deposit that never flipped the job to Booked).
+  const claim = await beginProcessing('stripe', event.id)
+  if (claim === 'done') {
     logger.info({ eventId: event.id, eventType: event.type }, 'stripe: duplicate event ignored (idempotency)')
     return NextResponse.json({ received: true, deduped: true })
+  }
+  if (claim === 'in_flight') {
+    logger.info({ eventId: event.id, eventType: event.type }, 'stripe: concurrent delivery still processing — asking Stripe to retry')
+    return NextResponse.json({ received: false, inFlight: true }, { status: 500 })
   }
 
   try {
@@ -79,7 +91,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       extra: { eventId: event.id },
     })
     logger.error({ err, eventId: event.id, eventType: event.type }, 'stripe: handler threw')
+    await releaseProcessing('stripe', event.id)
     return NextResponse.json({ received: true, handled: false }, { status: 500 })
+  }
+
+  try {
+    await markDone('stripe', event.id)
+  } catch (err) {
+    // The work IS done — return 200 so Stripe doesn't retry. The stale
+    // 'processing' claim expires on its own TTL.
+    logger.warn({ err, eventId: event.id }, 'stripe: markDone failed after successful handling')
   }
 
   return NextResponse.json({ received: true })

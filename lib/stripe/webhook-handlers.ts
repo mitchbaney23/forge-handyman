@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/nextjs'
 import { logger, maskEmail } from '@/lib/security/logger'
 import { appendAuditRow, updateRowByJobId } from '@/lib/data'
 import { getBackend } from '@/lib/data/backend'
-import { recordPayment, reconcileAttempt } from '@/lib/data/pg/payments'
+import { recordPayment, recordRefund, reconcileAttempt } from '@/lib/data/pg/payments'
 import { getStripe } from '@/lib/stripe/client'
 
 function extractJobId(metadata: Stripe.Metadata | null | undefined): string | null {
@@ -256,7 +256,35 @@ export async function handleCustomerCreated(event: Stripe.Event): Promise<void> 
 
 export async function handleChargeRefunded(event: Stripe.Event): Promise<void> {
   const charge = event.data.object as Stripe.Charge
-  const jobId = extractJobId(charge.metadata)
+  let jobId = extractJobId(charge.metadata)
+
+  // Dashboard refunds and chargebacks carry no metadata on the Charge — our
+  // jobId is stamped on the PaymentIntent (payment_intent_data on the deposit
+  // link, metadata on the balance charge). Resolve through the parent PI
+  // before giving up. A retrieve failure throws: the route releases the
+  // idempotency claim and Stripe retries.
+  if (!jobId) {
+    const piId =
+      typeof charge.payment_intent === 'string'
+        ? charge.payment_intent
+        : charge.payment_intent?.id ?? null
+    if (piId) {
+      const pi = await getStripe().paymentIntents.retrieve(piId)
+      jobId = extractJobId(pi.metadata)
+    }
+  }
+
+  if (!jobId) {
+    // Money left the account with no book entry — surface it, don't just log.
+    Sentry.captureMessage('Stripe refund with unresolvable jobId', {
+      level: 'warning',
+      tags: { route: 'stripe-webhook', eventType: event.type },
+      extra: {
+        chargeId: charge.id,
+        amountRefundedCents: charge.amount_refunded,
+      },
+    })
+  }
 
   logger.info(
     {
@@ -283,17 +311,19 @@ export async function handleChargeRefunded(event: Stripe.Event): Promise<void> {
         amountRefundedCents: charge.amount_refunded,
       }),
     })
-    // Ledger: record the refund (positive amount under purpose 'refund'; LTV
-    // computation subtracts these from collected revenue).
+    // Ledger: charge.amount_refunded is CUMULATIVE across partial refunds, so
+    // the ledger keeps one row per refunded charge and replaces its amount —
+    // an insert per event would double-count (and a late re-delivery after the
+    // dedup TTL would duplicate).
     await recordPaymentSafe(() =>
-      recordPayment({
+      recordRefund({
         jobId,
-        purpose: 'refund',
-        status: 'succeeded',
-        amountCents: charge.amount_refunded ?? 0,
+        amountRefundedCents: charge.amount_refunded ?? 0,
         stripeChargeId: charge.id,
         stripePaymentIntentId:
-          typeof charge.payment_intent === 'string' ? charge.payment_intent : '',
+          typeof charge.payment_intent === 'string'
+            ? charge.payment_intent
+            : charge.payment_intent?.id ?? '',
       }),
     )
   }
