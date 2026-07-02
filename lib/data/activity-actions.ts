@@ -39,6 +39,10 @@ export const ACTIONS = {
   // Quotes (admin quote actions)
   QUOTE_SENT: 'quote.sent',
 
+  // Lifecycle cron (daily automation)
+  REMINDER_SENT: 'reminder.sent',
+  QUOTE_NUDGE_SENT: 'quote.nudge_sent',
+
   // Payments / Stripe money path
   PAYMENT_LINK_CREATED: 'payment_link.created',
   PAYMENT_DEPOSIT_SUCCEEDED: 'payment.deposit.succeeded',
