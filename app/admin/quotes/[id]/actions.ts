@@ -32,7 +32,8 @@ export async function sendQuote(input: SendQuoteInput): Promise<SendQuoteResult>
     return { ok: false, error: "Not authorized" };
   }
 
-  if (!(await checkLimit("admin-action", adminEmail)).success) {
+  // Money bucket: sending a quote creates live Stripe objects + a payment link.
+  if (!(await checkLimit("admin-money", adminEmail)).success) {
     return { ok: false, error: "Too many actions. Slow down a moment." };
   }
 

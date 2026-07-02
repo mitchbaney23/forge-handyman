@@ -78,6 +78,10 @@ type FormState = {
   cart: Cart;
   notSure: boolean;
   description: string;
+  // Optional access details for the visit (gate code, parking, pets, lockbox).
+  // Folded into the job description server-side so David sees it on the
+  // dispatch card without a schema change.
+  accessNotes: string;
   preferredDate: string;
   urgency: UrgencyCode | "";
   // A chosen appointment slot (self-scheduling). null on the fallback/custom
@@ -101,6 +105,7 @@ const initial: FormState = {
   cart: { items: [], packageNumber: null },
   notSure: false,
   description: "",
+  accessNotes: "",
   preferredDate: "",
   urgency: "",
   selectedSlot: null,
@@ -771,6 +776,7 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
           notSure: state.notSure,
           family: state.family,
           description: state.description,
+          accessNotes: state.accessNotes || undefined,
           preferredDate: state.preferredDate,
           urgency: state.urgency || undefined,
           selectedSlot:
@@ -1315,6 +1321,19 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
                   value={state.description}
                   onChange={(e) => update("description", e.target.value)}
                   className={inputClass(!!errors.description)}
+                />
+              </Field>
+
+              <Field id="accessNotes" label="Getting in (optional)">
+                <input
+                  id="accessNotes"
+                  name="accessNotes"
+                  type="text"
+                  maxLength={300}
+                  placeholder="Gate code, parking, pets, lockbox — anything David needs on arrival."
+                  value={state.accessNotes}
+                  onChange={(e) => update("accessNotes", e.target.value)}
+                  className={inputClass(false)}
                 />
               </Field>
 

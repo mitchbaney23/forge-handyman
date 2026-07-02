@@ -1,8 +1,16 @@
 import type Stripe from 'stripe'
 import * as Sentry from '@sentry/nextjs'
 import { logger, maskEmail } from '@/lib/security/logger'
-import { appendAuditRow, updateRowByJobId } from '@/lib/data'
+import {
+  appendAuditRow,
+  findRowByJobId,
+  getAppointmentByJobId,
+  updateRowByJobId,
+} from '@/lib/data'
 import { getBackend } from '@/lib/data/backend'
+import { sendDepositReceiptEmail } from '@/lib/email/deposit-receipt'
+import { sendCompletionReceiptEmail } from '@/lib/email/completion-receipt'
+import { formatEtDay, formatEtTime } from '@/lib/scheduling/time'
 import { recordPayment, recordRefund, reconcileAttempt } from '@/lib/data/pg/payments'
 import { getStripe } from '@/lib/stripe/client'
 
@@ -124,6 +132,41 @@ export async function handleCheckoutSessionCompleted(
       stripeCustomerId: customerId ?? '',
     }),
   )
+
+  // Deposit receipt to the customer — best-effort: a failed email must never
+  // 500 the webhook (the retry would re-run the whole handler for a send-only
+  // failure).
+  try {
+    const found = await findRowByJobId(jobId)
+    const toEmail = found?.row.email || session.customer_details?.email || ''
+    if (toEmail) {
+      let appointmentLabel: string | undefined
+      if (getBackend() === 'postgres') {
+        const appt = await getAppointmentByJobId(jobId)
+        if (appt) {
+          const starts = new Date(appt.startsAt)
+          appointmentLabel = `${formatEtDay(starts)} · ${formatEtTime(starts)}`
+        }
+      }
+      await sendDepositReceiptEmail({
+        toEmail,
+        toName: found?.row.name || session.customer_details?.name || '',
+        serviceType: found?.row.service_type || 'service',
+        amountPaidCents: session.amount_total ?? 0,
+        balanceCents: Number(found?.row.balance_owed_cents || '0'),
+        appointmentLabel,
+      })
+      logger.info(
+        { jobId, maskedEmail: maskEmail(toEmail) },
+        'stripe: deposit receipt sent',
+      )
+    }
+  } catch (err) {
+    logger.warn({ err, jobId }, 'stripe: deposit receipt email failed (non-fatal)')
+    Sentry.captureException(err, {
+      tags: { route: 'stripe-webhook', step: 'deposit-receipt' },
+    })
+  }
 }
 
 export async function handlePaymentIntentSucceeded(
@@ -174,6 +217,35 @@ export async function handlePaymentIntentSucceeded(
         stripeChargeId: chargeIdOf(pi),
       }),
     )
+
+    // Completion receipt for completions THIS webhook owns (3DS-deferred
+    // charges, where markComplete returned requires_action and never sent
+    // one). The review_sent_at stamp is the dedupe: markComplete's sync path
+    // stamps it on send, so this only fires when no receipt went out — which
+    // also makes it a retry for a markComplete whose email failed.
+    // Best-effort: a send failure must never 500 the webhook.
+    try {
+      const found = await findRowByJobId(jobId)
+      if (found && !(found.row.review_sent_at || '').trim() && found.row.email) {
+        await sendCompletionReceiptEmail({
+          toEmail: found.row.email,
+          toName: found.row.name || '',
+          serviceType: found.row.service_type || 'service',
+          depositPaidCents: Number(found.row.deposit_paid_cents || '0'),
+          balanceChargedCents: pi.amount,
+          balanceOwedCents: 0,
+        })
+        await updateRowByJobId(jobId, {
+          review_sent_at: new Date().toISOString(),
+        })
+        logger.info({ jobId }, 'stripe: completion receipt sent (webhook-owned completion)')
+      }
+    } catch (err) {
+      logger.warn({ err, jobId }, 'stripe: completion receipt failed (review cron will still ask)')
+      Sentry.captureException(err, {
+        tags: { route: 'stripe-webhook', step: 'completion-receipt' },
+      })
+    }
   }
 }
 

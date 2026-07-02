@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { JobActions } from "./JobActions";
 import { CancelBookingButton } from "./CancelBookingButton";
+import { RefundSection } from "./RefundSection";
+import { listRefundablePayments } from "@/lib/data/pg/payments";
 import { addJobNoteAction } from "./actions";
 import { ActivityTimeline } from "@/components/admin/ActivityTimeline";
 import { AddNoteForm } from "@/components/admin/AddNoteForm";
@@ -43,6 +45,10 @@ export default async function JobDetailPage({
     ? await listActivitiesForJob(jobId)
     : [];
   const appointment = timelineEnabled ? await getAppointmentByJobId(jobId) : null;
+  // Refunds are postgres-only (the payments ledger holds the Stripe refs).
+  const refundablePayments = timelineEnabled
+    ? await listRefundablePayments(jobId)
+    : [];
 
   return (
     <div className="space-y-6">
@@ -135,6 +141,18 @@ export default async function JobDetailPage({
               firstTouchSentAt={row.first_touch_sent_at || ""}
             />
           </Panel>
+          {refundablePayments.length > 0 && (
+            <Panel title="Refunds">
+              <RefundSection
+                jobId={decoded}
+                payments={refundablePayments.map((p) => ({
+                  id: p.id,
+                  purpose: p.purpose,
+                  amountCents: p.amountCents,
+                }))}
+              />
+            </Panel>
+          )}
           <Panel title="Field dispatch">
             <Detail
               label="Status"
