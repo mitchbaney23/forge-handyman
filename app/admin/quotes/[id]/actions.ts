@@ -123,6 +123,10 @@ export async function sendQuote(input: SendQuoteInput): Promise<SendQuoteResult>
     jobId: input.jobId,
     after: JSON.stringify({
       paymentLinkId: paymentLink.paymentLinkId,
+      // The lifecycle cron's quote-nudge check reads these back from the
+      // activity payload (there are no quote columns on the job row).
+      paymentLinkUrl: paymentLink.url,
+      expiresAt: paymentLink.expiresAt,
       depositCents,
       balanceCents,
       tier: input.tier,
