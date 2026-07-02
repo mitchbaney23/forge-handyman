@@ -7,6 +7,15 @@ import {
   listJobs,
   type JobRow,
 } from "@/lib/data";
+import { ACTIONS } from "@/lib/data/activity-actions";
+import { listJobIdsWithActionSince } from "@/lib/data/pg/activities-read";
+import { listPaymentsSince } from "@/lib/data/pg/payments";
+import {
+  medianCycleDays,
+  quoteConversion,
+  revenueThisMonthCents,
+  topLeadSources,
+} from "@/lib/admin/metrics";
 
 export const metadata: Metadata = {
   title: "Forge Admin",
@@ -52,6 +61,58 @@ export default async function AdminHomePage() {
     ...(customersStat ? [customersStat] : []),
   ];
 
+  // "How's business" band — postgres-only (payments ledger + activities), and
+  // best-effort: a metrics failure must never take down the ops dashboard.
+  let business: { label: string; value: string; hint: string }[] | null = null;
+  if (crmEnabled()) {
+    try {
+      const now = new Date();
+      const ninetyDaysAgo = new Date(
+        now.getTime() - 90 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      // A 40-day payment window comfortably covers "this ET month".
+      const fortyDaysAgo = new Date(
+        now.getTime() - 40 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const [payments, quotedJobIds] = await Promise.all([
+        listPaymentsSince(fortyDaysAgo),
+        listJobIdsWithActionSince(ACTIONS.QUOTE_SENT, ninetyDaysAgo),
+      ]);
+      const revenue = revenueThisMonthCents(payments, now);
+      const conversion = quoteConversion(quotedJobIds, jobs);
+      const cycle = medianCycleDays(jobs, now);
+      const sources = topLeadSources(jobs, now, 1);
+      business = [
+        {
+          label: "Collected this month",
+          value: `$${(revenue / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
+          hint: "cash in − refunds out, this month",
+        },
+        {
+          label: "Quote → paid (90d)",
+          value:
+            conversion.quoted > 0
+              ? `${conversion.paid} of ${conversion.quoted} (${Math.round((conversion.paid / conversion.quoted) * 100)}%)`
+              : "—",
+          hint: "quotes sent that turned into deposits",
+        },
+        {
+          label: "Lead → done (90d)",
+          value: cycle !== null ? `${cycle} days` : "—",
+          hint: "median, submitted to completed",
+        },
+        {
+          label: "Top source (30d)",
+          value:
+            sources.length > 0 ? `${sources[0].source} · ${sources[0].count}` : "—",
+          hint: "where leads came from",
+        },
+      ];
+    } catch {
+      business = null; // strip simply doesn't render; ops dashboard unaffected
+    }
+  }
+
   return (
     <div className="space-y-8">
       <header>
@@ -74,6 +135,30 @@ export default async function AdminHomePage() {
           </div>
         ))}
       </div>
+
+      {business && (
+        <div>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink/55">
+            How&rsquo;s business
+          </h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {business.map((s) => (
+              <div
+                key={s.label}
+                className="rounded-lg border border-amber-200 bg-amber-50/50 p-4"
+              >
+                <div className="text-xs font-medium uppercase tracking-wide text-ink/55">
+                  {s.label}
+                </div>
+                <div className="mt-1 text-2xl font-semibold text-navy">
+                  {s.value}
+                </div>
+                <div className="mt-0.5 text-[11px] text-ink/45">{s.hint}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Section
         title="Needs triage"

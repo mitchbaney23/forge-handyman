@@ -162,6 +162,27 @@ export async function reconcileAttempt(
   if (error) throw new Error(`pg/payments: reconcileAttempt failed: ${error.message}`)
 }
 
+// Recent payment rows for the admin metrics strip (revenue math happens in
+// lib/admin/metrics.ts). Bounded by created_at, small at this volume.
+export async function listPaymentsSince(sinceIso: string): Promise<
+  { purpose: string; status: string; amountCents: number | null; createdAt: string }[]
+> {
+  const client = getSupabaseClient()
+  const { data, error } = await client
+    .from('payments')
+    .select('purpose,status,amount_cents,created_at')
+    .gte('created_at', sinceIso)
+  if (error) throw new Error(`pg/payments: listPaymentsSince failed: ${error.message}`)
+  return ((data ?? []) as Pick<DbPaymentRow, 'purpose' | 'status' | 'amount_cents' | 'created_at'>[]).map(
+    (row) => ({
+      purpose: row.purpose ?? '',
+      status: row.status ?? '',
+      amountCents: row.amount_cents,
+      createdAt: row.created_at ? new Date(row.created_at).toISOString() : '',
+    }),
+  )
+}
+
 // Succeeded money-in rows for a job (deposit + balance-charge) — what the
 // admin refund UI offers to send back. Ordered oldest-first so the deposit
 // lists before the balance.

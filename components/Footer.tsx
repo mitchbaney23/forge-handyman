@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BUSINESS, NAV_LINKS } from "@/lib/constants";
+import { TOWNS } from "@/lib/towns";
 import { Logo } from "@/components/Logo";
 import { Icon } from "@/lib/icons";
 
@@ -7,7 +8,7 @@ export function Footer() {
   return (
     <footer className="border-t-2 border-ink bg-ink text-paper/[0.72]">
       <div className="container-page py-14">
-        <div className="grid gap-10 md:grid-cols-3">
+        <div className="grid gap-10 md:grid-cols-4">
           <div>
             <Logo variant="light" />
             <p className="mt-4 text-sm leading-relaxed text-paper/70">
@@ -75,6 +76,24 @@ export function Footer() {
                     className="text-paper/75 hover:text-ember"
                   >
                     {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="font-display text-base font-bold text-paper">
+              Areas We Serve
+            </h4>
+            <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              {TOWNS.map((town) => (
+                <li key={town.slug}>
+                  <Link
+                    href={`/handyman/${town.slug}`}
+                    className="text-paper/75 hover:text-ember"
+                  >
+                    {town.name}
                   </Link>
                 </li>
               ))}

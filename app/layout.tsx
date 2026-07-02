@@ -5,6 +5,7 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { MobileCTA } from "@/components/MobileCTA";
 import { BUSINESS } from "@/lib/constants";
+import { TOWNS } from "@/lib/towns";
 
 const franklin = Libre_Franklin({
   subsets: ["latin"],
@@ -97,11 +98,13 @@ const structuredData = {
     addressRegion: BUSINESS.region,
     addressCountry: BUSINESS.country,
   },
-  areaServed: [
-    { "@type": "City", name: "Garner", address: { "@type": "PostalAddress", addressRegion: "NC" } },
-    { "@type": "City", name: "Clayton", address: { "@type": "PostalAddress", addressRegion: "NC" } },
-    { "@type": "City", name: "Raleigh", address: { "@type": "PostalAddress", addressRegion: "NC" } },
-  ],
+  // All 8 towns inside the 20-mile radius — kept in lockstep with lib/towns.ts
+  // (the per-town landing pages) and the public service-area copy.
+  areaServed: TOWNS.map((t) => ({
+    "@type": "City",
+    name: t.name,
+    address: { "@type": "PostalAddress", addressRegion: "NC" },
+  })),
   openingHoursSpecification: BUSINESS.hoursStructured.map((block) => ({
     "@type": "OpeningHoursSpecification",
     dayOfWeek: block.days,
