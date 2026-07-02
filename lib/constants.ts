@@ -12,9 +12,8 @@ export const BUSINESS = {
   country: "US",
   serviceAreaLine: "Serving Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs & Fuquay-Varina, NC",
   // CAN-SPAM requires a valid physical postal address in commercial email,
-  // and the legal pages reference it. REPLACE THIS PLACEHOLDER with Forge's
-  // real PO box or business address before going live.
-  mailingAddress: "PO Box 0000, Garner, NC 27529",
+  // and the legal pages reference it.
+  mailingAddress: "2012 Raccoon Run, Clayton, NC 27527",
   hours: [
     { day: "Monday – Friday", time: "8:00 AM – 6:00 PM" },
     { day: "Saturday", time: "9:00 AM – 2:00 PM" },
