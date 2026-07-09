@@ -1,6 +1,6 @@
 # Forge Handyman — Session Log
 
-**Session span:** 2026-07-02
+**Session span:** 2026-07-02 → 2026-07-09
 **Driver:** Mitch Baney (owner; directs, doesn't write code)
 **What this session did:** Ran a **full project review** (5-agent workflow +
 verified claims) that produced an approved **improvement roadmap** (plan file:
@@ -10,9 +10,17 @@ two stages: **(a) the Stripe money-path fixes** and **(b) the quick-win batch**
 seasonal-nudge batch send, rate-limit split, real mailing address, Sheets
 sunset declared), then **(c) the daily lifecycle cron** (appointment
 reminders, quote-expiry nudges, stalled-deal digest, Stripe reconciliation
-backstop — `/api/cron/lifecycle`, 13:00 UTC daily). All merged to `main` +
-deployed. Every stage passed a 2-reviewer adversarial review; all confirmed
-findings fixed pre-merge.
+backstop — `/api/cron/lifecycle`, 13:00 UTC daily), and **the stage-(c)
+remainder** (admin "How's business" metrics strip, `/service-area` page,
+money-path webhook-replay test suite). All merged to `main` + deployed. Every
+stage passed a 2-reviewer adversarial review; all confirmed findings fixed
+pre-merge.
+
+**Owner decision (2026-07-09):** the planned 8 per-town SEO landers were built,
+reviewed, previewed — and REJECTED by Mitch as off-brand fluff ("too generic or
+AI-generated"; homepage stays the front door). Consolidated into ONE plain
+`/service-area` page (factual town cards + anchors; footer links there). See
+memory `feedback_brand_voice.md` — this is a standing copy bar, not a one-off.
 
 `main` HEAD = the `feat/lifecycle-cron` merge. Production auto-deploys from a
 `main` push (Vercel).
@@ -34,7 +42,10 @@ holds the roadmap state.
 | **Mailing address** | **REAL** — 2012 Raccoon Run, Clayton, NC 27527 (was PO Box 0000; CAN-SPAM closed) |
 | **Sheets backend** | **Sunset declared** — no new sheet-mode features; target removal 2026-08-15 (docs/stage-13-postgres-design.md) |
 | **Lifecycle cron** | **LIVE** — daily 9 AM ET: day-before reminders (ET-day bucketing = exactly-once), once-per-quote expiry nudges (reads `paymentLinkUrl`/`expiresAt` stamped in the `quote.sent` activity payload; legacy quotes get no-button fallback; `quote.nudge_sent` activity = durable guard), owner digest (only when non-empty), Stripe drift backstop (report-only → Sentry + digest; deposit-on-Cancelled flagged on purpose) |
-| Code health | typecheck clean · **234 tests pass** · lint clean (2 pre-existing cosmetic warnings) |
+| **Admin metrics strip** | **LIVE** — "How's business" band on /admin: cash collected this ET month (cash-basis, deliberate), quote→paid conversion 90d (quote.sent activities), median lead→done, top source. Postgres-only, best-effort (failure hides the band, never the dashboard) |
+| **/service-area page** | **LIVE** — one on-brand page, 8 factual town cards w/ anchors; footer "Areas We Serve" links there; layout areaServed fixed 3→8 towns; sitemap entry |
+| **Money-path replay suite** | tests/stripe-money-path-replay.test.ts — real route + real handlers, in-memory Redis/job store: deposit→Booked+receipt, throw-then-retry recovery, dedup, dashboard-refund PI fallback, balance→Complete w/ exactly-one receipt |
+| Code health | typecheck clean · **246 tests pass** · lint clean (2 pre-existing cosmetic warnings) |
 | Supabase | still one project = prod **and** local `.env.local` (Pending #4) |
 
 **Roadmap corrections vs old pending list (verified in code):** the Saturday
@@ -88,13 +99,12 @@ unsubscribe link.
 6. **Twilio SMS** — unchanged: finish toll-free verification, then deploy
    `feat/sms-consent` and build the SMS legs.
 
-## Next code stage (roadmap (c) remainder, approved)
+## Next code stage (roadmap (d) — big bets, approved)
 
-The /admin metrics strip (revenue, quote→paid conversion, median cycle, lead
-source), per-town SEO pages (`/handyman/[town]` ×8 + real GBP review URL), and
-an automated money-path webhook-replay test. Big bet after: David's field view
-(front of the CRM rebuild queue), SMS legs on the lifecycle cron when Twilio
-lands.
+David's field view (front of the CRM rebuild queue — mobile page: today's
+jobs, photos, access notes, arrived/done taps; retires Telegram dispatch),
+then SMS legs on the lifecycle cron when Twilio toll-free verification lands.
+Non-code on Mitch: set `GOOGLE_REVIEW_URL` (real GBP review link) in Vercel.
 
 ---
 
@@ -102,9 +112,9 @@ lands.
 
 | Branch | HEAD | Meaning |
 |---|---|---|
-| `main` | lifecycle-cron merge | **production** — everything above merged + live |
-| `feat/sms-consent` | `3d99fc3` | SMS-consent line — **HELD, not deployed** (verified excluded at all three merges) |
-| (merged today) | | `fix/stripe-money-path`, `feat/quick-wins`, `feat/lifecycle-cron` |
+| `main` | metrics-seo-replay merge | **production** — everything above merged + live |
+| `feat/sms-consent` | `3d99fc3` | SMS-consent line — **HELD, not deployed** (verified excluded at all four merges) |
+| (merged this session) | | `fix/stripe-money-path`, `feat/quick-wins`, `feat/lifecycle-cron`, `feat/metrics-seo-replay` |
 
 ---
 
