@@ -90,7 +90,7 @@ export function Footer() {
               {TOWNS.map((town) => (
                 <li key={town.slug}>
                   <Link
-                    href={`/handyman/${town.slug}`}
+                    href={`/service-area#${town.slug}`}
                     className="text-paper/75 hover:text-ember"
                   >
                     {town.name}
