@@ -1,6 +1,7 @@
 import { getSupabaseClient } from '@/lib/data/pg/client'
 import { isUuid } from '@/lib/data/pg/mappers'
 import { ACTIONS } from '@/lib/data/activity-actions'
+import { logger } from '@/lib/security/logger'
 
 // Postgres read side of the `activities` log — the per-job timeline the Stage
 // 14 (Phase B1) CRM renders, plus the one timeline-note append it owns.
@@ -138,4 +139,36 @@ export async function addJobNote(
   })
   if (error) throw new Error(`pg/activities-read: addJobNote insert failed: ${error.message}`)
   return { ok: true }
+}
+
+// Distinct job_ids that logged `action` since `sinceIso` — the admin metrics
+// strip uses this with ACTIONS.QUOTE_SENT to compute quote→paid conversion.
+// Single bounded query (one page is plenty at this volume; capped, not paged).
+export async function listJobIdsWithActionSince(
+  action: string,
+  sinceIso: string,
+): Promise<string[]> {
+  const client = getSupabaseClient()
+  const { data, error } = await client
+    .from('activities')
+    .select('job_id')
+    .eq('action', action)
+    .gte('at', sinceIso)
+    .limit(PAGE_SIZE)
+  if (error) {
+    throw new Error(`pg/activities-read: listJobIdsWithActionSince failed: ${error.message}`)
+  }
+  if ((data ?? []).length >= PAGE_SIZE) {
+    // Never cap silently: a full page means the window holds more rows than
+    // we read and the caller's numbers undercount.
+    logger.warn(
+      { action, cap: PAGE_SIZE },
+      'pg/activities-read: listJobIdsWithActionSince hit the row cap — results are partial',
+    )
+  }
+  const ids = new Set<string>()
+  for (const row of (data ?? []) as { job_id: string | null }[]) {
+    if (row.job_id) ids.add(row.job_id)
+  }
+  return [...ids]
 }
