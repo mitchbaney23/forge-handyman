@@ -661,8 +661,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (booked) return booked
   }
 
+  // Persist the job BEFORE the notification email goes out — its "Build
+  // Quote" button links to /admin/quotes/<jobId>, which 404s if this write
+  // never landed. A failed write downgrades the email (no quote button)
+  // instead of shipping a dead link; the lead itself is still captured in
+  // the email body, so the submission proceeds.
+  let rowWritten = false
   try {
-    await sendNotificationEmail(submission)
+    await appendContactRow(row)
+    rowWritten = true
+  } catch (err) {
+    Sentry.captureException(err, {
+      tags: { route: 'contact-form', step: 'sheet-append' },
+    })
+    logger.error({ err, jobId }, 'contact-form: job row write failed')
+  }
+
+  try {
+    await sendNotificationEmail(rowWritten ? submission : { ...submission, jobId: '' })
   } catch (err) {
     Sentry.captureException(err, {
       tags: { route: 'contact-form', step: 'gmail-send' },
@@ -688,32 +704,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     logger.error({ err, jobId }, 'contact-form: customer acknowledgment email failed')
   }
 
-  const [calendarResult, sheetResult] = await Promise.allSettled([
-    createCalendarEvent(submission),
-    appendContactRow(row),
-  ])
-
-  if (calendarResult.status === 'rejected') {
-    Sentry.captureException(calendarResult.reason, {
+  try {
+    await createCalendarEvent(submission)
+  } catch (err) {
+    Sentry.captureException(err, {
       tags: { route: 'contact-form', step: 'calendar-create' },
     })
-    logger.error({ err: calendarResult.reason }, 'contact-form: calendar event failed')
-  }
-  if (sheetResult.status === 'rejected') {
-    Sentry.captureException(sheetResult.reason, {
-      tags: { route: 'contact-form', step: 'sheet-append' },
-    })
-    logger.error({ err: sheetResult.reason }, 'contact-form: sheet append failed')
+    logger.error({ err }, 'contact-form: calendar event failed')
   }
 
   // Best-effort: dispatch the job to David's Telegram with Approve/Decline/
   // Sub-out buttons. Only runs for in-area, non-dev submissions (we're already
   // past both gates here). Never blocks the customer response. Skipped when
-  // DISPATCH_DISABLED=true or the sheet append failed (no row to update).
-  if (
-    process.env.DISPATCH_DISABLED !== 'true' &&
-    sheetResult.status === 'fulfilled'
-  ) {
+  // DISPATCH_DISABLED=true or the row write failed (no row to update).
+  if (process.env.DISPATCH_DISABLED !== 'true' && rowWritten) {
     try {
       const result = await dispatchJobToDavid(row)
       if (result.ok) {

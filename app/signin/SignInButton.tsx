@@ -3,7 +3,7 @@
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 
-export function SignInButton() {
+export function SignInButton({ callbackUrl = "/admin" }: { callbackUrl?: string }) {
   const [loading, setLoading] = useState(false);
   return (
     <button
@@ -11,7 +11,7 @@ export function SignInButton() {
       disabled={loading}
       onClick={() => {
         setLoading(true);
-        void signIn("google", { callbackUrl: "/admin" });
+        void signIn("google", { callbackUrl });
       }}
       className="btn-primary w-full text-base"
     >

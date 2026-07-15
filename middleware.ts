@@ -73,7 +73,13 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     const email = typeof token?.email === 'string' ? token.email.toLowerCase() : null
     const isAuthorized = email !== null && allowlist.includes(email)
     if (!isAuthorized) {
-      return NextResponse.rewrite(new URL('/not-found', req.url), { status: 404 })
+      // Send the visitor to sign-in and back to the page they wanted. The
+      // admin session lasts 24h, so email links ("Build Quote" on lead
+      // notifications) usually land here signed-out — a 404 rewrite here
+      // dead-ends the money path on every quote email older than a day.
+      const signInUrl = new URL('/signin', req.url)
+      signInUrl.searchParams.set('callbackUrl', pathname + req.nextUrl.search)
+      return NextResponse.redirect(signInUrl, 302)
     }
   }
 

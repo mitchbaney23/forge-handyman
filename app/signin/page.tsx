@@ -6,7 +6,19 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function SignInPage() {
+// Only ever bounce back to admin pages — anything else (external URLs,
+// protocol-relative //host tricks) falls back to /admin.
+function safeCallbackUrl(raw: string | undefined): string {
+  if (raw && /^\/admin(\/|\?|$)/.test(raw)) return raw
+  return "/admin"
+}
+
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ callbackUrl?: string }>
+}) {
+  const { callbackUrl } = await searchParams
   return (
     <div className="min-h-[60vh] flex items-center justify-center px-6 py-16">
       <div className="w-full max-w-md rounded-xl border border-navy/10 bg-white p-8 shadow-card">
@@ -21,7 +33,7 @@ export default function SignInPage() {
           or Angie, you&rsquo;re in the wrong place.
         </p>
         <div className="mt-6">
-          <SignInButton />
+          <SignInButton callbackUrl={safeCallbackUrl(callbackUrl)} />
         </div>
       </div>
     </div>
