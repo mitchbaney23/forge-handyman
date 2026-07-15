@@ -8,6 +8,10 @@ The contact form submits to an API route that simultaneously sends a Gmail
 notification, creates a Google Calendar event, and appends a row to a
 Google Sheet (lightweight CRM) via the `googleapis` SDK.
 
+> 🎨 **Logos & brand files live in [`brand-assets/`](brand-assets/)** —
+> designer source files, ready-to-use exports, and the brand guide.
+> See that folder's README for how to upload files without any coding.
+
 ---
 
 ## Quick Start

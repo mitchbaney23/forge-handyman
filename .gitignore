@@ -35,9 +35,6 @@ yarn-error.log*
 # Claude Code local config (machine-local, not shared)
 .claude/
 
-# Local brand/reference exports (not part of the app)
-Forge Brand Guide (portable).html
-
 # TypeScript
 *.tsbuildinfo
 .vercel
