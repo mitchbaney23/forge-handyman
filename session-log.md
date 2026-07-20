@@ -1,5 +1,27 @@
 # Forge Handyman — Session Log
 
+## 2026-07-20 — New logo + real photos of David (branch `feat/new-logo-and-photos`)
+
+Mitch supplied the new brand logo (orange outline anvil with house + hammer
+cutout, from the brand-assets collab with his brother) and a photo of David
+replacing an outdoor faucet. Swapped: `public/anvil.png` (header mark, now
+923×444 transparent orange), `public/logo.png` (full lockup), `app/icon.png`
+(transparent) + `app/apple-icon.png` (paper background — iOS renders
+transparency as black), and `brand-assets/logo/exports/` (incl. new
+`logo-transparent.png`). Filled all three photo placeholders with the real
+photo: Hero work-order ticket (16:10 crop, `david-at-work.jpg`), homepage
+"Why Forge" card, and About hero card (both 4:5 `david-portrait.jpg`; About
+keeps the name/role caption strip + 40-years badge). Verified live in the
+browser on all three spots. Mitch then sent two more photos — every spot now
+has its own: hero ticket = faucet 16:10 (`david-at-work.jpg`), homepage
+"Why Forge" = wiper-blade replacement (`david-wipers.jpg`, sits right by the
+Auto Maintenance card), About hero = posed tree portrait w/ drill
+(`david-tree.jpg`, Mitch's pick for "meet David"). The shared
+`david-portrait.jpg` was removed. Also: `.claude/launch.json` got
+`autoPort: true` (port 3000 was held by the talent-agency dev server).
+
+---
+
 **Session span:** 2026-07-02 → 2026-07-09
 **Driver:** Mitch Baney (owner; directs, doesn't write code)
 **What this session did:** Ran a **full project review** (5-agent workflow +

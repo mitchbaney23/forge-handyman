@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { CTABanner } from "@/components/CTABanner";
 import { Reveal } from "@/components/Reveal";
@@ -86,22 +87,24 @@ export default function AboutPage() {
             </p>
           </Reveal>
           <Reveal delay={120} className="mx-auto w-full max-w-[360px] lg:max-w-none">
-            <div
-              className="relative flex aspect-[4/5] flex-col items-center justify-center gap-2.5 rounded-[10px] border-2 border-ink p-6 text-center text-ink-3 shadow-ticket"
-              style={{
-                backgroundImage:
-                  "repeating-linear-gradient(135deg,rgba(36,33,27,.045) 0 16px,transparent 16px 32px),linear-gradient(160deg,#E7DCC5,#dccfb2)",
-              }}
-            >
-              <span className="flex h-24 w-24 items-center justify-center rounded-full bg-orange text-white">
-                <Icon name="hammer" className="h-[42px] w-[42px]" />
-              </span>
-              <span className="mt-1 font-display text-lg font-bold text-ink">
-                David Baney
-              </span>
-              <span className="text-[11px] uppercase tracking-[0.18em] text-ink-3">
-                Owner &amp; Craftsman
-              </span>
+            <div className="relative aspect-[4/5] rounded-[10px] border-2 border-ink shadow-ticket">
+              <div className="absolute inset-0 overflow-hidden rounded-[8px]">
+                <Image
+                  src="/david-tree.jpg"
+                  alt="David Baney, owner of Forge Handyman Service, holding his drill"
+                  fill
+                  sizes="(max-width: 1024px) 90vw, 420px"
+                  className="object-cover"
+                />
+                <div className="absolute inset-x-0 bottom-0 border-t-2 border-ink bg-card px-4 py-2.5 text-center">
+                  <span className="block font-display text-lg font-bold text-ink">
+                    David Baney
+                  </span>
+                  <span className="block text-[11px] uppercase tracking-[0.18em] text-ink-3">
+                    Owner &amp; Craftsman
+                  </span>
+                </div>
+              </div>
               <span className="absolute -right-4 top-6 flex h-[92px] w-[92px] rotate-[8deg] flex-col items-center justify-center rounded-full border-[3px] border-card bg-orange text-center text-white shadow-[0_8px_20px_rgba(36,33,27,.25)]">
                 <span className="font-display text-3xl font-bold leading-none">
                   40
