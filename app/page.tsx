@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Hero } from "@/components/Hero";
 import { TrustBar } from "@/components/TrustBar";
@@ -49,17 +50,16 @@ export default function HomePage() {
         <div className="container-page section">
           <div className="grid items-center gap-[58px] lg:grid-cols-[0.92fr_1.08fr]">
             <Reveal className="mx-auto w-full max-w-[380px] lg:max-w-none">
-              <div
-                className="relative flex aspect-[4/5] flex-col items-center justify-center gap-3.5 rounded-lg border-2 border-ink text-ink-3 shadow-ticket"
-                style={{
-                  backgroundImage:
-                    "repeating-linear-gradient(135deg,rgba(36,33,27,.045) 0 16px,transparent 16px 32px),linear-gradient(160deg,#E7DCC5,#dccfb2)",
-                }}
-              >
-                <Icon name="hammer" className="h-14 w-14 opacity-50" />
-                <span className="text-[12px] font-bold uppercase tracking-[0.12em]">
-                  David Baney
-                </span>
+              <div className="relative aspect-[4/5] rounded-lg border-2 border-ink shadow-ticket">
+                <div className="absolute inset-0 overflow-hidden rounded-[6px]">
+                  <Image
+                    src="/david-portrait.jpg"
+                    alt="David Baney installing a new outdoor faucet"
+                    fill
+                    sizes="(max-width: 1024px) 90vw, 480px"
+                    className="object-cover"
+                  />
+                </div>
                 {/* 40 Years badge */}
                 <span className="absolute right-2 top-6 flex h-24 w-24 rotate-[8deg] flex-col items-center justify-center rounded-full border-[3px] border-card bg-orange text-center text-white shadow-[0_8px_20px_rgba(36,33,27,.25)] lg:-right-4">
                   <span className="font-display text-3xl font-bold leading-none">

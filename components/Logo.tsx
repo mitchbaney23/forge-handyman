@@ -17,8 +17,8 @@ export function Logo({ variant = "dark" }: LogoProps) {
       <Image
         src="/anvil.png"
         alt=""
-        width={780}
-        height={380}
+        width={923}
+        height={444}
         priority
         sizes="(max-width: 768px) 60px, 72px"
         className={`h-7 w-auto sm:h-8 md:h-10 ${isLight ? "brightness-0 invert" : ""}`}

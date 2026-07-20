@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { BUSINESS } from "@/lib/constants";
 import { Icon } from "@/lib/icons";
@@ -58,17 +59,15 @@ export function Hero() {
               </span>
             </div>
             {/* Photo area */}
-            <div
-              className="flex aspect-[16/10] flex-col items-center justify-center gap-3 border-b-2 border-dashed border-line text-ink-3"
-              style={{
-                backgroundImage:
-                  "repeating-linear-gradient(135deg,rgba(36,33,27,.05) 0 16px,transparent 16px 32px),linear-gradient(160deg,#E7DCC5,#dccfb2)",
-              }}
-            >
-              <Icon name="hammer" className="h-[50px] w-[50px] opacity-50" />
-              <span className="text-[11.5px] font-bold uppercase tracking-[0.12em]">
-                David at work
-              </span>
+            <div className="relative aspect-[16/10] overflow-hidden border-b-2 border-dashed border-line">
+              <Image
+                src="/david-at-work.jpg"
+                alt="David Baney installing a new outdoor faucet"
+                fill
+                priority
+                sizes="(max-width: 1024px) 90vw, 440px"
+                className="object-cover"
+              />
             </div>
             {/* Perforation detail */}
             <div
