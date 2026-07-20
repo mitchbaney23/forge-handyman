@@ -90,8 +90,8 @@ export default function AboutPage() {
             <div className="relative aspect-[4/5] rounded-[10px] border-2 border-ink shadow-ticket">
               <div className="absolute inset-0 overflow-hidden rounded-[8px]">
                 <Image
-                  src="/david-portrait.jpg"
-                  alt="David Baney installing a new outdoor faucet"
+                  src="/david-tree.jpg"
+                  alt="David Baney, owner of Forge Handyman Service, holding his drill"
                   fill
                   sizes="(max-width: 1024px) 90vw, 420px"
                   className="object-cover"

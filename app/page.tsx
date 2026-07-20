@@ -53,8 +53,8 @@ export default function HomePage() {
               <div className="relative aspect-[4/5] rounded-lg border-2 border-ink shadow-ticket">
                 <div className="absolute inset-0 overflow-hidden rounded-[6px]">
                   <Image
-                    src="/david-portrait.jpg"
-                    alt="David Baney installing a new outdoor faucet"
+                    src="/david-wipers.jpg"
+                    alt="David Baney replacing windshield wiper blades"
                     fill
                     sizes="(max-width: 1024px) 90vw, 480px"
                     className="object-cover"

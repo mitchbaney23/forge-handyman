@@ -12,8 +12,12 @@ transparency as black), and `brand-assets/logo/exports/` (incl. new
 photo: Hero work-order ticket (16:10 crop, `david-at-work.jpg`), homepage
 "Why Forge" card, and About hero card (both 4:5 `david-portrait.jpg`; About
 keeps the name/role caption strip + 40-years badge). Verified live in the
-browser on all three spots. One photo so far — the two 4:5 cards share a crop;
-swap in a second photo when Mitch sends more. Also: `.claude/launch.json` got
+browser on all three spots. Mitch then sent two more photos — every spot now
+has its own: hero ticket = faucet 16:10 (`david-at-work.jpg`), homepage
+"Why Forge" = wiper-blade replacement (`david-wipers.jpg`, sits right by the
+Auto Maintenance card), About hero = posed tree portrait w/ drill
+(`david-tree.jpg`, Mitch's pick for "meet David"). The shared
+`david-portrait.jpg` was removed. Also: `.claude/launch.json` got
 `autoPort: true` (port 3000 was held by the talent-agency dev server).
 
 ---
