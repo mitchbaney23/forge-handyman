@@ -1,4 +1,5 @@
-import { getBusinessEmail, escapeHtml, sendGmail } from "@/lib/email/gmail";
+import { escapeHtml, sendGmail } from "@/lib/email/gmail";
+import { getNotificationTo } from "@/lib/email/recipients";
 import type { DigestSections } from "@/lib/automation/lifecycle";
 import type { DriftFinding } from "@/lib/automation/lifecycle";
 import type { JobRow } from "@/lib/data";
@@ -97,7 +98,7 @@ export async function sendOwnerDigestEmail(args: {
   const text = [`Forge daily digest`, ...parts.map((p) => p.text)].join("\n");
 
   await sendGmail({
-    to: getBusinessEmail(),
+    to: getNotificationTo(),
     subject: `Forge digest: ${count} thing${count === 1 ? "" : "s"} need a push`,
     html,
     text,
