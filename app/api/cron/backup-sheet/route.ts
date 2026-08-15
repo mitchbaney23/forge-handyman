@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { sendEmailWithAttachments } from "@/lib/email/attachment";
+import { getNotificationTo } from "@/lib/email/recipients";
 import { logger } from "@/lib/security/logger";
 import { exportAllTabsCsv } from "@/lib/data";
 import { getBackend } from "@/lib/data/backend";
@@ -35,8 +36,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const tabs = await exportAllTabsCsv();
     const totalRows = tabs.reduce((sum, t) => sum + t.rowCount, 0);
-    const businessEmail = process.env.BUSINESS_EMAIL;
-    if (!businessEmail) throw new Error("BUSINESS_EMAIL not configured");
+    // Throws if nothing valid is configured — a backup nobody receives is not a
+    // backup, so fail loudly rather than "succeed" into the void.
+    const notifyTo = getNotificationTo();
 
     const dateStamp = startedAt.toISOString().slice(0, 10); // YYYY-MM-DD
     const attachments = tabs.map((t) => ({
@@ -91,7 +93,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         ].join("\n");
 
     await sendEmailWithAttachments({
-      to: businessEmail,
+      to: notifyTo,
       subject,
       bodyText,
       attachments,
@@ -106,7 +108,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       ok: true,
       tabCount: tabs.length,
       totalRows,
-      sentTo: businessEmail,
+      sentTo: notifyTo,
     });
   } catch (err) {
     Sentry.captureException(err, { tags: { route: "cron-backup-sheet" } });

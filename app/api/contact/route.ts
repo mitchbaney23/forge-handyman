@@ -20,6 +20,7 @@ import {
   sendNotificationEmail,
   type ContactSubmission,
 } from '@/lib/google'
+import { getNotificationRecipients } from '@/lib/email/recipients'
 import { buildCancelUrl } from '@/lib/scheduling/cancel-token'
 import {
   getAvailabilityWindows,
@@ -679,6 +680,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   try {
     await sendNotificationEmail(rowWritten ? submission : { ...submission, jobId: '' })
+    // Log where the lead actually went. Routing had been an invisible side
+    // effect of BUSINESS_EMAIL, so a Workspace-side change could silently
+    // redirect every lead with nothing to grep for. Now there is.
+    logger.info(
+      { jobId, recipients: getNotificationRecipients() },
+      'contact-form: lead notification sent',
+    )
   } catch (err) {
     Sentry.captureException(err, {
       tags: { route: 'contact-form', step: 'gmail-send' },

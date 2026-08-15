@@ -5,6 +5,7 @@ import { getStripe } from "@/lib/stripe/client";
 import { getBackend, type DataBackend } from "@/lib/data/backend";
 import { getSupabaseClient } from "@/lib/data/pg/client";
 import { getAuth } from "@/lib/google";
+import { getNotificationRecipients } from "@/lib/email/recipients";
 import { logger } from "@/lib/security/logger";
 
 export const runtime = "nodejs";
@@ -234,6 +235,71 @@ async function checkGoogleCalendar(): Promise<HealthCheck> {
   }
 }
 
+// Telegram dispatch is the channel David actually works off, and every call
+// site is best-effort — a dead bot token or a revoked chat fails silently in
+// the logs and looks identical to "no leads came in". Probe getMe so an outage
+// is visible here instead of being discovered by a missed job.
+async function checkTelegram(): Promise<HealthCheck> {
+  const started = Date.now();
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (process.env.DISPATCH_DISABLED === "true") {
+    return {
+      name: "telegram",
+      status: "skipped",
+      latencyMs: 0,
+      detail: "DISPATCH_DISABLED=true",
+    };
+  }
+  if (!token) {
+    return {
+      name: "telegram",
+      status: "skipped",
+      latencyMs: 0,
+      detail: "TELEGRAM_BOT_TOKEN not set",
+    };
+  }
+  try {
+    const res = await withTimeout(
+      fetch(`https://api.telegram.org/bot${token}/getMe`),
+      TIMEOUT_MS,
+    );
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      result?: { username?: string };
+      description?: string;
+    };
+    if (!res.ok || !data.ok) {
+      return {
+        name: "telegram",
+        status: "fail",
+        latencyMs: Date.now() - started,
+        detail: data.description ?? `HTTP ${res.status}`,
+      };
+    }
+    // A live bot with no chat IDs still can't reach anyone — call that degraded,
+    // not ok, so a half-configured dispatch doesn't read as healthy.
+    const missingChats = ["TELEGRAM_DAVID_CHAT_ID", "TELEGRAM_MITCH_CHAT_ID"].filter(
+      (name) => !process.env[name],
+    );
+    return {
+      name: "telegram",
+      status: missingChats.length > 0 ? "degraded" : "ok",
+      latencyMs: Date.now() - started,
+      detail:
+        missingChats.length > 0
+          ? `@${data.result?.username ?? "?"} alive, but missing: ${missingChats.join(", ")}`
+          : `@${data.result?.username ?? "?"}`,
+    };
+  } catch (err) {
+    return {
+      name: "telegram",
+      status: "fail",
+      latencyMs: Date.now() - started,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 async function checkUpstash(): Promise<HealthCheck> {
   const started = Date.now();
   try {
@@ -259,6 +325,28 @@ async function checkUpstash(): Promise<HealthCheck> {
       name: "upstash-redis",
       status: "fail",
       latencyMs: Date.now() - started,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// Surface the resolved lead-notification recipients. Not a connectivity probe —
+// it answers "where do website submissions actually go?" without a deploy or a
+// test submission, which is exactly the question that was previously unanswerable.
+function checkLeadRouting(): HealthCheck {
+  try {
+    const recipients = getNotificationRecipients();
+    return {
+      name: "lead-routing",
+      status: "ok",
+      latencyMs: 0,
+      detail: recipients.join(", "),
+    };
+  } catch (err) {
+    return {
+      name: "lead-routing",
+      status: "fail",
+      latencyMs: 0,
       detail: err instanceof Error ? err.message : String(err),
     };
   }
@@ -304,6 +392,8 @@ export async function GET(): Promise<NextResponse> {
     checkGoogleCalendar(),
     checkStripe(),
     checkUpstash(),
+    checkTelegram(),
+    Promise.resolve(checkLeadRouting()),
   ]);
 
   const anyFailed = checks.some((c) => c.status === "fail");

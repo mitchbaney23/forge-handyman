@@ -57,7 +57,8 @@ See `.env.example`. Required in production:
 | `GOOGLE_PRIVATE_KEY`             | Service account private key (keep `\n` literals)   |
 | `GOOGLE_CALENDAR_ID`             | Calendar for event creation (usually David's email) |
 | `GOOGLE_SHEET_ID`                | Spreadsheet ID of the CRM sheet                    |
-| `BUSINESS_EMAIL`                 | Notification destination — `david@forgehandyman.com` |
+| `BUSINESS_EMAIL`                 | Sending identity — the Workspace mailbox the service account impersonates (From / Reply-To / delegation subject). **Not** the notification destination. |
+| `NOTIFICATION_EMAILS`            | Who receives leads, the daily digest, and the nightly backup. Comma-separated; unset falls back to `BUSINESS_EMAIL`. Verify the live value at `/api/health` → `lead-routing`. |
 | `NEXT_PUBLIC_DEV_MODE`           | `true` for local dev (skips Google API calls)      |
 | `NEXT_PUBLIC_SITE_URL`           | Canonical site URL — used in metadata + sitemap    |
 | `GOOGLE_GEOCODING_API_KEY`       | Geocoding API key — validates submitted addresses  |

@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import type { JWT } from "google-auth-library";
 import { formatEtDay, formatEtTime } from "@/lib/scheduling/time";
+import { getNotificationTo } from "@/lib/email/recipients";
 import { BUSINESS } from "@/lib/constants";
 
 export type ContactSubmission = {
@@ -368,7 +369,10 @@ export async function sendNotificationEmail(data: ContactSubmission): Promise<vo
           : "";
 
   const raw = encodeRfc2822({
-    to: businessEmail,
+    // Recipients are configured independently of the sending identity — see
+    // lib/email/recipients.ts. Sending As stays businessEmail (that's the
+    // impersonated mailbox); who gets told about the lead is NOTIFICATION_EMAILS.
+    to: getNotificationTo(),
     from: businessEmail,
     replyTo: data.email || businessEmail,
     subject: `${ordinalPrefix}New lead: ${firstName} — ${data.serviceType}${cityFragment}`,
