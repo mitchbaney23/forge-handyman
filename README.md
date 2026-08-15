@@ -69,7 +69,8 @@ See `.env.example`. Required in production:
 ## Google Workspace Setup
 
 The `/api/contact` route authenticates with a Google service account using
-**domain-wide delegation** so it can send mail *as* `david@forgehandyman.com`.
+**domain-wide delegation** so it can send mail *as* `BUSINESS_EMAIL`
+(`admin@forgehandyman.com` in production).
 
 ### 1. Google Cloud project
 
@@ -111,9 +112,9 @@ The `/api/contact` route authenticates with a Google service account using
 
 ### 5. Calendar
 
-The service account acts on behalf of `david@forgehandyman.com` (via
-delegation), so no extra sharing is needed — events are created on David's
-primary calendar. Set `GOOGLE_CALENDAR_ID=david@forgehandyman.com`.
+The service account acts on behalf of `BUSINESS_EMAIL` (via delegation), so no
+extra sharing is needed — events are created on that mailbox's primary
+calendar. Production uses `GOOGLE_CALENDAR_ID=admin@forgehandyman.com`.
 
 ### 6. Geocoding API key (service-area validation)
 

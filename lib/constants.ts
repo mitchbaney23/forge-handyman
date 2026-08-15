@@ -3,8 +3,12 @@ export const BUSINESS = {
   tagline: "Honest Work. Built to Last.",
   phone: "(919) 275-2823",
   phoneHref: "tel:+19192752823",
-  email: "david@forgehandyman.com",
-  emailHref: "mailto:david@forgehandyman.com",
+  // The public-facing address for the whole site — header, footer, contact
+  // page, privacy/terms, and the JSON-LD. Kept as one constant so it can never
+  // drift between surfaces. Matches BUSINESS_EMAIL, the mailbox the site also
+  // sends mail as, so replies land where notifications do.
+  email: "admin@forgehandyman.com",
+  emailHref: "mailto:admin@forgehandyman.com",
   owner: "David Baney",
   manager: "Mitch Baney",
   city: "Garner",
