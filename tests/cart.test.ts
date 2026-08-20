@@ -11,11 +11,7 @@ import {
   estimateCentsFromDescription,
   type Cart,
 } from '@/lib/cart'
-import {
-  PRICE_CALIBRATION,
-  SERVICE_MENU,
-  SERVICE_PACKAGES,
-} from '@/lib/constants'
+import { SERVICE_MENU, SERVICE_PACKAGES } from '@/lib/constants'
 import { familyCents } from '@/lib/family-pricing'
 
 // Pure unit tests for the cart logic. No mocks — the cart reads SERVICE_MENU /
@@ -606,24 +602,10 @@ describe('pricing invariants (flag violations for Mitch — never silently adjus
     }
   })
 
-  // Wage floor: every bundle must clear $85/hr internal. estimatedMinutes is
-  // the SCHEDULING duration at David's pace, which already includes the 1.3×
-  // pace factor over book time — so divide it back out to get billable-book
-  // hours. (The handoff's literal formula multiplied by 1.3 instead; that
-  // floor would sit ABOVE the à-la-carte ceiling asserted in the test above,
-  // i.e. no price could satisfy both — see the PR notes flagged for Mitch.)
-  it('every bundle clears the internal hourly floor at book-time equivalent', () => {
-    const { internalHourlyCents, paceFactor } = PRICE_CALIBRATION
-    for (const pkg of SERVICE_PACKAGES) {
-      const bookMinutes = pkg.estimatedMinutes / paceFactor
-      const floorCents = Math.round((internalHourlyCents * bookMinutes) / 60)
-      expect(
-        pkg.priceCents,
-        `#${pkg.number} ${pkg.name} ($${pkg.priceCents / 100}) must clear the ` +
-          `internal floor ($${(floorCents / 100).toFixed(2)})`,
-      ).toBeGreaterThanOrEqual(floorCents)
-    }
-  })
+  // There is deliberately NO wage-floor invariant: Forge is a new business
+  // and prices must sit at or below competitors' (Mitch, 2026-08-20) — the
+  // only hard rule is the ceiling above, which keeps the customer-facing
+  // "bundles beat à la carte" promise true.
 
   it('no package renders hours in its customer-facing fields', () => {
     for (const pkg of SERVICE_PACKAGES) {

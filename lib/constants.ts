@@ -129,15 +129,11 @@ export const PRICING = {
   minimumCharge: 95,
 } as const;
 
-// INTERNAL calibration only — never render any of this to customers. Posted
-// prices assume ~1.3× book minutes (David works deliberately) at $85–90/hr
-// internal. `minutes` on menu items is book time; actual-time tracking and
-// quarterly re-tuning is a later phase, so keep these fields even though
-// nothing customer-facing reads them.
-export const PRICE_CALIBRATION = {
-  internalHourlyCents: 8500,
-  paceFactor: 1.3,
-} as const;
+// Pricing stance: Forge is a new business — posted prices must sit at or
+// below local competitors', never above (Mitch, 2026-08-20). `minutes` on
+// menu items is the internal time estimate that drives scheduling; actual-
+// time tracking and re-tuning is a later phase, so keep those fields even
+// though nothing customer-facing reads them.
 
 // The add-on pricing engine's knobs. Every item under $200 gets an add-on
 // price: full price minus the $30 embedded trip credit, rounded DOWN to the
@@ -160,8 +156,8 @@ export type ServicePackage = {
   // How many small fixes the bundle covers. null = #3, the quote-first
   // "whole list" product (no fixed count — quoted flat from photos).
   itemCount: number | null;
-  // INTERNAL scheduling duration (David's pace, ~1.3× book time). Feeds the
-  // slot picker only — never render it to the customer.
+  // INTERNAL scheduling duration. Feeds the slot picker only — never render
+  // it to the customer.
   estimatedMinutes: number;
   price: string;
   priceCents: number;
@@ -215,8 +211,8 @@ export const SERVICE_PACKAGES: ServicePackage[] = [
 //    floor $45). null on $200+ items — they always charge full price.
 //  - `packageEligible` — counts toward the item-count bundles ("small fixes":
 //    full price ≤ $135, add-on-only sections excluded).
-//  - `minutes`  — book time (internal; drives scheduling + calibration, see
-//    PRICE_CALIBRATION — never render as pricing).
+//  - `minutes`  — internal time estimate; drives scheduling and future
+//    calibration — never render as pricing.
 export type MenuItem = {
   id: string;
   name: string;
