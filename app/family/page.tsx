@@ -6,8 +6,56 @@ import {
   FAMILY_DISCOUNT_LABEL,
   FAMILY_MENU,
   FAMILY_PACKAGES,
+  type FamilyMenuItem,
+  type FamilyMenuSection,
 } from "@/lib/family-pricing";
+import { groupMenuBySize, MENU_TIERS } from "@/lib/constants";
 import { Icon, type IconName } from "@/lib/icons";
+
+// One family-priced menu row: base struck through, family price in orange,
+// family add-on price underneath when the item has one.
+function FamilyItemRow({ item }: { item: FamilyMenuItem }) {
+  return (
+    <li className="flex items-end gap-2 border-b border-dashed border-line py-3 last:border-b-0">
+      <span className="text-[15.5px] leading-tight text-ink">{item.name}</span>
+      <span
+        className="mb-[5px] flex-1 border-b border-dotted border-line"
+        aria-hidden="true"
+      />
+      <span className="text-[13px] leading-tight text-ink-3 line-through">
+        {item.basePrice}
+      </span>
+      <span className="text-right leading-tight">
+        <span className="font-display text-[17px] font-bold text-orange">
+          {item.price}
+        </span>
+        {item.addOnCents != null && item.addOnCents !== item.priceCents && (
+          <span className="block text-[12.5px] text-ink-3">
+            add another for {item.addOnPrice}
+          </span>
+        )}
+      </span>
+    </li>
+  );
+}
+
+function FamilySubsection({ section }: { section: FamilyMenuSection }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2.5 border-b border-line pb-2">
+        <div className="flex h-[32px] w-[32px] flex-none items-center justify-center rounded-md bg-orange/[0.12] text-orange">
+          <Icon name={section.icon as IconName} className="h-[18px] w-[18px]" />
+        </div>
+        <h3 className="font-display text-[18px] font-bold">{section.category}</h3>
+      </div>
+      <ul className="mt-1">
+        {section.items.map((item) => (
+          <FamilyItemRow key={item.id} item={item} />
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export const metadata: Metadata = {
   title: "Forge Family Pricing — Friends & Family Rates",
@@ -62,52 +110,66 @@ export default function FamilyPage() {
             </div>
           </Reveal>
 
-          {/* À la carte menu — family priced */}
-          {FAMILY_MENU.map((section) => (
-            <Reveal key={section.category}>
-              <div className="flex items-center gap-3 border-b-2 border-ink pb-4">
-                <div className="flex h-[44px] w-[44px] flex-none items-center justify-center rounded-lg bg-orange text-white">
-                  <Icon
-                    name={section.icon as IconName}
-                    className="h-[24px] w-[24px]"
-                  />
-                </div>
-                <h2 className="font-display text-[clamp(22px,3vw,30px)] font-bold">
-                  {section.category}
-                </h2>
-              </div>
-              <ul className="mt-4">
-                {section.items.map((item) => (
-                  <li
-                    key={item.name}
-                    className="flex items-end gap-2 border-b border-dashed border-line py-3 last:border-b-0"
-                  >
-                    <span className="text-[15.5px] leading-tight text-ink">
-                      {item.name}
-                    </span>
-                    <span
-                      className="mb-[5px] flex-1 border-b border-dotted border-line"
-                      aria-hidden="true"
-                    />
-                    <span className="text-[13px] leading-tight text-ink-3 line-through">
-                      {item.basePrice}
-                    </span>
-                    <span className="text-right leading-tight">
-                      <span className="font-display text-[17px] font-bold text-orange">
-                        {item.price}
-                      </span>
-                      {item.addOnCents != null &&
-                        item.addOnCents !== item.priceCents && (
-                          <span className="block text-[12.5px] text-ink-3">
-                            add another for {item.addOnPrice}
-                          </span>
-                        )}
-                    </span>
-                  </li>
+          {/* À la carte menu — family priced, same Small/Big tiers as the
+              public menu so the bundle correlation reads identically. */}
+          {(() => {
+            const { small, big, addOn } = groupMenuBySize(FAMILY_MENU);
+            return (
+              <>
+                <Reveal>
+                  <div className="border-b-2 border-ink pb-4">
+                    <h2 className="font-display text-[clamp(24px,3vw,32px)] font-bold">
+                      {MENU_TIERS.small.title}
+                    </h2>
+                    <p className="mt-1 max-w-[64ch] text-[14.5px] text-ink-2">
+                      {MENU_TIERS.small.note}
+                    </p>
+                  </div>
+                  <div className="mt-6 space-y-8">
+                    {small.map((section) => (
+                      <FamilySubsection key={section.category} section={section} />
+                    ))}
+                  </div>
+                </Reveal>
+
+                <Reveal>
+                  <div className="border-b-2 border-ink pb-4">
+                    <h2 className="font-display text-[clamp(24px,3vw,32px)] font-bold">
+                      {MENU_TIERS.big.title}
+                    </h2>
+                    <p className="mt-1 max-w-[64ch] text-[14.5px] text-ink-2">
+                      {MENU_TIERS.big.note}
+                    </p>
+                  </div>
+                  <div className="mt-6 space-y-8">
+                    {big.map((section) => (
+                      <FamilySubsection key={section.category} section={section} />
+                    ))}
+                  </div>
+                </Reveal>
+
+                {addOn.map((section) => (
+                  <Reveal key={section.category}>
+                    <div className="border-b-2 border-ink pb-4">
+                      <h2 className="font-display text-[clamp(24px,3vw,32px)] font-bold">
+                        {section.category}
+                      </h2>
+                      {section.note && (
+                        <p className="mt-1 max-w-[64ch] text-[14.5px] text-ink-2">
+                          {section.note}
+                        </p>
+                      )}
+                    </div>
+                    <ul className="mt-4">
+                      {section.items.map((item) => (
+                        <FamilyItemRow key={item.id} item={item} />
+                      ))}
+                    </ul>
+                  </Reveal>
                 ))}
-              </ul>
-            </Reveal>
-          ))}
+              </>
+            );
+          })()}
 
           <p className="text-center text-[14px] text-ink-3">
             $95 minimum per visit · oversized jobs quoted on site.

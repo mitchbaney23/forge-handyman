@@ -11,7 +11,7 @@ import {
   estimateCentsFromDescription,
   type Cart,
 } from '@/lib/cart'
-import { SERVICE_MENU, SERVICE_PACKAGES } from '@/lib/constants'
+import { groupMenuBySize, SERVICE_MENU, SERVICE_PACKAGES } from '@/lib/constants'
 import { familyCents } from '@/lib/family-pricing'
 
 // Pure unit tests for the cart logic. No mocks — the cart reads SERVICE_MENU /
@@ -57,6 +57,38 @@ describe('menu add-on pricing (derived in constants)', () => {
     expect(menuItem('light-fixture').packageEligible).toBe(true)
     expect(menuItem('ceiling-fan').packageEligible).toBe(true)
     expect(menuItem('faucet-replace').packageEligible).toBe(false) // $175 > $135
+  })
+})
+
+describe('groupMenuBySize (the Small Fixes / Big Fixes menu tiers)', () => {
+  const { small, big, addOn } = groupMenuBySize(SERVICE_MENU)
+
+  it('the Small Fixes tier is EXACTLY the package-eligible set (bundle correlation)', () => {
+    const smallIds = small.flatMap((s) => s.items.map((i) => i.id)).sort()
+    const eligibleIds = SERVICE_MENU.flatMap((s) => s.items)
+      .filter((i) => i.packageEligible)
+      .map((i) => i.id)
+      .sort()
+    expect(smallIds).toEqual(eligibleIds)
+    expect(small.every((s) => s.items.every((i) => i.packageEligible))).toBe(true)
+  })
+
+  it('the Big Fixes tier holds every non-eligible, non-add-on item', () => {
+    const bigIds = big.flatMap((s) => s.items.map((i) => i.id))
+    expect(bigIds).toContain('faucet-replace') // $175 — add-on price, not bundle-eligible
+    expect(bigIds).toContain('toilet-install')
+    expect(bigIds).toContain('room-walls')
+    expect(big.every((s) => s.items.every((i) => !i.packageEligible))).toBe(true)
+  })
+
+  it('add-on-only sections pass through whole, and nothing is lost or duplicated', () => {
+    expect(addOn).toHaveLength(1)
+    expect(addOn[0].category).toBe('Auto Maintenance')
+    const allIds = [...small, ...big, ...addOn]
+      .flatMap((s) => s.items.map((i) => i.id))
+      .sort()
+    const menuIds = SERVICE_MENU.flatMap((s) => s.items.map((i) => i.id)).sort()
+    expect(allIds).toEqual(menuIds)
   })
 })
 

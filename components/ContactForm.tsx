@@ -4,6 +4,8 @@ import Script from "next/script";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   BUSINESS,
+  groupMenuBySize,
+  MENU_TIERS,
   PROPERTY_TYPES,
   REFERRAL_SOURCES,
   SERVICE_MENU,
@@ -1134,84 +1136,130 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
                   </div>
                 </div>
 
-                {/* À-la-carte menu — pick individual jobs. */}
-                <div className="space-y-3 border-t-2 border-dashed border-line pt-4">
+                {/* À-la-carte menu — same Small/Big tiers as /services so
+                    "any 3 from the Small Fixes list" points at a visible list. */}
+                <div className="space-y-4 border-t-2 border-dashed border-line pt-4">
                   <p className="text-[13px] font-bold uppercase tracking-[0.1em] text-ink-3">
                     Or pick individual jobs
                   </p>
-                  {SERVICE_MENU.map((section) => (
-                    <div key={section.category}>
-                      <div className="mb-1.5 flex items-center gap-2">
-                        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-paper-2 text-ink-2">
-                          <Icon
-                            name={SECTION_ICONS[section.icon] ?? "hammer"}
-                            className="h-4 w-4"
-                          />
-                        </span>
-                        <span className="text-[13.5px] font-bold text-ink">
-                          {section.category}
-                        </span>
-                      </div>
-                      {section.note && (
-                        <p className="mb-2 text-[12px] italic leading-snug text-ink-3">
-                          {section.note}
-                        </p>
-                      )}
-                      <div className="space-y-2">
-                        {section.items.map((item) => {
-                          const isSel = state.cart.items.some(
-                            (it) => it.id === item.id,
-                          );
-                          return (
-                            <button
-                              key={item.id}
-                              type="button"
-                              aria-pressed={isSel}
-                              onClick={() => toggleItem(item.id)}
-                              className={`flex w-full items-center gap-3 rounded-[7px] border-2 px-3.5 py-2.5 text-left text-sm transition-colors ${
-                                isSel
-                                  ? "border-orange bg-orange/[0.07] text-ink"
-                                  : "border-line bg-white text-ink-2 hover:border-ink-3"
-                              }`}
-                            >
-                              <span
-                                aria-hidden="true"
-                                className={`flex h-5 w-5 flex-none items-center justify-center rounded-[5px] border-2 ${
+                  {(() => {
+                    const { small, big, addOn } = groupMenuBySize(SERVICE_MENU);
+                    const renderSection = (
+                      section: (typeof small)[number],
+                      opts?: { hideHeader?: boolean },
+                    ) => (
+                      <div key={section.category}>
+                        {!opts?.hideHeader && (
+                          <div className="mb-1.5 flex items-center gap-2">
+                            <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-paper-2 text-ink-2">
+                              <Icon
+                                name={SECTION_ICONS[section.icon] ?? "hammer"}
+                                className="h-4 w-4"
+                              />
+                            </span>
+                            <span className="text-[13.5px] font-bold text-ink">
+                              {section.category}
+                            </span>
+                          </div>
+                        )}
+                        <div className="space-y-2">
+                          {section.items.map((item) => {
+                            const isSel = state.cart.items.some(
+                              (it) => it.id === item.id,
+                            );
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                aria-pressed={isSel}
+                                onClick={() => toggleItem(item.id)}
+                                className={`flex w-full items-center gap-3 rounded-[7px] border-2 px-3.5 py-2.5 text-left text-sm transition-colors ${
                                   isSel
-                                    ? "border-orange bg-orange text-white"
-                                    : "border-line bg-white"
+                                    ? "border-orange bg-orange/[0.07] text-ink"
+                                    : "border-line bg-white text-ink-2 hover:border-ink-3"
                                 }`}
                               >
-                                {isSel && (
-                                  <Icon name="check" className="h-3 w-3" />
-                                )}
-                              </span>
-                              <span className="min-w-0 flex-1 font-semibold">
-                                {item.name}
-                              </span>
-                              <span className="flex-none text-right">
-                                <span className="block font-bold text-ink">
-                                  {renderPrice(item.price, item.priceCents)}
-                                </span>
-                                {item.addOnCents != null &&
-                                  item.addOnCents !== item.priceCents && (
-                                    <span className="block text-[11.5px] font-medium text-ink-3">
-                                      add another{" "}
-                                      {family
-                                        ? familyPriceLabel(
-                                            item.addOnPrice!,
-                                            item.addOnCents,
-                                          )
-                                        : item.addOnPrice}
-                                    </span>
+                                <span
+                                  aria-hidden="true"
+                                  className={`flex h-5 w-5 flex-none items-center justify-center rounded-[5px] border-2 ${
+                                    isSel
+                                      ? "border-orange bg-orange text-white"
+                                      : "border-line bg-white"
+                                  }`}
+                                >
+                                  {isSel && (
+                                    <Icon name="check" className="h-3 w-3" />
                                   )}
-                              </span>
-                            </button>
-                          );
-                        })}
+                                </span>
+                                <span className="min-w-0 flex-1 font-semibold">
+                                  {item.name}
+                                </span>
+                                <span className="flex-none text-right">
+                                  <span className="block font-bold text-ink">
+                                    {renderPrice(item.price, item.priceCents)}
+                                  </span>
+                                  {item.addOnCents != null &&
+                                    item.addOnCents !== item.priceCents && (
+                                      <span className="block text-[11.5px] font-medium text-ink-3">
+                                        add another{" "}
+                                        {family
+                                          ? familyPriceLabel(
+                                              item.addOnPrice!,
+                                              item.addOnCents,
+                                            )
+                                          : item.addOnPrice}
+                                      </span>
+                                    )}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                    return (
+                      <>
+                        <div className="rounded-[7px] border-2 border-line bg-paper-2/40 p-3">
+                          <p className="text-[13.5px] font-bold text-ink">
+                            {MENU_TIERS.small.title}
+                          </p>
+                          <p className="mb-2.5 text-[12px] leading-snug text-ink-3">
+                            {MENU_TIERS.small.note}
+                          </p>
+                          <div className="space-y-3">
+                            {small.map((s) => renderSection(s))}
+                          </div>
+                        </div>
+                        <div className="rounded-[7px] border-2 border-line bg-paper-2/40 p-3">
+                          <p className="text-[13.5px] font-bold text-ink">
+                            {MENU_TIERS.big.title}
+                          </p>
+                          <p className="mb-2.5 text-[12px] leading-snug text-ink-3">
+                            {MENU_TIERS.big.note}
+                          </p>
+                          <div className="space-y-3">
+                            {big.map((s) => renderSection(s))}
+                          </div>
+                        </div>
+                        {addOn.map((section) => (
+                          <div
+                            key={section.category}
+                            className="rounded-[7px] border-2 border-line bg-paper-2/40 p-3"
+                          >
+                            <p className="text-[13.5px] font-bold text-ink">
+                              {section.category}
+                            </p>
+                            {section.note && (
+                              <p className="mb-2.5 text-[12px] leading-snug text-ink-3">
+                                {section.note}
+                              </p>
+                            )}
+                            {renderSection(section, { hideHeader: true })}
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 

@@ -176,7 +176,7 @@ export const SERVICE_PACKAGES: ServicePackage[] = [
     estimatedMinutes: 150,
     price: "$219",
     priceCents: 21900,
-    scope: "Any 3 small fixes from the menu",
+    scope: "Any 3 from the Small Fixes list",
     blurb: "Three nagging fixes, one visit, one price.",
   },
   {
@@ -186,7 +186,7 @@ export const SERVICE_PACKAGES: ServicePackage[] = [
     estimatedMinutes: 300,
     price: "$399",
     priceCents: 39900,
-    scope: "Any 6 small fixes from the menu",
+    scope: "Any 6 from the Small Fixes list",
     blurb: "The whole sticky-note collection, handled.",
   },
   {
@@ -342,6 +342,45 @@ const RAW_SERVICE_MENU: RawMenuSection[] = [
 ];
 
 export const SERVICE_MENU: MenuSection[] = RAW_SERVICE_MENU.map(withDerivedPricing);
+
+// The menu's customer-facing tiers. "Small Fixes" is EXACTLY the set of
+// package-eligible items, so the menu heading and the bundle scopes ("any 3
+// from the Small Fixes list") stay correlated by construction — regrouping
+// here, not hand-curating, means an item can never drift between the list
+// and the bundles' definition. Generic over the section shape so the
+// family-priced menu regroups the same way.
+export function groupMenuBySize<
+  I extends { packageEligible: boolean },
+  S extends { items: I[]; addOnOnly?: boolean },
+>(menu: S[]): { small: S[]; big: S[]; addOn: S[] } {
+  const small: S[] = [];
+  const big: S[] = [];
+  const addOn: S[] = [];
+  for (const section of menu) {
+    if (section.addOnOnly) {
+      addOn.push(section);
+      continue;
+    }
+    const smallItems = section.items.filter((i) => i.packageEligible);
+    const bigItems = section.items.filter((i) => !i.packageEligible);
+    if (smallItems.length > 0) small.push({ ...section, items: smallItems });
+    if (bigItems.length > 0) big.push({ ...section, items: bigItems });
+  }
+  return { small, big, addOn };
+}
+
+// Tier headings + explainers, shared by /services, /family, and the booking
+// form so the wording never forks.
+export const MENU_TIERS = {
+  small: {
+    title: "Small Fixes",
+    note: "Everything in this list counts toward the #1 and #2 — first fix at full price, each additional one at its add-on price.",
+  },
+  big: {
+    title: "Big Fixes",
+    note: "Project-scale work, priced flat per job. Got a whole list? That's the #3 — send photos, get one number back.",
+  },
+} as const;
 
 export const TRUST_SIGNALS = [
   { icon: "shield", label: "Fully Insured" },
