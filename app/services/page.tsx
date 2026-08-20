@@ -17,9 +17,10 @@ export default function ServicesPage() {
   return (
     <>
       <PageHeader stamp="Service Menu" title="Pick what you need. Know the price.">
-        Flat rates, posted right here — no guessing games and no surprise
-        invoices. The price you see is the price you pay. Bigger or unusual jobs
-        get a free, honest estimate on site.
+        Every price is flat. You know the number before we knock on the door —
+        no clocks, no surprises. Booking one thing? Book it flat. Got a list?
+        Take a number — the bundles below almost always beat booking à la
+        carte.
       </PageHeader>
 
       <section className="bg-paper">
@@ -31,8 +32,8 @@ export default function ServicesPage() {
                 Signature Packages
               </h2>
               <p className="max-w-[46ch] text-[14.5px] text-ink-2">
-                Got a list? Book a block of time and we&rsquo;ll work straight
-                down it — just tell us &ldquo;I&rsquo;ll take the #1.&rdquo;
+                One flat price for the whole list — just tell us
+                &ldquo;I&rsquo;ll take the #1.&rdquo;
               </p>
             </div>
             <div className="mt-8 grid gap-5 md:grid-cols-3">
@@ -50,9 +51,10 @@ export default function ServicesPage() {
                     </span>
                   </div>
                   <h3 className="mt-4 font-display text-xl">{pkg.name}</h3>
-                  <p className="mt-1 text-[14.5px] text-ink-2">
-                    {pkg.hours} hours · {pkg.blurb}
+                  <p className="mt-1 text-[14.5px] font-semibold text-ink">
+                    {pkg.scope}
                   </p>
+                  <p className="mt-1 text-[14.5px] text-ink-2">{pkg.blurb}</p>
                 </div>
               ))}
             </div>
@@ -105,8 +107,16 @@ export default function ServicesPage() {
                       className="mb-[5px] flex-1 border-b border-dotted border-line"
                       aria-hidden="true"
                     />
-                    <span className="font-display text-[17px] font-bold leading-tight text-ink">
-                      {item.price}
+                    <span className="text-right leading-tight">
+                      <span className="font-display text-[17px] font-bold text-ink">
+                        {item.price}
+                      </span>
+                      {item.addOnCents != null &&
+                        item.addOnCents !== item.priceCents && (
+                          <span className="block text-[12.5px] text-ink-3">
+                            add another for {item.addOnPrice}
+                          </span>
+                        )}
                     </span>
                   </li>
                 ))}
@@ -115,8 +125,8 @@ export default function ServicesPage() {
           ))}
 
           <p className="text-center text-[14px] text-ink-3">
-            $95 minimum · free estimates · unusual or oversized jobs quoted on
-            site.
+            $95 minimum · first fix at full price, the rest at add-on prices ·
+            free estimates · unusual or oversized jobs quoted on site.
           </p>
         </div>
       </section>

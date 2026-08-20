@@ -53,9 +53,10 @@ export default function FamilyPage() {
                     </div>
                   </div>
                   <h3 className="mt-4 font-display text-xl">{pkg.name}</h3>
-                  <p className="mt-1 text-[14.5px] text-ink-2">
-                    {pkg.hours} hours · {pkg.blurb}
+                  <p className="mt-1 text-[14.5px] font-semibold text-ink">
+                    {pkg.scope}
                   </p>
+                  <p className="mt-1 text-[14.5px] text-ink-2">{pkg.blurb}</p>
                 </div>
               ))}
             </div>
@@ -91,8 +92,16 @@ export default function FamilyPage() {
                     <span className="text-[13px] leading-tight text-ink-3 line-through">
                       {item.basePrice}
                     </span>
-                    <span className="font-display text-[17px] font-bold leading-tight text-orange">
-                      {item.price}
+                    <span className="text-right leading-tight">
+                      <span className="font-display text-[17px] font-bold text-orange">
+                        {item.price}
+                      </span>
+                      {item.addOnCents != null &&
+                        item.addOnCents !== item.priceCents && (
+                          <span className="block text-[12.5px] text-ink-3">
+                            add another for {item.addOnPrice}
+                          </span>
+                        )}
                     </span>
                   </li>
                 ))}

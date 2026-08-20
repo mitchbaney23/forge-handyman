@@ -123,41 +123,108 @@ export const SERVICES: Service[] = [
   },
 ];
 
-// Flat-rate pricing, derived from an $85/hr target labor rate with a $95
-// minimum (covers the trip + first job). Drives the service menu below.
+// Flat-rate pricing. The $95 minimum is the cheapest full-price item — the
+// first-item-full-price rule enforces it naturally (no separate trip fee).
 export const PRICING = {
-  hourlyRate: 85,
   minimumCharge: 95,
 } as const;
 
-// Numbered "combo" packages — blocks of time for a punch list of jobs. The
-// star of the menu: "I'll take the #1."
+// INTERNAL calibration only — never render any of this to customers. Posted
+// prices assume ~1.3× book minutes (David works deliberately) at $85–90/hr
+// internal. `minutes` on menu items is book time; actual-time tracking and
+// quarterly re-tuning is a later phase, so keep these fields even though
+// nothing customer-facing reads them.
+export const PRICE_CALIBRATION = {
+  internalHourlyCents: 8500,
+  paceFactor: 1.3,
+} as const;
+
+// The add-on pricing engine's knobs. Every item under $200 gets an add-on
+// price: full price minus the $30 embedded trip credit, rounded DOWN to the
+// nearest $5, floor $45. Items at $200+ are project-scale (the trip is a
+// negligible fraction) — they always charge full price.
+export const TRIP_CREDIT_CENTS = 3000;
+export const ADD_ON_FLOOR_CENTS = 4500;
+export const ADD_ON_MAX_FULL_CENTS = 20000;
+
+// Package eligibility: a "small fix" is a menu item with a full price of $135
+// or less (add-on-only sections excluded — see `addOnOnly` below).
+export const SMALL_FIX_MAX_CENTS = 13500;
+
+// Numbered "combo" packages — flat item-count bundles for a punch list of
+// jobs. The star of the menu: "I'll take the #1." Priced in items, never
+// hours: no hour count may ever render customer-facing.
 export type ServicePackage = {
   number: number;
   name: string;
-  hours: number;
+  // How many small fixes the bundle covers. null = #3, the quote-first
+  // "whole list" product (no fixed count — quoted flat from photos).
+  itemCount: number | null;
+  // INTERNAL scheduling duration (David's pace, ~1.3× book time). Feeds the
+  // slot picker only — never render it to the customer.
+  estimatedMinutes: number;
   price: string;
   priceCents: number;
+  scope: string;
   blurb: string;
+  // Quote-first products skip the slot picker: the customer sends the list +
+  // photos and gets one flat number back before anything is scheduled.
+  quoteFirst?: boolean;
 };
 
 export const SERVICE_PACKAGES: ServicePackage[] = [
-  { number: 1, name: "The Honey-Do", hours: 2, price: "$169", priceCents: 16900, blurb: "Knock out the punch list." },
-  { number: 2, name: "The Half-Day", hours: 4, price: "$329", priceCents: 32900, blurb: "Bigger projects, multiple rooms." },
-  { number: 3, name: "The Full Day", hours: 8, price: "$629", priceCents: 62900, blurb: "The whole list, done in a day." },
+  {
+    number: 1,
+    name: "The Honey-Do",
+    itemCount: 3,
+    estimatedMinutes: 150,
+    price: "$219",
+    priceCents: 21900,
+    scope: "Any 3 small fixes from the menu",
+    blurb: "Three nagging fixes, one visit, one price.",
+  },
+  {
+    number: 2,
+    name: "The Punch List",
+    itemCount: 6,
+    estimatedMinutes: 300,
+    price: "$399",
+    priceCents: 39900,
+    scope: "Any 6 small fixes from the menu",
+    blurb: "The whole sticky-note collection, handled.",
+  },
+  {
+    number: 3,
+    name: "The Whole List",
+    itemCount: null,
+    estimatedMinutes: 480,
+    price: "from $649",
+    priceCents: 64900,
+    scope: "Your full punch list, quoted flat from your photos",
+    blurb: "Send the list and the photos — we'll send one number.",
+    quoteFirst: true,
+  },
 ];
 
 // À la carte flat-rate menu, grouped by section.
 //  - `id`       — stable key for cart selection + storage.
 //  - `price`    — display string (a few are "from $X" where scope varies).
 //  - `priceCents` — the numeric flat price for cart math (the floor for "from").
-//  - `minutes`  — typical on-site time, used by the cart to total hours and
-//    nudge toward a package once the list crosses ~2 hours.
+//  - `addOnCents` / `addOnPrice` — the add-on price for every unit after the
+//    cart's most expensive one (full − $30 trip credit, $5-rounded-down,
+//    floor $45). null on $200+ items — they always charge full price.
+//  - `packageEligible` — counts toward the item-count bundles ("small fixes":
+//    full price ≤ $135, add-on-only sections excluded).
+//  - `minutes`  — book time (internal; drives scheduling + calibration, see
+//    PRICE_CALIBRATION — never render as pricing).
 export type MenuItem = {
   id: string;
   name: string;
   price: string;
   priceCents: number;
+  addOnCents: number | null;
+  addOnPrice: string | null;
+  packageEligible: boolean;
   minutes: number;
 };
 export type MenuSection = {
@@ -165,11 +232,48 @@ export type MenuSection = {
   icon: string;
   items: MenuItem[];
   // Optional caption shown under the section heading — used by Auto Maintenance
-  // to flag that its small jobs sit below the $95 trip minimum and bundle best.
+  // to explain that its small jobs ride along with other work.
   note?: string;
+  // Add-on-only sections (Auto Maintenance): items are bookable only alongside
+  // another service, or ≥2 together totaling the $95 minimum. Their posted
+  // prices already behave like add-on prices (addOnCents = priceCents) and
+  // they don't count toward package eligibility.
+  addOnOnly?: boolean;
 };
 
-export const SERVICE_MENU: MenuSection[] = [
+// The raw menu before add-on pricing is derived. Kept separate so the add-on
+// formula stays one function instead of a second hand-maintained price list.
+type RawMenuItem = Omit<MenuItem, "addOnCents" | "addOnPrice" | "packageEligible">;
+type RawMenuSection = Omit<MenuSection, "items"> & { items: RawMenuItem[] };
+
+// add-on = full − $30, rounded down to the nearest $5, floor $45.
+// null for $200+ items (no add-on price — always full).
+function deriveAddOnCents(priceCents: number): number | null {
+  if (priceCents >= ADD_ON_MAX_FULL_CENTS) return null;
+  const discounted = Math.floor((priceCents - TRIP_CREDIT_CENTS) / 500) * 500;
+  return Math.max(discounted, ADD_ON_FLOOR_CENTS);
+}
+
+function withDerivedPricing(section: RawMenuSection): MenuSection {
+  return {
+    ...section,
+    items: section.items.map((item) => {
+      // Add-on-only items are already priced as add-ons — no further discount.
+      const addOnCents = section.addOnOnly
+        ? item.priceCents
+        : deriveAddOnCents(item.priceCents);
+      return {
+        ...item,
+        addOnCents,
+        addOnPrice: addOnCents != null ? `$${addOnCents / 100}` : null,
+        packageEligible:
+          !section.addOnOnly && item.priceCents <= SMALL_FIX_MAX_CENTS,
+      };
+    }),
+  };
+}
+
+const RAW_SERVICE_MENU: RawMenuSection[] = [
   {
     category: "General Repairs",
     icon: "hammer",
@@ -228,7 +332,8 @@ export const SERVICE_MENU: MenuSection[] = [
   {
     category: "Auto Maintenance",
     icon: "car",
-    note: "Quick driveway jobs — bundle a few or add to any visit; the $95 trip minimum still applies.",
+    addOnOnly: true,
+    note: "These ride along with any visit — add them to whatever else David's already fixing, or book two or more together ($95 minimum).",
     items: [
       { id: "wiper-blades", name: "Windshield wiper blades", price: "$45", priceCents: 4500, minutes: 20 },
       { id: "engine-air-filter", name: "Engine air filter replacement", price: "$45", priceCents: 4500, minutes: 20 },
@@ -240,9 +345,7 @@ export const SERVICE_MENU: MenuSection[] = [
   },
 ];
 
-// Package time blocks in minutes, for the cart's "you've got enough for the #1"
-// nudge. Keyed by package number.
-export const PACKAGE_MINUTES: Record<number, number> = { 1: 120, 2: 240, 3: 480 };
+export const SERVICE_MENU: MenuSection[] = RAW_SERVICE_MENU.map(withDerivedPricing);
 
 export const TRUST_SIGNALS = [
   { icon: "shield", label: "Fully Insured" },

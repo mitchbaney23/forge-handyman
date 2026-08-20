@@ -50,8 +50,10 @@ export function familyPriceLabel(baseDisplay: string, baseCents: number): string
 }
 
 // A menu item / package carries its family price in the usual `price` /
-// `priceCents` fields, plus the original (`basePrice` / `baseCents`) so the page
-// can show the strike-through and the savings.
+// `priceCents` fields (add-on prices included — the engine's per-unit prices
+// all get the family discount, same rounding), plus the original
+// (`basePrice` / `baseCents`) so the page can show the strike-through and
+// the savings.
 export type FamilyMenuItem = MenuItem & {
   basePrice: string;
   baseCents: number;
@@ -70,12 +72,16 @@ export const FAMILY_MENU: FamilyMenuSection[] = SERVICE_MENU.map((section) => ({
   ...section,
   items: section.items.map((item) => {
     const cents = familyCents(item.priceCents);
+    const addOnCents =
+      item.addOnCents != null ? familyCents(item.addOnCents) : null;
     return {
       ...item,
       basePrice: item.price,
       baseCents: item.priceCents,
       price: familyDisplay(item.price, cents),
       priceCents: cents,
+      addOnCents,
+      addOnPrice: addOnCents != null ? `$${addOnCents / 100}` : null,
     };
   }),
 }));
@@ -86,7 +92,8 @@ export const FAMILY_PACKAGES: FamilyPackage[] = SERVICE_PACKAGES.map((pkg) => {
     ...pkg,
     basePrice: pkg.price,
     baseCents: pkg.priceCents,
-    price: `$${cents / 100}`,
+    // familyDisplay keeps the "from " prefix on the quote-first #3.
+    price: familyDisplay(pkg.price, cents),
     priceCents: cents,
   };
 });
