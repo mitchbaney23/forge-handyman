@@ -1123,7 +1123,7 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
                           </span>
                           <span className="mt-0.5 text-[13px] font-semibold text-ink-2">
                             {pkg.itemCount != null
-                              ? `${pkg.itemCount} fixes`
+                              ? `up to ${pkg.itemCount} fixes`
                               : "your full list"}{" "}
                             · {renderPrice(pkg.price, pkg.priceCents)}
                           </span>
@@ -1324,7 +1324,7 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
                         </span>
                         <span>
                           {pkg.itemCount != null
-                            ? `${pkg.itemCount} fixes`
+                            ? `up to ${pkg.itemCount} fixes`
                             : "your full list"}{" "}
                           · {renderPrice(pkg.price, pkg.priceCents)}
                         </span>

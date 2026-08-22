@@ -69,10 +69,10 @@ const PACKAGE_BY_NUMBER: Map<number, ServicePackage> = new Map(
   SERVICE_PACKAGES.map((p) => [p.number, p]),
 )
 
-// The smallest bundle's item count — the threshold for the package nudge.
-const MIN_BUNDLE_ITEMS = Math.min(
-  ...SERVICE_PACKAGES.filter((p) => p.itemCount != null).map((p) => p.itemCount!),
-)
+// The package nudge starts at 2 items: bundles are "up to N", so a 2-fix
+// list already fits the #1 (Mitch, 2026-08-20 — the 2-fixture customer
+// should see the #1 offer just like the old 2-hour block).
+const MIN_BUNDLE_ITEMS = 2
 
 // Clamp a qty into 1..10, defaulting to 1 for missing/invalid values.
 function clampQty(qty: number | undefined): number {
@@ -182,7 +182,7 @@ export function cartJobMinutes(cart: Cart): number {
   return cartTotals(cart).minutes
 }
 
-// The package nudge. When a cart holds ≥3 package-eligible small fixes (and no
+// The package nudge. When a cart holds ≥2 package-eligible small fixes (and no
 // package, and nothing a bundle couldn't cover — accepting the nudge swaps the
 // whole list, so a cart with any non-eligible line gets no nudge rather than
 // silently dropping an item), suggest the cheapest bundle that covers the
@@ -249,7 +249,7 @@ export function formatCartSummary(cart: Cart, opts?: { family?: boolean }): stri
 
   if (pkg) {
     // Package-led summary. If à-la-carte items ride along, list them after.
-    const scope = pkg.itemCount != null ? `${pkg.itemCount} fixes` : 'full punch list'
+    const scope = pkg.itemCount != null ? `up to ${pkg.itemCount} fixes` : 'full punch list'
     const header = `PACKAGE: #${pkg.number} ${pkg.name} (${scope}) — ${priceOf(pkg.price, pkg.priceCents)}`
     if (lines.length === 0) return header
     const bullets = lines.map(
@@ -329,7 +329,7 @@ export function estimateCentsFromDescription(
     /Estimated:[^$]*\$(\d+(?:\.\d{2})?)\s*\(final on site\)/,
   )
   if (alc) return dollarsStrToCents(alc[1])
-  // Package summary leads with: "PACKAGE: #N Name (N fixes) — $PRICE"
+  // Package summary leads with: "PACKAGE: #N Name (up to N fixes) — $PRICE"
   // (legacy: "PACKAGE: #N Name (H hrs) — $PRICE"; #3 renders "from $PRICE")
   const pkg = description.match(/PACKAGE:[^$]*\$(\d+(?:\.\d{2})?)/)
   if (pkg) return dollarsStrToCents(pkg[1])

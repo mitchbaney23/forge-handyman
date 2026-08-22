@@ -29,12 +29,12 @@ function menuItem(id: string) {
 }
 
 describe('menu add-on pricing (derived in constants)', () => {
-  it('derives add-on = full − $30, $5-rounded-down, floor $45, for items under $200', () => {
-    expect(menuItem('light-fixture').addOnCents).toBe(8000) // $110 → $80
-    expect(menuItem('door-knob').addOnCents).toBe(6500) // $95 → $65
-    expect(menuItem('recaulk').addOnCents).toBe(9500) // $125 → $95
-    expect(menuItem('ceiling-fan').addOnCents).toBe(10500) // $135 → $105
-    expect(menuItem('faucet-replace').addOnCents).toBe(14500) // $175 → $145
+  it('derives add-on = half the full price, $5-rounded-down, floor $45, for items under $200', () => {
+    expect(menuItem('light-fixture').addOnCents).toBe(5500) // $110 → $55
+    expect(menuItem('door-knob').addOnCents).toBe(4500) // $95 → $47.50 → $45
+    expect(menuItem('recaulk').addOnCents).toBe(6000) // $125 → $62.50 → $60
+    expect(menuItem('ceiling-fan').addOnCents).toBe(6500) // $135 → $67.50 → $65
+    expect(menuItem('faucet-replace').addOnCents).toBe(8500) // $175 → $87.50 → $85
   })
 
   it('gives $200+ items no add-on price — they always charge full', () => {
@@ -149,19 +149,19 @@ describe('resolveCart', () => {
 })
 
 describe('cartTotals (the add-on pricing engine)', () => {
-  it('4× light fixture = full + 3× add-on = $350', () => {
+  it('4× light fixture = full + 3× add-on = $275', () => {
     const cart: Cart = {
       items: [{ id: 'light-fixture', qty: 4 }],
       packageNumber: null,
     }
     const totals = cartTotals(cart)
-    expect(totals.subtotalCents).toBe(35000) // 110 + 3×80
+    expect(totals.subtotalCents).toBe(27500) // 110 + 3×55
     expect(totals.naiveSubtotalCents).toBe(44000) // 4×110 — old full-price sum
     expect(totals.itemCount).toBe(4)
   })
 
   it('charges full price exactly once, on the most expensive unit, in a mixed cart', () => {
-    // ceiling-fan $135/$105 (most expensive) + light-fixture $110/$80 ×2
+    // ceiling-fan $135/$65 (most expensive) + light-fixture $110/$55 ×2
     const cart: Cart = {
       items: [
         { id: 'light-fixture', qty: 2 },
@@ -169,7 +169,7 @@ describe('cartTotals (the add-on pricing engine)', () => {
       ],
       packageNumber: null,
     }
-    expect(cartTotals(cart).subtotalCents).toBe(13500 + 8000 * 2)
+    expect(cartTotals(cart).subtotalCents).toBe(13500 + 5500 * 2)
   })
 
   it('is order-independent (cannot be gamed by reordering)', () => {
@@ -186,11 +186,11 @@ describe('cartTotals (the add-on pricing engine)', () => {
       packageNumber: null,
     }
     expect(cartTotals(forward).subtotalCents).toBe(cartTotals(reversed).subtotalCents)
-    // 135 (fan, full) + 65 (knob add-on) + 95 (recaulk add-on)
-    expect(cartTotals(forward).subtotalCents).toBe(13500 + 6500 + 9500)
+    // 135 (fan, full) + 45 (knob add-on) + 60 (recaulk add-on)
+    expect(cartTotals(forward).subtotalCents).toBe(13500 + 4500 + 6000)
   })
 
-  it('$200+ items never discount and anchor the cart: toilet + door knob = 225 + 65', () => {
+  it('$200+ items never discount and anchor the cart: toilet + door knob = 225 + 45', () => {
     const cart: Cart = {
       items: [
         { id: 'toilet-install', qty: 1 },
@@ -198,7 +198,7 @@ describe('cartTotals (the add-on pricing engine)', () => {
       ],
       packageNumber: null,
     }
-    expect(cartTotals(cart).subtotalCents).toBe(22500 + 6500)
+    expect(cartTotals(cart).subtotalCents).toBe(22500 + 4500)
   })
 
   it('two $200+ items both charge full price', () => {
@@ -232,8 +232,8 @@ describe('cartTotals (the add-on pricing engine)', () => {
     }
     const totals = cartTotals(cart)
     expect(totals.itemCount).toBe(3)
-    // faucet $175 is the anchor: 175 + 145 + 105 (fan add-on)
-    expect(totals.subtotalCents).toBe(17500 + 14500 + 10500)
+    // faucet $175 is the anchor: 175 + 85 + 65 (fan add-on)
+    expect(totals.subtotalCents).toBe(17500 + 8500 + 6500)
     expect(totals.minutes).toBe(fan.minutes + faucet.minutes * 2)
   })
 
@@ -334,7 +334,7 @@ describe('estimateCentsFromDescription (quote pre-fill)', () => {
       items: [{ id: 'light-fixture', qty: 4 }],
       packageNumber: null,
     })
-    expect(estimateCentsFromDescription(summary)).toBe(35000)
+    expect(estimateCentsFromDescription(summary)).toBe(27500)
   })
 
   it('reads the FAMILY total when the summary was family-priced', () => {
@@ -426,12 +426,21 @@ describe('suggestPackage (item-count bundles)', () => {
     expect(suggestion!.number).toBe(2)
   })
 
-  it('returns null under 3 eligible items', () => {
+  it('offers the #1 at 2 fixes — bundles are "up to N", like the old 2-hour block', () => {
+    // 2 fixtures = $165 à la carte; the #1 covers up to 3 for $169 (room for 1 more).
     const cart: Cart = {
-      items: [{ id: 'ceiling-fan', qty: 2 }],
+      items: [{ id: 'light-fixture', qty: 2 }],
       packageNumber: null,
     }
-    expect(suggestPackage(cart)).toBeNull()
+    const suggestion = suggestPackage(cart)
+    expect(suggestion).not.toBeNull()
+    expect(suggestion!.number).toBe(1)
+  })
+
+  it('returns null for a single item', () => {
+    expect(
+      suggestPackage({ items: [{ id: 'ceiling-fan', qty: 1 }], packageNumber: null }),
+    ).toBeNull()
   })
 
   it('does not count big-ticket or auto items toward eligibility (and never drops them)', () => {
@@ -551,7 +560,7 @@ describe('formatCartSummary', () => {
     const pkg = SERVICE_PACKAGES.find((p) => p.number === 1)!
     const summary = formatCartSummary({ items: [], packageNumber: 1 })
     expect(summary).toBe(
-      `PACKAGE: #1 ${pkg.name} (${pkg.itemCount} fixes) — ${pkg.price}`,
+      `PACKAGE: #1 ${pkg.name} (up to ${pkg.itemCount} fixes) — ${pkg.price}`,
     )
   })
 
@@ -567,7 +576,7 @@ describe('formatCartSummary', () => {
       items: [{ id: 'light-fixture', qty: 4 }],
       packageNumber: null,
     })
-    expect(summary).toContain('Estimated: 4 items · $350 (final on site)')
+    expect(summary).toContain('Estimated: 4 items · $275 (final on site)')
   })
 
   it('never renders hour text anywhere in a summary', () => {
@@ -617,6 +626,7 @@ describe('pricing invariants (flag violations for Mitch — never silently adjus
   // Every fixed-count bundle must beat (or match) the à-la-carte alternative:
   // its price may not exceed the engine total of the cheapest possible basket
   // of package-eligible items — the customer's worst-case comparison.
+  // (3 × $95 = $185 ≥ #1 $169; 6 × $95 = $320 ≥ #2 $299.)
   it('every bundle stays at or under the cheapest qualifying à-la-carte basket', () => {
     const eligible = SERVICE_MENU.flatMap((s) => s.items).filter(
       (i) => i.packageEligible,

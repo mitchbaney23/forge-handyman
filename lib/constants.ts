@@ -130,16 +130,19 @@ export const PRICING = {
 } as const;
 
 // Pricing stance: Forge is a new business — posted prices must sit at or
-// below local competitors', never above (Mitch, 2026-08-20). `minutes` on
+// below local competitors', never above, and the flat-rate rework must not
+// cost any customer more than the old menu did (Mitch, 2026-08-20): bundle
+// stickers stay at the old $169 / $329-or-less / from $629. `minutes` on
 // menu items is the internal time estimate that drives scheduling; actual-
 // time tracking and re-tuning is a later phase, so keep those fields even
 // though nothing customer-facing reads them.
 
 // The add-on pricing engine's knobs. Every item under $200 gets an add-on
-// price: full price minus the $30 embedded trip credit, rounded DOWN to the
-// nearest $5, floor $45. Items at $200+ are project-scale (the trip is a
-// negligible fraction) — they always charge full price.
-export const TRIP_CREDIT_CENTS = 3000;
+// price: HALF the full price (Mitch, 2026-08-20 — "add another" should be
+// half, not ~80%), rounded DOWN to the nearest $5, floor $45. Items at $200+
+// are project-scale (the trip is a negligible fraction) — they always charge
+// full price.
+export const ADD_ON_RATE = 0.5;
 export const ADD_ON_FLOOR_CENTS = 4500;
 export const ADD_ON_MAX_FULL_CENTS = 20000;
 
@@ -153,8 +156,9 @@ export const SMALL_FIX_MAX_CENTS = 13500;
 export type ServicePackage = {
   number: number;
   name: string;
-  // How many small fixes the bundle covers. null = #3, the quote-first
-  // "whole list" product (no fixed count — quoted flat from photos).
+  // How many small fixes the bundle covers ("up to N" — a customer with
+  // fewer can still take it). null = #3, the quote-first "whole list"
+  // product (no fixed count — quoted flat from photos).
   itemCount: number | null;
   // INTERNAL scheduling duration. Feeds the slot picker only — never render
   // it to the customer.
@@ -174,9 +178,9 @@ export const SERVICE_PACKAGES: ServicePackage[] = [
     name: "The Honey-Do",
     itemCount: 3,
     estimatedMinutes: 150,
-    price: "$219",
-    priceCents: 21900,
-    scope: "Any 3 from the Small Fixes list",
+    price: "$169",
+    priceCents: 16900,
+    scope: "Up to 3 from the Small Fixes list",
     blurb: "Three nagging fixes, one visit, one price.",
   },
   {
@@ -184,9 +188,9 @@ export const SERVICE_PACKAGES: ServicePackage[] = [
     name: "The Punch List",
     itemCount: 6,
     estimatedMinutes: 300,
-    price: "$399",
-    priceCents: 39900,
-    scope: "Any 6 from the Small Fixes list",
+    price: "$299",
+    priceCents: 29900,
+    scope: "Up to 6 from the Small Fixes list",
     blurb: "The whole sticky-note collection, handled.",
   },
   {
@@ -194,8 +198,8 @@ export const SERVICE_PACKAGES: ServicePackage[] = [
     name: "The Whole List",
     itemCount: null,
     estimatedMinutes: 480,
-    price: "from $649",
-    priceCents: 64900,
+    price: "from $629",
+    priceCents: 62900,
     scope: "Your full punch list, quoted flat from your photos",
     blurb: "Send the list and the photos — we'll send one number.",
     quoteFirst: true,
@@ -207,8 +211,8 @@ export const SERVICE_PACKAGES: ServicePackage[] = [
 //  - `price`    — display string (a few are "from $X" where scope varies).
 //  - `priceCents` — the numeric flat price for cart math (the floor for "from").
 //  - `addOnCents` / `addOnPrice` — the add-on price for every unit after the
-//    cart's most expensive one (full − $30 trip credit, $5-rounded-down,
-//    floor $45). null on $200+ items — they always charge full price.
+//    cart's most expensive one (half the full price, $5-rounded-down, floor
+//    $45). null on $200+ items — they always charge full price.
 //  - `packageEligible` — counts toward the item-count bundles ("small fixes":
 //    full price ≤ $135, add-on-only sections excluded).
 //  - `minutes`  — internal time estimate; drives scheduling and future
@@ -242,11 +246,11 @@ export type MenuSection = {
 type RawMenuItem = Omit<MenuItem, "addOnCents" | "addOnPrice" | "packageEligible">;
 type RawMenuSection = Omit<MenuSection, "items"> & { items: RawMenuItem[] };
 
-// add-on = full − $30, rounded down to the nearest $5, floor $45.
+// add-on = half the full price, rounded down to the nearest $5, floor $45.
 // null for $200+ items (no add-on price — always full).
 function deriveAddOnCents(priceCents: number): number | null {
   if (priceCents >= ADD_ON_MAX_FULL_CENTS) return null;
-  const discounted = Math.floor((priceCents - TRIP_CREDIT_CENTS) / 500) * 500;
+  const discounted = Math.floor((priceCents * ADD_ON_RATE) / 500) * 500;
   return Math.max(discounted, ADD_ON_FLOOR_CENTS);
 }
 
