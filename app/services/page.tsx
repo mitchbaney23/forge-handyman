@@ -3,8 +3,58 @@ import Link from "next/link";
 import { CTABanner } from "@/components/CTABanner";
 import { PageHeader } from "@/components/PageHeader";
 import { Reveal } from "@/components/Reveal";
-import { SERVICE_MENU, SERVICE_PACKAGES } from "@/lib/constants";
+import {
+  groupMenuBySize,
+  MENU_TIERS,
+  SERVICE_MENU,
+  SERVICE_PACKAGES,
+  type MenuItem,
+  type MenuSection,
+} from "@/lib/constants";
 import { Icon, type IconName } from "@/lib/icons";
+
+// One priced menu row — shared by every tier so the dual-price treatment
+// (full · add another for $X) can never drift between sections.
+function MenuItemRow({ item }: { item: MenuItem }) {
+  return (
+    <li className="flex items-end gap-2 border-b border-dashed border-line py-3 last:border-b-0">
+      <span className="text-[15.5px] leading-tight text-ink">{item.name}</span>
+      <span
+        className="mb-[5px] flex-1 border-b border-dotted border-line"
+        aria-hidden="true"
+      />
+      <span className="text-right leading-tight">
+        <span className="font-display text-[17px] font-bold text-ink">
+          {item.price}
+        </span>
+        {item.addOnCents != null && item.addOnCents !== item.priceCents && (
+          <span className="block text-[12.5px] text-ink-3">
+            add another for {item.addOnPrice}
+          </span>
+        )}
+      </span>
+    </li>
+  );
+}
+
+// A subcategory group under a tier heading (icon + category + its items).
+function MenuSubsection({ section }: { section: MenuSection }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2.5 border-b border-line pb-2">
+        <div className="flex h-[32px] w-[32px] flex-none items-center justify-center rounded-md bg-orange/[0.12] text-orange">
+          <Icon name={section.icon as IconName} className="h-[18px] w-[18px]" />
+        </div>
+        <h3 className="font-display text-[18px] font-bold">{section.category}</h3>
+      </div>
+      <ul className="mt-1">
+        {section.items.map((item) => (
+          <MenuItemRow key={item.id} item={item} />
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export const metadata: Metadata = {
   title: "Service Menu — Flat-Rate Handyman Pricing",
@@ -17,9 +67,10 @@ export default function ServicesPage() {
   return (
     <>
       <PageHeader stamp="Service Menu" title="Pick what you need. Know the price.">
-        Flat rates, posted right here — no guessing games and no surprise
-        invoices. The price you see is the price you pay. Bigger or unusual jobs
-        get a free, honest estimate on site.
+        Every price is flat. You know the number before we knock on the door —
+        no clocks, no surprises. Booking one thing? Book it flat. Got a list?
+        Take a number — the bundles below almost always beat booking à la
+        carte.
       </PageHeader>
 
       <section className="bg-paper">
@@ -31,8 +82,8 @@ export default function ServicesPage() {
                 Signature Packages
               </h2>
               <p className="max-w-[46ch] text-[14.5px] text-ink-2">
-                Got a list? Book a block of time and we&rsquo;ll work straight
-                down it — just tell us &ldquo;I&rsquo;ll take the #1.&rdquo;
+                One flat price for the whole list — just tell us
+                &ldquo;I&rsquo;ll take the #1.&rdquo;
               </p>
             </div>
             <div className="mt-8 grid gap-5 md:grid-cols-3">
@@ -50,9 +101,10 @@ export default function ServicesPage() {
                     </span>
                   </div>
                   <h3 className="mt-4 font-display text-xl">{pkg.name}</h3>
-                  <p className="mt-1 text-[14.5px] text-ink-2">
-                    {pkg.hours} hours · {pkg.blurb}
+                  <p className="mt-1 text-[14.5px] font-semibold text-ink">
+                    {pkg.scope}
                   </p>
+                  <p className="mt-1 text-[14.5px] text-ink-2">{pkg.blurb}</p>
                 </div>
               ))}
             </div>
@@ -75,48 +127,70 @@ export default function ServicesPage() {
             </div>
           </Reveal>
 
-          {/* À la carte menu */}
-          {SERVICE_MENU.map((section) => (
-            <Reveal key={section.category}>
-              <div className="flex items-center gap-3 border-b-2 border-ink pb-4">
-                <div className="flex h-[44px] w-[44px] flex-none items-center justify-center rounded-lg bg-orange text-white">
-                  <Icon
-                    name={section.icon as IconName}
-                    className="h-[24px] w-[24px]"
-                  />
-                </div>
-                <h2 className="font-display text-[clamp(22px,3vw,30px)] font-bold">
-                  {section.category}
-                </h2>
-              </div>
-              {section.note && (
-                <p className="mt-3 text-[13.5px] italic text-ink-3">{section.note}</p>
-              )}
-              <ul className="mt-4">
-                {section.items.map((item) => (
-                  <li
-                    key={item.name}
-                    className="flex items-end gap-2 border-b border-dashed border-line py-3 last:border-b-0"
-                  >
-                    <span className="text-[15.5px] leading-tight text-ink">
-                      {item.name}
-                    </span>
-                    <span
-                      className="mb-[5px] flex-1 border-b border-dotted border-line"
-                      aria-hidden="true"
-                    />
-                    <span className="font-display text-[17px] font-bold leading-tight text-ink">
-                      {item.price}
-                    </span>
-                  </li>
+          {/* À la carte menu — tiered so the bundles' scope is visible at a
+              glance: "Small Fixes" is exactly what the #1 and #2 draw from. */}
+          {(() => {
+            const { small, big, addOn } = groupMenuBySize(SERVICE_MENU);
+            return (
+              <>
+                <Reveal>
+                  <div className="border-b-2 border-ink pb-4">
+                    <h2 className="font-display text-[clamp(24px,3vw,32px)] font-bold">
+                      {MENU_TIERS.small.title}
+                    </h2>
+                    <p className="mt-1 max-w-[64ch] text-[14.5px] text-ink-2">
+                      {MENU_TIERS.small.note}
+                    </p>
+                  </div>
+                  <div className="mt-6 space-y-8">
+                    {small.map((section) => (
+                      <MenuSubsection key={section.category} section={section} />
+                    ))}
+                  </div>
+                </Reveal>
+
+                <Reveal>
+                  <div className="border-b-2 border-ink pb-4">
+                    <h2 className="font-display text-[clamp(24px,3vw,32px)] font-bold">
+                      {MENU_TIERS.big.title}
+                    </h2>
+                    <p className="mt-1 max-w-[64ch] text-[14.5px] text-ink-2">
+                      {MENU_TIERS.big.note}
+                    </p>
+                  </div>
+                  <div className="mt-6 space-y-8">
+                    {big.map((section) => (
+                      <MenuSubsection key={section.category} section={section} />
+                    ))}
+                  </div>
+                </Reveal>
+
+                {addOn.map((section) => (
+                  <Reveal key={section.category}>
+                    <div className="border-b-2 border-ink pb-4">
+                      <h2 className="font-display text-[clamp(24px,3vw,32px)] font-bold">
+                        {section.category}
+                      </h2>
+                      {section.note && (
+                        <p className="mt-1 max-w-[64ch] text-[14.5px] text-ink-2">
+                          {section.note}
+                        </p>
+                      )}
+                    </div>
+                    <ul className="mt-4">
+                      {section.items.map((item) => (
+                        <MenuItemRow key={item.id} item={item} />
+                      ))}
+                    </ul>
+                  </Reveal>
                 ))}
-              </ul>
-            </Reveal>
-          ))}
+              </>
+            );
+          })()}
 
           <p className="text-center text-[14px] text-ink-3">
-            $95 minimum · free estimates · unusual or oversized jobs quoted on
-            site.
+            $95 minimum · first fix at full price, the rest at add-on prices ·
+            free estimates · unusual or oversized jobs quoted on site.
           </p>
         </div>
       </section>

@@ -4,6 +4,8 @@ import Script from "next/script";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   BUSINESS,
+  groupMenuBySize,
+  MENU_TIERS,
   PROPERTY_TYPES,
   REFERRAL_SOURCES,
   SERVICE_MENU,
@@ -15,11 +17,12 @@ import {
 import {
   cartJobMinutes,
   cartTotals,
+  cartViolations,
   isCartEmpty,
   suggestPackage,
   type Cart,
 } from "@/lib/cart";
-import { familyPriceLabel, FAMILY_DISCOUNT_LABEL } from "@/lib/family-pricing";
+import { familyCents, familyPriceLabel, FAMILY_DISCOUNT_LABEL } from "@/lib/family-pricing";
 import { formatEtDay, formatEtTime } from "@/lib/scheduling/time";
 import { Icon, type IconName } from "@/lib/icons";
 import { NailProgress } from "@/components/NailProgress";
@@ -239,6 +242,11 @@ function validate(state: FormState): FieldErrors {
   if (!state.notSure && isCartEmpty(state.cart))
     errors.cart =
       "Pick at least one service or a package, or check “I'm not sure.”";
+  // Auto maintenance is add-on only: an auto-only cart must bundle at least
+  // $95 of items; below that it needs another service alongside.
+  if (!state.notSure && cartViolations(state.cart).length > 0)
+    errors.cart =
+      "Auto maintenance rides along with another service — add another fix from the menu, or bundle at least $95 of auto items.";
   // Timing: on the slot-picker path a selected slot is required; on the
   // fallback/callback path (custom job, no fitting slot, or "none of these
   // work") a rough timeframe is required instead. A custom cart is always
@@ -250,12 +258,19 @@ function validate(state: FormState): FieldErrors {
   } else if (!state.selectedSlot) {
     errors.selectedSlot = "Please choose an appointment time.";
   }
-  // Description is required only on the "not sure / custom job" path — there
-  // the text IS the job. When they've picked menu items, the cart already says
+  // Description is required on the "not sure / custom job" path — there the
+  // text IS the job — and on the quote-first #3 package, where the list is
+  // what we quote from. When they've picked menu items, the cart already says
   // what the job is, so notes are optional.
+  const selectedPkg = SERVICE_PACKAGES.find(
+    (p) => p.number === state.cart.packageNumber,
+  );
   if (state.notSure && !state.description.trim())
     errors.description =
       "Since you're not sure, a few words about the job helps us help you.";
+  if (selectedPkg?.quoteFirst && !state.description.trim())
+    errors.description =
+      "Tell us what's on your list — that's what we quote from.";
   // preferredDate is optional — urgency captures the timing.
   return errors;
 }
@@ -1069,10 +1084,10 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
                 }`}
                 aria-disabled={state.notSure}
               >
-                {/* Packages — pick one and we knock out the whole list. */}
+                {/* Packages — flat item-count bundles for a whole list. */}
                 <div>
                   <p className="mb-2 text-[13px] font-bold uppercase tracking-[0.1em] text-ink-3">
-                    Book a block of time
+                    Got a list? Take a number
                   </p>
                   <div className="grid gap-2.5 sm:grid-cols-3">
                     {SERVICE_PACKAGES.map((pkg) => {
@@ -1107,7 +1122,10 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
                             </span>
                           </span>
                           <span className="mt-0.5 text-[13px] font-semibold text-ink-2">
-                            {pkg.hours} hrs · {renderPrice(pkg.price, pkg.priceCents)}
+                            {pkg.itemCount != null
+                              ? `up to ${pkg.itemCount} fixes`
+                              : "your full list"}{" "}
+                            · {renderPrice(pkg.price, pkg.priceCents)}
                           </span>
                           <span className="mt-1 text-[12.5px] text-ink-3">
                             {pkg.blurb}
@@ -1118,78 +1136,149 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
                   </div>
                 </div>
 
-                {/* À-la-carte menu — pick individual jobs. */}
-                <div className="space-y-3 border-t-2 border-dashed border-line pt-4">
+                {/* À-la-carte menu — same Small/Big tiers as /services so
+                    "any 3 from the Small Fixes list" points at a visible list. */}
+                <div className="space-y-4 border-t-2 border-dashed border-line pt-4">
                   <p className="text-[13px] font-bold uppercase tracking-[0.1em] text-ink-3">
                     Or pick individual jobs
                   </p>
-                  {SERVICE_MENU.map((section) => (
-                    <div key={section.category}>
-                      <div className="mb-1.5 flex items-center gap-2">
-                        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-paper-2 text-ink-2">
-                          <Icon
-                            name={SECTION_ICONS[section.icon] ?? "hammer"}
-                            className="h-4 w-4"
-                          />
-                        </span>
-                        <span className="text-[13.5px] font-bold text-ink">
-                          {section.category}
-                        </span>
-                      </div>
-                      {section.note && (
-                        <p className="mb-2 text-[12px] italic leading-snug text-ink-3">
-                          {section.note}
-                        </p>
-                      )}
-                      <div className="space-y-2">
-                        {section.items.map((item) => {
-                          const isSel = state.cart.items.some(
-                            (it) => it.id === item.id,
-                          );
-                          return (
-                            <button
-                              key={item.id}
-                              type="button"
-                              aria-pressed={isSel}
-                              onClick={() => toggleItem(item.id)}
-                              className={`flex w-full items-center gap-3 rounded-[7px] border-2 px-3.5 py-2.5 text-left text-sm transition-colors ${
-                                isSel
-                                  ? "border-orange bg-orange/[0.07] text-ink"
-                                  : "border-line bg-white text-ink-2 hover:border-ink-3"
-                              }`}
-                            >
-                              <span
-                                aria-hidden="true"
-                                className={`flex h-5 w-5 flex-none items-center justify-center rounded-[5px] border-2 ${
+                  {(() => {
+                    const { small, big, addOn } = groupMenuBySize(SERVICE_MENU);
+                    const renderSection = (
+                      section: (typeof small)[number],
+                      opts?: { hideHeader?: boolean },
+                    ) => (
+                      <div key={section.category}>
+                        {!opts?.hideHeader && (
+                          <div className="mb-1.5 flex items-center gap-2">
+                            <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-paper-2 text-ink-2">
+                              <Icon
+                                name={SECTION_ICONS[section.icon] ?? "hammer"}
+                                className="h-4 w-4"
+                              />
+                            </span>
+                            <span className="text-[13.5px] font-bold text-ink">
+                              {section.category}
+                            </span>
+                          </div>
+                        )}
+                        <div className="space-y-2">
+                          {section.items.map((item) => {
+                            const isSel = state.cart.items.some(
+                              (it) => it.id === item.id,
+                            );
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                aria-pressed={isSel}
+                                onClick={() => toggleItem(item.id)}
+                                className={`flex w-full items-center gap-3 rounded-[7px] border-2 px-3.5 py-2.5 text-left text-sm transition-colors ${
                                   isSel
-                                    ? "border-orange bg-orange text-white"
-                                    : "border-line bg-white"
+                                    ? "border-orange bg-orange/[0.07] text-ink"
+                                    : "border-line bg-white text-ink-2 hover:border-ink-3"
                                 }`}
                               >
-                                {isSel && (
-                                  <Icon name="check" className="h-3 w-3" />
-                                )}
-                              </span>
-                              <span className="min-w-0 flex-1 font-semibold">
-                                {item.name}
-                              </span>
-                              <span className="flex-none font-bold text-ink">
-                                {renderPrice(item.price, item.priceCents)}
-                              </span>
-                            </button>
-                          );
-                        })}
+                                <span
+                                  aria-hidden="true"
+                                  className={`flex h-5 w-5 flex-none items-center justify-center rounded-[5px] border-2 ${
+                                    isSel
+                                      ? "border-orange bg-orange text-white"
+                                      : "border-line bg-white"
+                                  }`}
+                                >
+                                  {isSel && (
+                                    <Icon name="check" className="h-3 w-3" />
+                                  )}
+                                </span>
+                                <span className="min-w-0 flex-1 font-semibold">
+                                  {item.name}
+                                </span>
+                                <span className="flex-none text-right">
+                                  <span className="block font-bold text-ink">
+                                    {renderPrice(item.price, item.priceCents)}
+                                  </span>
+                                  {item.addOnCents != null &&
+                                    item.addOnCents !== item.priceCents && (
+                                      <span className="block text-[11.5px] font-medium text-ink-3">
+                                        add another{" "}
+                                        {family
+                                          ? familyPriceLabel(
+                                              item.addOnPrice!,
+                                              item.addOnCents,
+                                            )
+                                          : item.addOnPrice}
+                                      </span>
+                                    )}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                    return (
+                      <>
+                        <div className="rounded-[7px] border-2 border-line bg-paper-2/40 p-3">
+                          <p className="text-[13.5px] font-bold text-ink">
+                            {MENU_TIERS.small.title}
+                          </p>
+                          <p className="mb-2.5 text-[12px] leading-snug text-ink-3">
+                            {MENU_TIERS.small.note}
+                          </p>
+                          <div className="space-y-3">
+                            {small.map((s) => renderSection(s))}
+                          </div>
+                        </div>
+                        <div className="rounded-[7px] border-2 border-line bg-paper-2/40 p-3">
+                          <p className="text-[13.5px] font-bold text-ink">
+                            {MENU_TIERS.big.title}
+                          </p>
+                          <p className="mb-2.5 text-[12px] leading-snug text-ink-3">
+                            {MENU_TIERS.big.note}
+                          </p>
+                          <div className="space-y-3">
+                            {big.map((s) => renderSection(s))}
+                          </div>
+                        </div>
+                        {addOn.map((section) => (
+                          <div
+                            key={section.category}
+                            className="rounded-[7px] border-2 border-line bg-paper-2/40 p-3"
+                          >
+                            <p className="text-[13.5px] font-bold text-ink">
+                              {section.category}
+                            </p>
+                            {section.note && (
+                              <p className="mb-2.5 text-[12px] leading-snug text-ink-3">
+                                {section.note}
+                              </p>
+                            )}
+                            {renderSection(section, { hideHeader: true })}
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
-              {/* Package nudge — gentle upsell when the list crosses ~2 hrs. */}
+              {/* Package nudge — the bundle suggestion once the list hits 3
+                  eligible small fixes. Always the customer's choice, never an
+                  auto-swap. */}
               {!state.notSure &&
                 (() => {
                   const pkg = suggestPackage(state.cart);
-                  if (!pkg) return null;
+                  if (!pkg || pkg.itemCount == null) return null;
+                  const totals = cartTotals(state.cart, { family });
+                  const pkgCents = family
+                    ? familyCents(pkg.priceCents)
+                    : pkg.priceCents;
+                  const pkgLabel = family
+                    ? familyPriceLabel(pkg.price, pkg.priceCents)
+                    : pkg.price;
+                  const savesCents = totals.subtotalCents - pkgCents;
+                  const headroom = pkg.itemCount - totals.itemCount;
                   return (
                     <div className="flex flex-col gap-2.5 rounded-[7px] border-2 border-orange bg-orange/[0.07] p-3.5 sm:flex-row sm:items-center">
                       <Icon
@@ -1197,15 +1286,16 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
                         className="h-5 w-5 flex-none text-orange"
                       />
                       <p className="flex-1 text-[13.5px] text-ink">
-                        You&rsquo;ve got enough for{" "}
+                        Your {totals.itemCount} fixes total $
+                        {totals.subtotalCents / 100} — the{" "}
                         <span className="font-bold">
-                          {pkg.name} (
-                          {family
-                            ? familyPriceLabel(pkg.price, pkg.priceCents)
-                            : pkg.price}
-                          )
+                          #{pkg.number} {pkg.name}
                         </span>{" "}
-                        — switch and we&rsquo;ll knock out the whole list.
+                        covers up to {pkg.itemCount} for{" "}
+                        <span className="font-bold">{pkgLabel}</span>.{" "}
+                        {savesCents > 0
+                          ? `Switch and save $${savesCents / 100}.`
+                          : `Room for ${headroom} more, or keep your list as-is.`}
                       </p>
                       <button
                         type="button"
@@ -1233,30 +1323,37 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
                           #{pkg.number} {pkg.name}
                         </span>
                         <span>
-                          {pkg.hours} hrs · {renderPrice(pkg.price, pkg.priceCents)}
+                          {pkg.itemCount != null
+                            ? `up to ${pkg.itemCount} fixes`
+                            : "your full list"}{" "}
+                          · {renderPrice(pkg.price, pkg.priceCents)}
                         </span>
                       </div>
                     );
                   }
-                  const totals = cartTotals(state.cart);
-                  const famSubtotalCents = family
-                    ? cartTotals(state.cart, { family: true }).subtotalCents
-                    : totals.subtotalCents;
-                  const hrs = Math.round((totals.minutes / 60) * 10) / 10;
+                  // Engine totals: most expensive fix at full price, the rest
+                  // at add-on prices. The struck-through number is what the
+                  // same list would cost booked separately (every unit full).
+                  const totals = cartTotals(state.cart, { family });
+                  const baseTotals = family ? cartTotals(state.cart) : totals;
+                  const struckCents =
+                    family || totals.naiveSubtotalCents > totals.subtotalCents
+                      ? baseTotals.naiveSubtotalCents
+                      : null;
                   return (
                     <div className="flex items-center justify-between rounded-[7px] border-2 border-ink bg-paper-2 px-3.5 py-2.5 text-sm font-bold text-ink">
                       <span>
                         {totals.itemCount} item
-                        {totals.itemCount === 1 ? "" : "s"} · ~{hrs} hrs
+                        {totals.itemCount === 1 ? "" : "s"} · flat price
                       </span>
                       <span>
-                        {family && (
+                        {struckCents != null && struckCents > totals.subtotalCents && (
                           <span className="mr-1.5 font-normal text-ink-3 line-through">
-                            ${totals.subtotalCents / 100}
+                            ${struckCents / 100}
                           </span>
                         )}
                         <span className={family ? "text-orange" : undefined}>
-                          ${famSubtotalCents / 100}
+                          ${totals.subtotalCents / 100}
                         </span>
                       </span>
                     </div>
@@ -1592,7 +1689,11 @@ export function ContactForm({ initialFamily = false }: { initialFamily?: boolean
                     </div>
                   ) : canSchedule ? null : (
                     <p className="text-[12.5px] text-ink-3">
-                      For a custom job we&rsquo;ll call to find a time that works.
+                      {SERVICE_PACKAGES.find(
+                        (p) => p.number === state.cart.packageNumber,
+                      )?.quoteFirst
+                        ? "Big list? You'll get one flat number back from your list and photos — that number doesn't move. Tell us your timeframe and we'll call to schedule."
+                        : "For a custom job we’ll call to find a time that works."}
                     </p>
                   )}
                   <div>
