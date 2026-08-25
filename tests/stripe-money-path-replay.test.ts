@@ -41,6 +41,8 @@ const calls = {
   completionReceipts: [] as Record<string, unknown>[],
   refundsRecorded: [] as Record<string, unknown>[],
   piRetrieves: [] as string[],
+  paymentsRecorded: [] as Record<string, unknown>[],
+  sentryMessages: [] as string[],
 };
 let updateFailuresRemaining = 0;
 
@@ -67,7 +69,10 @@ vi.mock("@/lib/data", () => ({
 }));
 vi.mock("@/lib/data/backend", () => ({ getBackend: () => "postgres" }));
 vi.mock("@/lib/data/pg/payments", () => ({
-  recordPayment: () => Promise.resolve(),
+  recordPayment: (args: Record<string, unknown>) => {
+    calls.paymentsRecorded.push(args);
+    return Promise.resolve();
+  },
   reconcileAttempt: () => Promise.resolve(),
   recordRefund: (args: Record<string, unknown>) => {
     calls.refundsRecorded.push(args);
@@ -106,7 +111,10 @@ vi.mock("@/lib/stripe/client", () => ({
 
 vi.mock("@sentry/nextjs", () => ({
   captureException: () => undefined,
-  captureMessage: () => undefined,
+  captureMessage: (message: string) => {
+    calls.sentryMessages.push(message);
+    return undefined;
+  },
 }));
 vi.mock("@/lib/security/logger", () => ({
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
@@ -166,6 +174,8 @@ beforeEach(() => {
   calls.completionReceipts = [];
   calls.refundsRecorded = [];
   calls.piRetrieves = [];
+  calls.paymentsRecorded = [];
+  calls.sentryMessages = [];
   updateFailuresRemaining = 0;
   piMetadata = {};
   vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://example.upstash.io");
@@ -253,5 +263,76 @@ describe("money-path replay", () => {
     // is idempotent and the review_sent_at stamp blocks a second receipt.
     expect(await deliver(balanceEvent("evt_bal_2"))).toBe(200);
     expect(calls.completionReceipts).toHaveLength(1);
+  });
+
+  // The 2026-08-22 first-job failure class: a deposit checkout that produced
+  // no Stripe Customer left the job with an unusable payment method and a
+  // silently uncollectable balance.
+  it("deposit checkout WITHOUT a customer raises the no-saved-card alarm", async () => {
+    const event = checkoutEvent("evt_dep_guest");
+    (event.data as { object: { customer: string | null } }).object.customer = null;
+    expect(await deliver(event)).toBe(200);
+    expect(jobs.get(JOB_ID)!.status).toBe("Booked"); // booking itself still works
+    expect(
+      calls.sentryMessages.some((m) => m.includes("without a Customer")),
+    ).toBe(true);
+  });
+
+  it("balance link paid -> balance zeroed, deposit fields untouched, paid-in-full receipt", async () => {
+    // A completed job whose balance couldn't be charged at Mark Complete.
+    jobs.set(JOB_ID, {
+      job_id: JOB_ID,
+      email: "jane@example.com",
+      name: "Jane Homeowner",
+      service_type: "TV mounting",
+      status: "Complete",
+      complete_date: "2026-08-22T20:33:02.401Z",
+      balance_owed_cents: "11900",
+      deposit_paid_cents: "5000",
+      stripe_customer_id: "",
+      stripe_payment_method_id: "pm_guest_single_use",
+      review_sent_at: "2026-08-22T20:33:03.106Z",
+    });
+
+    const status = await deliver({
+      id: "evt_bal_link_1",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_bal_link",
+          metadata: { jobId: JOB_ID, purpose: "balance-link" },
+          amount_total: 11900,
+          customer: "cus_new",
+          payment_intent: "pi_bal_link",
+          customer_details: { email: "jane@example.com", name: "Jane" },
+        },
+      },
+    });
+    expect(status).toBe(200);
+
+    const row = jobs.get(JOB_ID)!;
+    expect(row.balance_owed_cents).toBe("0");
+    expect(row.status).toBe("Complete");
+    // The deposit-path bug this guards against: re-Booking the job and
+    // overwriting deposit_paid_cents with the balance amount.
+    expect(row.deposit_paid_cents).toBe("5000");
+    expect(row.complete_date).toBe("2026-08-22T20:33:02.401Z");
+    expect(row.stripe_customer_id).toBe("cus_new");
+    // The card fields update as a pair: with no payment method resolvable in
+    // this delivery, the stale guest PM must not survive next to cus_new.
+    expect(row.stripe_payment_method_id).toBe("");
+
+    expect(calls.depositReceipts).toHaveLength(0);
+    expect(calls.completionReceipts).toHaveLength(1);
+    expect(calls.completionReceipts[0]).toMatchObject({
+      balanceChargedCents: 11900,
+      balanceOwedCents: 0,
+    });
+    expect(calls.paymentsRecorded).toHaveLength(1);
+    expect(calls.paymentsRecorded[0]).toMatchObject({
+      jobId: JOB_ID,
+      purpose: "balance-link",
+      amountCents: 11900,
+    });
   });
 });

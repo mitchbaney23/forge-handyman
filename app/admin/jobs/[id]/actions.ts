@@ -27,7 +27,9 @@ import {
   recordPaymentOutcome,
 } from "@/lib/data/pg/payments";
 import { chargeBalance, type ChargeBalanceResult } from "@/lib/stripe/charges";
+import { createBalancePaymentLink } from "@/lib/stripe/payment-links";
 import { refundCharge } from "@/lib/stripe/refunds";
+import { sendBalanceRequestEmail } from "@/lib/email/balance-request";
 import { sendCompletionReceiptEmail } from "@/lib/email/completion-receipt";
 import { dispatchJobToDavid } from "@/lib/telegram/dispatch";
 
@@ -173,6 +175,7 @@ export async function markComplete(jobId: string): Promise<ActionResult> {
       customerName: found.row.name || "",
       depositPaidCents: Number(found.row.deposit_paid_cents || "0"),
       adminEmail: auth.email,
+      alreadyComplete: false,
     });
   }
 
@@ -304,10 +307,136 @@ async function sendCompletionReceiptSafe(args: {
   }
 }
 
+// Charge an outstanding balance on a job that is ALREADY Complete — the case
+// markComplete can't reach (it refuses completed jobs). Only works when the
+// deposit checkout saved a real card (customer + payment method); otherwise
+// points at sendBalanceLink.
+export async function collectBalance(jobId: string): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdminMoney(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  const found = await findRowByJobId(jobId);
+  if (!found) return { ok: false, error: "Job not found" };
+
+  const balanceCents = Number(found.row.balance_owed_cents || "0");
+  if (balanceCents <= 0) {
+    return { ok: false, error: "No balance owed on this job." };
+  }
+  const customerId = found.row.stripe_customer_id || "";
+  const paymentMethodId = found.row.stripe_payment_method_id || "";
+  if (!customerId || !paymentMethodId) {
+    return {
+      ok: false,
+      error:
+        "No saved card on this job — use “Email payment link” to let the customer pay the balance.",
+    };
+  }
+  if (getBackend() !== "postgres") {
+    return { ok: false, error: "Balance collection needs the postgres backend." };
+  }
+
+  return chargeBalanceGuarded({
+    jobId,
+    balanceCents,
+    customerId,
+    paymentMethodId,
+    serviceType: found.row.service_type || "",
+    customerEmail: found.row.email || "",
+    customerName: found.row.name || "",
+    depositPaidCents: Number(found.row.deposit_paid_cents || "0"),
+    adminEmail: auth.email,
+    alreadyComplete: found.row.status === "Complete",
+  });
+}
+
+// Email the customer a hosted Stripe payment link for the outstanding balance —
+// the recovery path when there's no saved card to charge. The link's
+// 'balance-link' webhook zeros the balance and sends the paid-in-full receipt
+// once the customer pays; customer_creation on the link saves their card for
+// next time.
+export async function sendBalanceLink(jobId: string): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdminMoney(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  const found = await findRowByJobId(jobId);
+  if (!found) return { ok: false, error: "Job not found" };
+
+  const balanceCents = Number(found.row.balance_owed_cents || "0");
+  if (balanceCents <= 0) {
+    return { ok: false, error: "No balance owed on this job." };
+  }
+  const customerEmail = found.row.email || "";
+  if (!customerEmail) {
+    return { ok: false, error: "Job has no customer email to send the link to." };
+  }
+
+  let link: { url: string };
+  try {
+    link = await createBalancePaymentLink(
+      {
+        jobId,
+        customerEmail,
+        amountCents: balanceCents,
+        serviceType: found.row.service_type || "service",
+      },
+      auth.email,
+    );
+  } catch (err) {
+    Sentry.captureException(err, {
+      tags: { route: "admin", action: "sendBalanceLink" },
+      extra: { jobId },
+    });
+    logger.error({ err, jobId }, "admin: createBalancePaymentLink threw");
+    return { ok: false, error: "Couldn't create the payment link — see Sentry." };
+  }
+
+  try {
+    await sendBalanceRequestEmail({
+      toEmail: customerEmail,
+      toName: found.row.name || "",
+      serviceType: found.row.service_type || "service",
+      amountCents: balanceCents,
+      payUrl: link.url,
+    });
+  } catch (err) {
+    Sentry.captureException(err, {
+      tags: { route: "admin", action: "sendBalanceLink" },
+      extra: { jobId },
+    });
+    logger.warn({ err, jobId }, "admin: balance link email failed (link exists)");
+    // The link is live even though the email failed — surface it so it can be
+    // texted to the customer instead of erroring into a dead end.
+    return {
+      ok: true,
+      message: `Payment link created, but the email failed to send — text it to the customer: ${link.url}`,
+    };
+  }
+
+  await appendAuditRow({
+    actor: auth.email,
+    action: "balance.link_emailed",
+    target: jobId,
+    jobId,
+    after: JSON.stringify({ amountCents: balanceCents, url: link.url }),
+  });
+  revalidatePath(`/admin/jobs/${jobId}`);
+  return {
+    ok: true,
+    message: `Payment link for $${(balanceCents / 100).toFixed(2)} emailed to ${customerEmail}. Link: ${link.url}`,
+  };
+}
+
 // The postgres double-charge-guarded balance charge. Claims a payments attempt
 // (atomic gate), charges, records the outcome — and deliberately does NOT write
 // status=Complete (the payment_intent.succeeded webhook owns that, so there's
 // exactly one authoritative completer instead of a markComplete/webhook race).
+// alreadyComplete: the collectBalance path — the job finished earlier without a
+// chargeable card, so keep its original complete_date and audit the charge as a
+// collection, not a completion.
 async function chargeBalanceGuarded(args: {
   jobId: string;
   balanceCents: number;
@@ -318,6 +447,7 @@ async function chargeBalanceGuarded(args: {
   customerName: string;
   depositPaidCents: number;
   adminEmail: string;
+  alreadyComplete: boolean;
 }): Promise<ActionResult> {
   const { jobId, balanceCents, customerId, paymentMethodId } = args;
 
@@ -421,12 +551,12 @@ async function chargeBalanceGuarded(args: {
   }).catch(() => {});
   await updateRowByJobId(jobId, {
     status: "Complete",
-    complete_date: new Date().toISOString(),
+    ...(args.alreadyComplete ? {} : { complete_date: new Date().toISOString() }),
     balance_owed_cents: "0",
   });
   await appendAuditRow({
     actor: args.adminEmail,
-    action: "job.completed",
+    action: args.alreadyComplete ? "balance.collected" : "job.completed",
     target: jobId,
     jobId,
     after: "Complete",
@@ -445,7 +575,9 @@ async function chargeBalanceGuarded(args: {
   revalidatePath("/admin");
   return {
     ok: true,
-    message: `Job marked complete. Balance of $${(balanceCents / 100).toFixed(2)} charged.`,
+    message: args.alreadyComplete
+      ? `Balance of $${(balanceCents / 100).toFixed(2)} charged to the saved card.`
+      : `Job marked complete. Balance of $${(balanceCents / 100).toFixed(2)} charged.`,
   };
 }
 

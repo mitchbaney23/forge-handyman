@@ -138,6 +138,9 @@ export default async function JobDetailPage({
               jobId={decoded}
               currentStatus={row.status}
               balanceOwedCents={balanceCents}
+              hasSavedCard={Boolean(
+                row.stripe_customer_id && row.stripe_payment_method_id,
+              )}
               firstTouchSentAt={row.first_touch_sent_at || ""}
             />
           </Panel>
@@ -189,7 +192,14 @@ export default async function JobDetailPage({
             />
             <Detail
               label="Saved card"
-              value={row.stripe_payment_method_id ? "Yes" : "No"}
+              // A payment-method id from a GUEST checkout (no Stripe Customer)
+              // is single-use — it can't charge the balance, so it doesn't
+              // count as a saved card.
+              value={
+                row.stripe_customer_id && row.stripe_payment_method_id
+                  ? "Yes"
+                  : "No"
+              }
             />
           </Panel>
           <Panel title="Timing">
