@@ -84,6 +84,11 @@ export async function createQuotePaymentLink(
   const paymentLink = await stripe.paymentLinks.create(
     {
       line_items: [{ price: price.id, quantity: 1 }],
+      // Without this, Stripe runs a GUEST checkout: no Customer object is
+      // created, setup_future_usage has nothing to attach the card to, and the
+      // balance charge at Mark Complete fails with an empty stripe_customer_id
+      // (bit us on the first live job, 2026-08-22).
+      customer_creation: 'always',
       payment_intent_data: {
         setup_future_usage: 'off_session',
         metadata: {
@@ -133,6 +138,107 @@ export async function createQuotePaymentLink(
       paymentLinkId: paymentLink.id,
       depositCents: quote.depositCents,
       tier: quote.tier,
+    }),
+  })
+
+  return {
+    url: paymentLink.url,
+    paymentLinkId: paymentLink.id,
+    expiresAt,
+  }
+}
+
+export interface BalanceLinkInput {
+  jobId: string
+  customerEmail: string
+  amountCents: number
+  serviceType: string
+}
+
+// Hosted payment link for an OUTSTANDING balance — the recovery path for jobs
+// whose deposit checkout didn't save a reusable card, so Mark Complete had
+// nothing to charge. The 'balance-link' purpose in metadata is what routes the
+// resulting checkout.session.completed away from the deposit handler (which
+// would otherwise re-Book the job and overwrite deposit_paid_cents).
+export async function createBalancePaymentLink(
+  input: BalanceLinkInput,
+  actor: string,
+): Promise<CreatedPaymentLink> {
+  const stripe = getStripe()
+  const expiresAt = new Date(Date.now() + SEVEN_DAYS_SECONDS * 1000).toISOString()
+  // Same rationale as quoteContentHash: re-clicking "send link" reuses the
+  // existing Stripe objects; a changed amount or recipient makes new ones.
+  const contentHash = createHash('sha256')
+    .update(JSON.stringify({ amountCents: input.amountCents, customerEmail: input.customerEmail }))
+    .digest('hex')
+    .slice(0, 16)
+
+  const product = await stripe.products.create(
+    {
+      name: `Forge Handyman — balance for ${input.serviceType}`,
+      metadata: { jobId: input.jobId, purpose: 'balance-link' },
+    },
+    { idempotencyKey: buildIdempotencyKey('balance-product', input.jobId, contentHash) },
+  )
+
+  const price = await stripe.prices.create(
+    {
+      product: product.id,
+      unit_amount: input.amountCents,
+      currency: 'usd',
+      metadata: { jobId: input.jobId },
+    },
+    { idempotencyKey: buildIdempotencyKey('balance-price', input.jobId, contentHash) },
+  )
+
+  const paymentLink = await stripe.paymentLinks.create(
+    {
+      line_items: [{ price: price.id, quantity: 1 }],
+      customer_creation: 'always',
+      payment_intent_data: {
+        setup_future_usage: 'off_session',
+        metadata: {
+          jobId: input.jobId,
+          customerEmail: input.customerEmail,
+          purpose: 'balance-link',
+        },
+      },
+      metadata: {
+        jobId: input.jobId,
+        customerEmail: input.customerEmail,
+        purpose: 'balance-link',
+      },
+      after_completion: {
+        type: 'hosted_confirmation',
+        hosted_confirmation: {
+          custom_message: 'Payment received — thank you! A receipt is on its way to your email.',
+        },
+      },
+      restrictions: {
+        completed_sessions: { limit: 1 },
+      },
+    },
+    { idempotencyKey: buildIdempotencyKey('balance-link', input.jobId, contentHash) },
+  )
+
+  logger.info(
+    {
+      jobId: input.jobId,
+      paymentLinkId: paymentLink.id,
+      customerEmail: maskEmail(input.customerEmail),
+      amountCents: input.amountCents,
+    },
+    'stripe: balance payment link created',
+  )
+
+  await appendAuditRow({
+    actor,
+    action: 'balance_link.created',
+    target: input.jobId,
+    jobId: input.jobId,
+    after: JSON.stringify({
+      paymentLinkId: paymentLink.id,
+      amountCents: input.amountCents,
     }),
   })
 

@@ -89,6 +89,32 @@ export async function handleCheckoutSessionCompleted(
     }
   }
 
+  // A paid balance link resolves an outstanding balance on an existing job —
+  // routing it through the deposit path below would re-Book the job and
+  // overwrite deposit_paid_cents with the balance amount.
+  if (session.metadata?.purpose === 'balance-link') {
+    await handleBalanceLinkPaid({
+      event,
+      session,
+      jobId,
+      customerId,
+      paymentMethodId,
+      paymentIntentId: depositPaymentIntentId,
+    })
+    return
+  }
+
+  // No Customer means Stripe ran a guest checkout and the card was NOT saved —
+  // Mark Complete will have nothing to charge for the balance. customer_creation
+  // 'always' on the link should make this impossible; alarm if it recurs.
+  if (!customerId) {
+    Sentry.captureMessage('Stripe deposit completed without a Customer — card not saved for balance charge', {
+      level: 'warning',
+      tags: { route: 'stripe-webhook', jobId },
+      extra: { sessionId: session.id, paymentMethodId },
+    })
+  }
+
   const updated = await updateRowByJobId(jobId, {
     status: 'Booked',
     deposit_paid_cents: String(session.amount_total ?? 0),
@@ -165,6 +191,102 @@ export async function handleCheckoutSessionCompleted(
     logger.warn({ err, jobId }, 'stripe: deposit receipt email failed (non-fatal)')
     Sentry.captureException(err, {
       tags: { route: 'stripe-webhook', step: 'deposit-receipt' },
+    })
+  }
+}
+
+// A customer paid an outstanding-balance payment link. Zeros the balance,
+// stores the (now real, thanks to customer_creation: 'always') saved card for
+// future jobs, and sends the paid-in-full receipt. Never touches status/Booked
+// or deposit_paid_cents — the job was already deposited and usually Complete.
+async function handleBalanceLinkPaid(args: {
+  event: Stripe.Event
+  session: Stripe.Checkout.Session
+  jobId: string
+  customerId: string | null
+  paymentMethodId: string | null
+  paymentIntentId: string
+}): Promise<void> {
+  const { event, session, jobId, customerId, paymentMethodId, paymentIntentId } = args
+  const found = await findRowByJobId(jobId)
+  if (!found) {
+    logger.warn({ eventId: event.id, jobId }, 'stripe: balance-link paid for unknown job')
+    return
+  }
+
+  const amountCents = session.amount_total ?? 0
+  await updateRowByJobId(jobId, {
+    balance_owed_cents: '0',
+    status: 'Complete',
+    ...(found.row.complete_date ? {} : { complete_date: new Date().toISOString() }),
+    // Update the stored card only when this checkout produced a Customer, and
+    // always as a PAIR: leaving a stale guest payment method next to a new
+    // customer id would look like a saved card but fail to charge.
+    ...(customerId
+      ? {
+          stripe_customer_id: customerId,
+          stripe_payment_method_id: paymentMethodId ?? '',
+        }
+      : {}),
+  })
+
+  logger.info(
+    {
+      eventId: event.id,
+      jobId,
+      sessionId: session.id,
+      amountCents,
+      maskedEmail: maskEmail(session.customer_details?.email),
+    },
+    'stripe: balance link paid',
+  )
+
+  await appendAuditRow({
+    actor: 'stripe-webhook',
+    action: 'balance.paid_via_link',
+    target: jobId,
+    jobId,
+    after: JSON.stringify({
+      sessionId: session.id,
+      amountCents,
+      stripeCustomerId: customerId,
+    }),
+  })
+
+  await recordPaymentSafe(() =>
+    recordPayment({
+      jobId,
+      purpose: 'balance-link',
+      status: 'succeeded',
+      amountCents,
+      stripePaymentIntentId: paymentIntentId,
+      stripeCustomerId: customerId ?? '',
+    }),
+  )
+
+  // Paid-in-full receipt — for a job whose completion receipt said "balance
+  // still due", this is the corrected record. Best-effort, never 500s the
+  // webhook.
+  try {
+    const toEmail = found.row.email || session.customer_details?.email || ''
+    if (toEmail) {
+      await sendCompletionReceiptEmail({
+        toEmail,
+        toName: found.row.name || session.customer_details?.name || '',
+        serviceType: found.row.service_type || 'service',
+        depositPaidCents: Number(found.row.deposit_paid_cents || '0'),
+        balanceChargedCents: amountCents,
+        balanceOwedCents: 0,
+      })
+      if (!(found.row.review_sent_at || '').trim()) {
+        await updateRowByJobId(jobId, { review_sent_at: new Date().toISOString() })
+      }
+      logger.info({ jobId, maskedEmail: maskEmail(toEmail) }, 'stripe: balance-link receipt sent')
+    }
+  } catch (err) {
+    logger.warn({ err, jobId }, 'stripe: balance-link receipt failed (non-fatal)')
+    Sentry.captureException(err, {
+      tags: { route: 'stripe-webhook', step: 'balance-link-receipt' },
     })
   }
 }

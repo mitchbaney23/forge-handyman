@@ -4,9 +4,11 @@ import { useState, useTransition } from "react";
 import { statusOptionsFor } from "@/lib/jobs/status-machine";
 import type { ActionResult } from "@/lib/admin/guard";
 import {
+  collectBalance,
   dispatchToDavid,
   markComplete,
   recordFirstTouch,
+  sendBalanceLink,
   updateJobStatus,
 } from "./actions";
 
@@ -14,16 +16,19 @@ export function JobActions({
   jobId,
   currentStatus,
   balanceOwedCents,
+  hasSavedCard,
   firstTouchSentAt,
 }: {
   jobId: string;
   currentStatus: string;
   balanceOwedCents: number;
+  hasSavedCard: boolean;
   firstTouchSentAt: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<ActionResult | null>(null);
   const [confirmingComplete, setConfirmingComplete] = useState(false);
+  const [confirmingCollect, setConfirmingCollect] = useState(false);
 
   const handleStatusChange = (newStatus: string) => {
     setFeedback(null);
@@ -54,6 +59,24 @@ export function JobActions({
     setFeedback(null);
     startTransition(async () => {
       const res = await dispatchToDavid(jobId);
+      setFeedback(res);
+    });
+  };
+
+  const handleCollectBalance = () => {
+    setFeedback(null);
+    setConfirmingCollect(false);
+    startTransition(async () => {
+      const res = await collectBalance(jobId);
+      setFeedback(res);
+    });
+  };
+
+  const handleSendBalanceLink = () => {
+    setFeedback(null);
+    setConfirmingCollect(false);
+    startTransition(async () => {
+      const res = await sendBalanceLink(jobId);
       setFeedback(res);
     });
   };
@@ -109,11 +132,23 @@ export function JobActions({
             className="btn-primary"
           >
             Mark Complete
-            {balanceOwedCents > 0 && (
+            {balanceOwedCents > 0 && hasSavedCard && (
               <span className="ml-1 text-xs opacity-90">
                 · charge ${(balanceOwedCents / 100).toFixed(2)}
               </span>
             )}
+          </button>
+        )}
+        {currentStatus === "Complete" && balanceOwedCents > 0 && (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => setConfirmingCollect(true)}
+            className="btn-primary"
+          >
+            {hasSavedCard
+              ? `Collect balance · charge $${(balanceOwedCents / 100).toFixed(2)}`
+              : `Email payment link for $${(balanceOwedCents / 100).toFixed(2)}`}
           </button>
         )}
       </div>
@@ -123,11 +158,18 @@ export function JobActions({
           <div className="font-medium text-amber-900">
             Mark this job complete?
           </div>
-          {balanceOwedCents > 0 && (
+          {balanceOwedCents > 0 && hasSavedCard && (
             <div className="mt-1 text-xs text-amber-900/80">
               This will also charge the saved card for{" "}
               <strong>${(balanceOwedCents / 100).toFixed(2)}</strong>. This
               cannot be undone except via a refund.
+            </div>
+          )}
+          {balanceOwedCents > 0 && !hasSavedCard && (
+            <div className="mt-1 text-xs text-amber-900/80">
+              <strong>No saved card on this job</strong> — completing will NOT
+              charge the ${(balanceOwedCents / 100).toFixed(2)} balance. After
+              completing, use &ldquo;Email payment link&rdquo; to collect it.
             </div>
           )}
           <div className="mt-3 flex gap-2">
@@ -142,6 +184,38 @@ export function JobActions({
             <button
               type="button"
               onClick={() => setConfirmingComplete(false)}
+              className="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {confirmingCollect && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm">
+          <div className="font-medium text-amber-900">
+            {hasSavedCard
+              ? `Charge the saved card $${(balanceOwedCents / 100).toFixed(2)}?`
+              : `Email the customer a payment link for $${(balanceOwedCents / 100).toFixed(2)}?`}
+          </div>
+          <div className="mt-1 text-xs text-amber-900/80">
+            {hasSavedCard
+              ? "This charges the card from the deposit checkout. It cannot be undone except via a refund. If this balance was already collected outside the app (e.g. Stripe Dashboard), cancel and zero it there instead."
+              : "The customer pays on a secure Stripe page; the balance clears and a paid-in-full receipt sends automatically once they do. If this balance was already collected outside the app, don't send the link."}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={hasSavedCard ? handleCollectBalance : handleSendBalanceLink}
+              disabled={pending}
+              className="rounded-md bg-amber-forge px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-forge-dark"
+            >
+              {hasSavedCard ? "Yes, charge the card" : "Yes, email the link"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingCollect(false)}
               className="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
             >
               Cancel
