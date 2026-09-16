@@ -13,6 +13,7 @@ import { ACTIONS } from "@/lib/data/activity-actions";
 import { canAdminTransition } from "@/lib/jobs/status-machine";
 import { logger } from "@/lib/security/logger";
 import { emailSchema, nameSchema, phoneSchema } from "@/lib/security/zod";
+import { syncJobById } from "@/lib/twenty/sync";
 
 // ---------------------------------------------------------------------------
 // The CRM mutation CORE — framework-free, backend-agnostic, actor-parameterized.
@@ -93,6 +94,8 @@ export async function moveJobStatus(args: {
     after: newStatus,
   });
   logger.info({ jobId, actor, from: before, to: newStatus }, "crm: status changed");
+  // Mirror the move into Twenty (best-effort, never throws, off without env).
+  await syncJobById(jobId);
   return { ok: true, before, after: newStatus, message: `Status set to ${newStatus}.` };
 }
 

@@ -9,6 +9,7 @@ import { logger, maskEmail } from "@/lib/security/logger";
 import { checkLimit } from "@/lib/security/rate-limit";
 import { appendAuditRow, findRowByJobId, updateRowByJobId } from "@/lib/data";
 import { createQuotePaymentLink } from "@/lib/stripe/payment-links";
+import { syncJobById, syncQuoteToTwenty } from "@/lib/twenty/sync";
 
 export type SendQuoteResult =
   | { ok: true; paymentLinkUrl: string; expiresAt: string }
@@ -115,6 +116,15 @@ export async function sendQuote(input: SendQuoteInput): Promise<SendQuoteResult>
   await updateRowByJobId(input.jobId, {
     status: "Quoted",
     balance_owed_cents: String(balanceCents),
+  });
+  // Mirror into Twenty: the job moves to QUOTED and gets a SENT Quote record
+  // carrying the Stripe link. Best-effort, never throws, off without env.
+  await syncJobById(input.jobId);
+  await syncQuoteToTwenty({
+    jobId: input.jobId,
+    depositCents,
+    balanceCents,
+    paymentLinkUrl: paymentLink.url,
   });
   await appendAuditRow({
     actor: adminEmail,

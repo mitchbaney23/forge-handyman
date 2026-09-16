@@ -7,6 +7,7 @@ import { getSupabaseClient } from "@/lib/data/pg/client";
 import { getAuth } from "@/lib/google";
 import { getNotificationRecipients } from "@/lib/email/recipients";
 import { logger } from "@/lib/security/logger";
+import { getTwentyConfig } from "@/lib/twenty/sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -235,6 +236,47 @@ async function checkGoogleCalendar(): Promise<HealthCheck> {
   }
 }
 
+// The Twenty mirror (lib/twenty/sync.ts) is best-effort at every call site, so
+// a revoked key or a wrong-workspace key would only show up as jobs quietly
+// missing from the CRM. Probe the Jobs object with the key: a talent-workspace
+// key gets a 400 here (no workOrders object), which is the mistake worth
+// catching.
+async function checkTwenty(): Promise<HealthCheck> {
+  const started = Date.now();
+  if (process.env.TWENTY_SYNC_DISABLED === "true") {
+    return { name: "twenty", status: "skipped", latencyMs: 0, detail: "TWENTY_SYNC_DISABLED=true" };
+  }
+  const cfg = getTwentyConfig();
+  if (!cfg) {
+    return { name: "twenty", status: "skipped", latencyMs: 0, detail: "TWENTY_API_URL / TWENTY_API_KEY not set" };
+  }
+  try {
+    const res = await withTimeout(
+      fetch(`${cfg.restUrl}/workOrders?limit=1`, {
+        headers: { Authorization: `Bearer ${cfg.apiKey}`, Accept: "application/json" },
+        cache: "no-store",
+      }),
+      TIMEOUT_MS,
+    );
+    if (!res.ok) {
+      return {
+        name: "twenty",
+        status: "fail",
+        latencyMs: Date.now() - started,
+        detail: `HTTP ${res.status} from /workOrders (wrong workspace key, or the Jobs object is not stamped)`,
+      };
+    }
+    return { name: "twenty", status: "ok", latencyMs: Date.now() - started };
+  } catch (err) {
+    return {
+      name: "twenty",
+      status: "fail",
+      latencyMs: Date.now() - started,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 // Telegram dispatch is the channel David actually works off, and every call
 // site is best-effort — a dead bot token or a revoked chat fails silently in
 // the logs and looks identical to "no leads came in". Probe getMe so an outage
@@ -393,6 +435,7 @@ export async function GET(): Promise<NextResponse> {
     checkStripe(),
     checkUpstash(),
     checkTelegram(),
+    checkTwenty(),
     Promise.resolve(checkLeadRouting()),
   ]);
 

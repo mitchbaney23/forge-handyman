@@ -14,6 +14,7 @@ import {
   updateRowByJobId,
   type ContactRowPartial,
 } from "@/lib/data";
+import { redactInTwenty } from "@/lib/twenty/sync";
 
 const REDACTED = "[REDACTED]";
 
@@ -88,6 +89,19 @@ export async function anonymizeCustomer(
     // the action, so it runs unguarded inside the surrounding try.
     const customerRedaction = await redactCustomerByEmail(email);
 
+    // The Twenty workspace mirrors jobs and people (lib/twenty/sync.ts), so
+    // the deletion request reaches it too. It never throws; a failure is
+    // recorded in the audit row and surfaced in the message so the Twenty
+    // side can be finished by hand (open the job in Twenty and clear it).
+    const twentyRedaction = await redactInTwenty({ email, jobIds: redactedJobIds });
+    if (!twentyRedaction.ok) {
+      Sentry.captureMessage("Twenty-side redaction incomplete after a data-deletion request", {
+        level: "error",
+        tags: { route: "admin-data-requests", action: "anonymize", step: "twenty" },
+        extra: { maskedEmail: maskEmail(email), ...twentyRedaction },
+      });
+    }
+
     await appendAuditRow({
       actor: admin.email,
       action: "data.anonymized",
@@ -96,6 +110,9 @@ export async function anonymizeCustomer(
         rowsAnonymized: count,
         legacyCleared: legacyRedaction.updated,
         customerRedacted: customerRedaction.updated,
+        twentyJobsRedacted: twentyRedaction.jobsRedacted,
+        twentyPersonRedacted: twentyRedaction.personRedacted,
+        twentyOk: twentyRedaction.ok,
       }),
       notes: "Customer data-deletion request — PII redacted, rows retained for tax compliance.",
     });
@@ -109,7 +126,9 @@ export async function anonymizeCustomer(
     return {
       ok: true,
       rowsAnonymized: count,
-      message: `Anonymized ${count} record${count === 1 ? "" : "s"}. PII redacted; rows retained (anonymized) for tax compliance.`,
+      message: twentyRedaction.ok
+        ? `Anonymized ${count} record${count === 1 ? "" : "s"}. PII redacted; rows retained (anonymized) for tax compliance.`
+        : `Anonymized ${count} record${count === 1 ? "" : "s"} here, but the Twenty workspace copy could not be fully redacted (${twentyRedaction.jobsRedacted} job(s) done). Finish it in Twenty by hand.`,
     };
   } catch (err) {
     Sentry.captureException(err, {

@@ -13,6 +13,7 @@ import { sendCompletionReceiptEmail } from '@/lib/email/completion-receipt'
 import { formatEtDay, formatEtTime } from '@/lib/scheduling/time'
 import { recordPayment, recordRefund, reconcileAttempt } from '@/lib/data/pg/payments'
 import { getStripe } from '@/lib/stripe/client'
+import { markQuoteAcceptedInTwenty, syncJobById } from '@/lib/twenty/sync'
 
 function extractJobId(metadata: Stripe.Metadata | null | undefined): string | null {
   if (!metadata) return null
@@ -146,6 +147,11 @@ export async function handleCheckoutSessionCompleted(
     }),
   })
 
+  // Mirror Booked (and the deposit) into Twenty; a paid deposit is the quote's
+  // acceptance. Best-effort, never throws, off without env.
+  await syncJobById(jobId)
+  await markQuoteAcceptedInTwenty(jobId)
+
   // Ledger: record the deposit (no guard — a hosted single-use checkout link
   // isn't re-chargeable from our side).
   await recordPaymentSafe(() =>
@@ -252,6 +258,7 @@ async function handleBalanceLinkPaid(args: {
       stripeCustomerId: customerId,
     }),
   })
+  await syncJobById(jobId)
 
   await recordPaymentSafe(() =>
     recordPayment({
@@ -330,6 +337,7 @@ export async function handlePaymentIntentSucceeded(
       status: 'Complete',
       balance_owed_cents: '0',
     })
+    await syncJobById(jobId)
     // Reconcile the markComplete guard row to its terminal state (idempotent —
     // a no-op if markComplete's sync update already marked it succeeded).
     await recordPaymentSafe(() =>
@@ -415,6 +423,7 @@ export async function handlePaymentIntentFailed(event: Stripe.Event): Promise<vo
         failureMessage,
       }),
     })
+    await syncJobById(jobId)
     // A failed balance charge frees its guard row so a deliberate retry is
     // possible (the 'failed' status drops out of the partial unique index).
     const purpose = typeof pi.metadata?.purpose === 'string' ? pi.metadata.purpose : ''
@@ -505,6 +514,7 @@ export async function handleChargeRefunded(event: Stripe.Event): Promise<void> {
         amountRefundedCents: charge.amount_refunded,
       }),
     })
+    await syncJobById(jobId)
     // Ledger: charge.amount_refunded is CUMULATIVE across partial refunds, so
     // the ledger keeps one row per refunded charge and replaces its amount —
     // an insert per event would double-count (and a late re-delivery after the

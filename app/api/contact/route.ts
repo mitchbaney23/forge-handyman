@@ -72,6 +72,7 @@ import {
   notifyMitchBooking,
   notifyMitchNewLead,
 } from '@/lib/telegram/dispatch'
+import { syncJobToTwenty } from '@/lib/twenty/sync'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -457,6 +458,11 @@ async function handleScheduledBooking(args: {
     logger.error({ err, jobId }, 'contact-form: linkAppointment failed (non-fatal)')
   })
 
+  // Mirror the booking into the Twenty workspace (best-effort, never throws;
+  // off unless TWENTY_API_KEY is set). Arrives as BOOKED with the slot, so it
+  // lands in the Schedule view with no triage task.
+  await syncJobToTwenty(bookedRow, { appointment: slot })
+
   // Activity log (best-effort).
   await appendAuditRow({
     actor: ACTORS.SYSTEM,
@@ -676,6 +682,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       tags: { route: 'contact-form', step: 'sheet-append' },
     })
     logger.error({ err, jobId }, 'contact-form: job row write failed')
+  }
+
+  // Mirror the lead into the Twenty workspace (best-effort, never throws; off
+  // unless TWENTY_API_KEY is set). Arrives as NEW, which raises the triage task
+  // there, the same one a phone job gets.
+  if (rowWritten) {
+    await syncJobToTwenty(row)
   }
 
   try {

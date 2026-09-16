@@ -32,6 +32,7 @@ import { refundCharge } from "@/lib/stripe/refunds";
 import { sendBalanceRequestEmail } from "@/lib/email/balance-request";
 import { sendCompletionReceiptEmail } from "@/lib/email/completion-receipt";
 import { dispatchJobToDavid } from "@/lib/telegram/dispatch";
+import { syncJobById } from "@/lib/twenty/sync";
 
 // The deterministic Stripe idempotency key chargeBalance uses; also the
 // payments.purpose for the guard row.
@@ -231,6 +232,7 @@ export async function markComplete(jobId: string): Promise<ActionResult> {
       ? { balance_owed_cents: "0" }
       : {}),
   });
+  await syncJobById(jobId);
   await appendAuditRow({
     actor: auth.email,
     action: "job.completed",
@@ -554,6 +556,7 @@ async function chargeBalanceGuarded(args: {
     ...(args.alreadyComplete ? {} : { complete_date: new Date().toISOString() }),
     balance_owed_cents: "0",
   });
+  await syncJobById(jobId);
   await appendAuditRow({
     actor: args.adminEmail,
     action: args.alreadyComplete ? "balance.collected" : "job.completed",
