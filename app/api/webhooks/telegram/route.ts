@@ -13,6 +13,7 @@ import {
 } from "@/lib/telegram/client";
 import {
   buildDispatchMessage,
+  getFyiChatIds,
   parseCallbackData,
 } from "@/lib/telegram/dispatch";
 import { checkAndMarkProcessed } from "@/lib/webhooks/idempotency";
@@ -46,10 +47,16 @@ function ok(): NextResponse {
   return NextResponse.json({ ok: true });
 }
 
-async function notifyMitch(text: string): Promise<void> {
-  const mitchChatId = process.env.TELEGRAM_MITCH_CHAT_ID;
-  if (!mitchChatId) return;
-  await sendMessage(mitchChatId, text);
+// David's decision goes to everyone on the FYI list (Mitch and operations),
+// each send best-effort so one dead chat never blocks the other.
+async function notifyFyi(text: string): Promise<void> {
+  for (const chatId of getFyiChatIds()) {
+    try {
+      await sendMessage(chatId, text);
+    } catch (err) {
+      logger.warn({ err }, "telegram-webhook: FYI send threw");
+    }
+  }
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -146,7 +153,7 @@ async function handleCallback(
 
   await answerCallbackQuery(cb.id, label.confirm);
 
-  await notifyMitch(
+  await notifyFyi(
     `David <b>${label.decision.toLowerCase()}</b> the job for <b>${escapeName(found.row.name)}</b> (${escapeName(found.row.service_type)}).` +
       (parsed.action === "d" || parsed.action === "s"
         ? "\n\n⚠️ Needs your attention."
@@ -173,9 +180,8 @@ async function handleMessage(
   const chatId = msg.chat?.id;
   if (!chatId) return;
   const davidChatId = process.env.TELEGRAM_DAVID_CHAT_ID;
-  const mitchChatId = process.env.TELEGRAM_MITCH_CHAT_ID;
   const isKnown =
-    String(chatId) === String(davidChatId) || String(chatId) === String(mitchChatId);
+    String(chatId) === String(davidChatId) || getFyiChatIds().includes(String(chatId));
 
   if (isKnown) {
     // We're not a chatbot — just acknowledge.
@@ -189,7 +195,7 @@ async function handleMessage(
   // Onboarding helper: reply with the chat ID so it can be pasted into Vercel.
   await sendMessage(
     chatId,
-    `Your Telegram chat ID is:\n<code>${chatId}</code>\n\nPaste this into Vercel as TELEGRAM_DAVID_CHAT_ID (David) or TELEGRAM_MITCH_CHAT_ID (Mitch).`,
+    `Your Telegram chat ID is:\n<code>${chatId}</code>\n\nPaste this into Vercel as TELEGRAM_DAVID_CHAT_ID (David), TELEGRAM_MITCH_CHAT_ID (Mitch) or TELEGRAM_OPS_CHAT_ID (operations).`,
   );
   logger.info({ chatId }, "telegram-webhook: replied with chat id for onboarding");
 }

@@ -69,8 +69,8 @@ import {
 import {
   dispatchBookingToDavid,
   dispatchJobToDavid,
-  notifyMitchBooking,
-  notifyMitchNewLead,
+  notifyFyiBooking,
+  notifyFyiNewLead,
 } from '@/lib/telegram/dispatch'
 
 export const runtime = 'nodejs'
@@ -497,9 +497,9 @@ async function handleScheduledBooking(args: {
       logger.error({ err, jobId }, 'contact-form: booking dispatch to David failed')
     }
     try {
-      await notifyMitchBooking(bookedRow, slot)
+      await notifyFyiBooking(bookedRow, slot)
     } catch (err) {
-      logger.error({ err, jobId }, 'contact-form: booking FYI to Mitch failed')
+      logger.error({ err, jobId }, 'contact-form: booking FYI failed')
     }
   }
 
@@ -741,15 +741,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       logger.error({ err, jobId }, 'contact-form: telegram dispatch failed')
     }
 
-    // FYI copy to Mitch (no buttons) — separate best-effort so a failure
-    // here doesn't affect David's dispatch or the customer response.
+    // FYI copies to Mitch and operations (no buttons) — separate best-effort
+    // so a failure here doesn't affect David's dispatch or the customer response.
     try {
-      await notifyMitchNewLead(row)
+      await notifyFyiNewLead(row)
     } catch (err) {
       Sentry.captureException(err, {
-        tags: { route: 'contact-form', step: 'telegram-mitch-fyi' },
+        tags: { route: 'contact-form', step: 'telegram-fyi' },
       })
-      logger.error({ err, jobId }, 'contact-form: Mitch FYI failed')
+      logger.error({ err, jobId }, 'contact-form: lead FYI failed')
     }
   }
 

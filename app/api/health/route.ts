@@ -278,7 +278,7 @@ async function checkTelegram(): Promise<HealthCheck> {
     }
     // A live bot with no chat IDs still can't reach anyone — call that degraded,
     // not ok, so a half-configured dispatch doesn't read as healthy.
-    const missingChats = ["TELEGRAM_DAVID_CHAT_ID", "TELEGRAM_MITCH_CHAT_ID"].filter(
+    const missingChats = ["TELEGRAM_DAVID_CHAT_ID", "TELEGRAM_MITCH_CHAT_ID", "TELEGRAM_OPS_CHAT_ID"].filter(
       (name) => !process.env[name],
     );
     return {
