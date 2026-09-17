@@ -25,6 +25,7 @@ export type LimiterName =
   | 'photo-upload'
   | 'telegram-webhook'
   | 'scheduling-availability'
+  | 'mcp'
 
 const limiterCache: Partial<Record<LimiterName, Ratelimit>> = {}
 
@@ -62,6 +63,11 @@ function buildLimiter(name: LimiterName): Ratelimit {
       // Public, unauthenticated slot lookup — a customer refining their cart may
       // call it several times. Generous per-IP cap that still blocks scraping.
       return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(60, '1 h'), prefix: 'rl:sched', analytics: true })
+    case 'mcp':
+      // Claude talking to the business through /api/mcp, keyed per person
+      // (the MCP_KEYS label). A conversation makes a handful of calls a
+      // minute; a runaway loop or a leaked token does not get more.
+      return new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(60, '1 m'), prefix: 'rl:mcp', analytics: true })
   }
 }
 
