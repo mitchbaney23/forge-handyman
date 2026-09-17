@@ -249,44 +249,79 @@ export async function notifyCancellation(
 }
 
 /**
- * Sends Mitch an FYI copy of a confirmed booking. Best-effort.
+ * The FYI list: everyone who gets an informational copy of lead and booking
+ * cards with NO buttons (David owns the Approve/Decline/Sub-out decision).
+ * Mitch (owner) and operations (Mom). Blank or repeated ids are dropped, so a
+ * missing TELEGRAM_OPS_CHAT_ID simply means Mitch alone, as before.
  */
-export async function notifyMitchBooking(
-  row: ContactRow,
-  slot: { startsAt: string; endsAt: string },
-): Promise<DispatchResult> {
-  const mitchChatId = process.env.TELEGRAM_MITCH_CHAT_ID;
-  if (!mitchChatId) return { ok: false, reason: "no-chat-id" };
-  const text = `✅ <b>New booking</b>\n\n${buildBookingMessage(row, slot.startsAt, slot.endsAt)}`;
-  const sent = await sendMessage(mitchChatId, text);
-  if (!sent) return { ok: false, reason: "send-failed" };
-  return { ok: true, messageId: sent.message_id };
+export function getFyiChatIds(): string[] {
+  const raw = [process.env.TELEGRAM_MITCH_CHAT_ID, process.env.TELEGRAM_OPS_CHAT_ID];
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const value of raw) {
+    const id = (value || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+export interface FyiResult {
+  ok: boolean;
+  sent: number;
+  failed: number;
+  reason?: string;
+}
+
+// Fan a text out to every FYI recipient. Each send is independent and
+// best-effort: one dead chat must not stop the others.
+async function sendFyi(text: string, context: Record<string, unknown>, what: string): Promise<FyiResult> {
+  const ids = getFyiChatIds();
+  if (ids.length === 0) {
+    logger.warn(`telegram-dispatch: no FYI chat ids set (TELEGRAM_MITCH_CHAT_ID / TELEGRAM_OPS_CHAT_ID) — skipping ${what}`);
+    return { ok: false, sent: 0, failed: 0, reason: "no-chat-id" };
+  }
+  let sent = 0;
+  let failed = 0;
+  for (const chatId of ids) {
+    try {
+      const result = await sendMessage(chatId, text); // no keyboard — FYI only
+      if (result) sent += 1;
+      else failed += 1;
+    } catch (err) {
+      failed += 1;
+      logger.warn({ err, ...context }, `telegram-dispatch: ${what} FYI send threw`);
+    }
+  }
+  if (sent === 0) {
+    logger.warn({ ...context, failed }, `telegram-dispatch: ${what} FYI reached nobody`);
+    return { ok: false, sent, failed, reason: "send-failed" };
+  }
+  logger.info({ ...context, sent, failed }, `telegram-dispatch: ${what} FYI sent`);
+  return { ok: true, sent, failed };
 }
 
 /**
- * Sends Mitch an informational copy of a new lead — same job card, but with
- * NO action buttons (David owns the Approve/Decline/Sub-out decision). Gives
- * the owner real-time visibility on Telegram alongside the existing email.
- * Best-effort.
+ * FYI copy of a confirmed booking to Mitch and operations. Best-effort.
  */
-export async function notifyMitchNewLead(row: ContactRow): Promise<DispatchResult> {
-  const mitchChatId = process.env.TELEGRAM_MITCH_CHAT_ID;
-  if (!mitchChatId) {
-    logger.warn("telegram-dispatch: TELEGRAM_MITCH_CHAT_ID not set — skipping Mitch FYI");
-    return { ok: false, reason: "no-chat-id" };
-  }
+export async function notifyFyiBooking(
+  row: ContactRow,
+  slot: { startsAt: string; endsAt: string },
+): Promise<FyiResult> {
+  const text = `✅ <b>New booking</b>\n\n${buildBookingMessage(row, slot.startsAt, slot.endsAt)}`;
+  return sendFyi(text, { jobId: row.job_id }, "booking");
+}
+
+/**
+ * FYI copy of a new lead to Mitch and operations: same job card, but with NO
+ * action buttons (David owns the Approve/Decline/Sub-out decision). Real-time
+ * visibility on Telegram alongside the email. Best-effort.
+ */
+export async function notifyFyiNewLead(row: ContactRow): Promise<FyiResult> {
   if (!row.job_id) {
-    return { ok: false, reason: "no-job-id" };
+    return { ok: false, sent: 0, failed: 0, reason: "no-job-id" };
   }
   const text = `📋 <b>New lead in</b> — sent to David for approval.\n\n${buildDispatchMessage(row)}`;
-  const sent = await sendMessage(mitchChatId, text); // no keyboard — FYI only
-  if (!sent) {
-    logger.warn({ jobId: row.job_id }, "telegram-dispatch: Mitch FYI send failed");
-    return { ok: false, reason: "send-failed" };
-  }
-  logger.info(
-    { jobId: row.job_id, messageId: sent.message_id },
-    "telegram-dispatch: new-lead FYI sent to Mitch",
-  );
-  return { ok: true, messageId: sent.message_id };
+  return sendFyi(text, { jobId: row.job_id }, "new-lead");
 }
