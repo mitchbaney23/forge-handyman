@@ -101,6 +101,9 @@ export const ACTORS = {
   STRIPE_WEBHOOK: 'stripe-webhook',
   adminActor: (email: string): string => `admin:${email}`,
   telegramActor: (who: string): string => `telegram:${who}`,
+  // Claude acting for a named person over /api/mcp (the MCP_KEYS label), so
+  // the timeline says whose conversation made the change.
+  claudeActor: (label: string): string => `claude:${label}`,
 } as const
 
 // Re-export the non-namespaced constants at top level for ergonomic imports
@@ -110,6 +113,7 @@ export const SYSTEM = ACTORS.SYSTEM
 export const STRIPE_WEBHOOK = ACTORS.STRIPE_WEBHOOK
 export const adminActor = ACTORS.adminActor
 export const telegramActor = ACTORS.telegramActor
+export const claudeActor = ACTORS.claudeActor
 
 // The known actor shapes. Like ActivityAction this is a vocabulary type, not a
 // runtime constraint — `admin:<email>` and `telegram:<who>` widen to string.
@@ -117,5 +121,6 @@ export type ActorType =
   | typeof ACTORS.CLAUDE
   | typeof ACTORS.SYSTEM
   | typeof ACTORS.STRIPE_WEBHOOK
+  | `claude:${string}`
   | `admin:${string}`
   | `telegram:${string}`

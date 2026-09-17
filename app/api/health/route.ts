@@ -6,6 +6,7 @@ import { getBackend, type DataBackend } from "@/lib/data/backend";
 import { getSupabaseClient } from "@/lib/data/pg/client";
 import { getAuth } from "@/lib/google";
 import { getNotificationRecipients } from "@/lib/email/recipients";
+import { getMcpKeys } from "@/lib/mcp/auth";
 import { logger } from "@/lib/security/logger";
 
 export const runtime = "nodejs";
@@ -330,6 +331,22 @@ async function checkUpstash(): Promise<HealthCheck> {
   }
 }
 
+// Claude's door (/api/mcp): a config read, not a probe. Answers "who can talk
+// to the business through Claude right now" by label; tokens never leave the
+// env. Skipped until MCP_KEYS is set, so the check is quiet on a fresh deploy.
+function checkMcp(): HealthCheck {
+  const keys = getMcpKeys();
+  if (keys.length === 0) {
+    return { name: "mcp", status: "skipped", latencyMs: 0, detail: "MCP_KEYS not set" };
+  }
+  return {
+    name: "mcp",
+    status: "ok",
+    latencyMs: 0,
+    detail: `keys for: ${keys.map((k) => k.label).join(", ")}`,
+  };
+}
+
 // Surface the resolved lead-notification recipients. Not a connectivity probe —
 // it answers "where do website submissions actually go?" without a deploy or a
 // test submission, which is exactly the question that was previously unanswerable.
@@ -393,6 +410,7 @@ export async function GET(): Promise<NextResponse> {
     checkStripe(),
     checkUpstash(),
     checkTelegram(),
+    Promise.resolve(checkMcp()),
     Promise.resolve(checkLeadRouting()),
   ]);
 

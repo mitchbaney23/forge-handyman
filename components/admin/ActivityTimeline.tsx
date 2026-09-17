@@ -85,6 +85,7 @@ function actionMeta(action: string): { icon: IconName; label: string } {
 // returns the text label.
 function actorLabel(actor: string): string {
   if (actor === "claude") return "Claude";
+  if (actor.startsWith("claude:")) return `Claude (${actor.slice("claude:".length)})`;
   if (actor === "stripe-webhook") return "Stripe";
   if (actor === "system") return "System";
   if (actor.startsWith("admin:")) {
@@ -163,7 +164,7 @@ function TimelineItem({
   isLast: boolean;
 }) {
   const { icon, label } = actionMeta(activity.action);
-  const isAi = activity.actor === "claude";
+  const isAi = activity.actor === "claude" || activity.actor.startsWith("claude:");
   const absolute = formatAbsolute(activity.at);
 
   return (
@@ -189,7 +190,7 @@ function TimelineItem({
           <span className="text-sm font-medium text-navy">{label}</span>
           {isAi ? (
             <span className="inline-flex items-center rounded-full border border-violet-300 bg-violet-100 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-violet-700">
-              AI · Claude
+              AI · {actorLabel(activity.actor)}
             </span>
           ) : (
             <span className="text-xs text-ink/55">{actorLabel(activity.actor)}</span>
