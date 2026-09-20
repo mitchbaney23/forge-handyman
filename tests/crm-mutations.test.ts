@@ -26,7 +26,7 @@ vi.mock("@/lib/security/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { createCustomer, moveJobStatus } from "@/lib/crm/mutations";
+import { adjustBalance, createCustomer, moveJobStatus } from "@/lib/crm/mutations";
 
 const ACTOR = "admin:owner@forge.test";
 
@@ -207,5 +207,60 @@ describe("createCustomer", () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toMatch(/phone/i);
     expect(data.insertCustomer).not.toHaveBeenCalled();
+  });
+});
+
+describe("adjustBalance", () => {
+  it("writes the new balance and logs before/after in dollars with the reason", async () => {
+    data.findRowByJobId.mockResolvedValue({ row: { status: "Booked", balance_owed_cents: "13500" } });
+
+    const res = await adjustBalance({ jobId: "j1", newBalanceCents: 1000, reason: "  Job took less time than quoted  ", actor: ACTOR });
+
+    expect(res).toEqual({ ok: true, beforeCents: 13500, afterCents: 1000, message: "Balance owed changed from $135.00 to $10.00." });
+    expect(data.updateRowByJobId).toHaveBeenCalledWith("j1", { balance_owed_cents: "1000" });
+    expect(data.appendAuditRow).toHaveBeenCalledWith({
+      actor: ACTOR,
+      action: "balance.adjusted",
+      target: "j1",
+      jobId: "j1",
+      before: "$135.00",
+      after: "$10.00",
+      notes: "Job took less time than quoted",
+    });
+  });
+
+  it("treats an unchanged balance as a no-op (no write, no activity)", async () => {
+    data.findRowByJobId.mockResolvedValue({ row: { status: "Booked", balance_owed_cents: "1000" } });
+    const res = await adjustBalance({ jobId: "j1", newBalanceCents: 1000, reason: "same", actor: ACTOR });
+    expect(res).toMatchObject({ ok: true, beforeCents: 1000, afterCents: 1000 });
+    expect(data.updateRowByJobId).not.toHaveBeenCalled();
+    expect(data.appendAuditRow).not.toHaveBeenCalled();
+  });
+
+  it("allows zeroing a balance collected outside the app", async () => {
+    data.findRowByJobId.mockResolvedValue({ row: { status: "Complete", balance_owed_cents: "5000" } });
+    const res = await adjustBalance({ jobId: "j1", newBalanceCents: 0, reason: "Paid cash on site", actor: ACTOR });
+    expect(res).toMatchObject({ ok: true, afterCents: 0 });
+    expect(data.updateRowByJobId).toHaveBeenCalledWith("j1", { balance_owed_cents: "0" });
+  });
+
+  it("rejects negative, fractional or oversized amounts and a missing reason before reading the job", async () => {
+    for (const bad of [
+      { newBalanceCents: -1, reason: "x y z" },
+      { newBalanceCents: 10.5, reason: "x y z" },
+      { newBalanceCents: 5_000_001, reason: "x y z" },
+      { newBalanceCents: 1000, reason: "  " },
+      { newBalanceCents: 1000, reason: "no" },
+    ]) {
+      const res = await adjustBalance({ jobId: "j1", actor: ACTOR, ...bad });
+      expect(res.ok).toBe(false);
+    }
+    expect(data.findRowByJobId).not.toHaveBeenCalled();
+    expect(data.updateRowByJobId).not.toHaveBeenCalled();
+  });
+
+  it("returns Job not found when the row is missing", async () => {
+    data.findRowByJobId.mockResolvedValue(null);
+    expect(await adjustBalance({ jobId: "nope", newBalanceCents: 1000, reason: "ran short", actor: ACTOR })).toEqual({ ok: false, error: "Job not found" });
   });
 });

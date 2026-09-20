@@ -16,7 +16,7 @@ import {
   requireAdmin,
   type ActionResult,
 } from "@/lib/admin/guard";
-import { moveJobStatus } from "@/lib/crm/mutations";
+import { adjustBalance as adjustBalanceCore, moveJobStatus } from "@/lib/crm/mutations";
 import { performCancellation } from "@/lib/scheduling/cancel";
 import { adminActor } from "@/lib/data/activity-actions";
 import { getBackend } from "@/lib/data/backend";
@@ -135,6 +135,34 @@ export async function recordFirstTouch(jobId: string): Promise<ActionResult> {
   });
   revalidatePath(`/admin/jobs/${jobId}`);
   return { ok: true, message: "First touch recorded." };
+}
+
+// Change the balance the next charge will use (a job that ran short, extra
+// work, or a balance collected outside the app). Cheap bucket: this moves no
+// money itself; Mark Complete / Collect balance still sit in the money bucket.
+export async function adjustBalance(
+  jobId: string,
+  newBalanceDollars: number,
+  reason: string,
+): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdmin(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  if (!Number.isFinite(newBalanceDollars) || newBalanceDollars < 0) {
+    return { ok: false, error: "Balance must be a non-negative number" };
+  }
+  const res = await adjustBalanceCore({
+    jobId,
+    newBalanceCents: Math.round(newBalanceDollars * 100),
+    reason,
+    actor: adminActor(auth.email),
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/admin");
+  return { ok: true, message: res.message };
 }
 
 export async function markComplete(jobId: string): Promise<ActionResult> {

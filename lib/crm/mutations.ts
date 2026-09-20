@@ -237,3 +237,78 @@ export async function createCustomer(args: {
   logger.info({ actor: args.actor, customerId: inserted.id }, "crm: customer created");
   return { ok: true, customerId: inserted.id, message: "Customer added." };
 }
+
+// ---------------------------------------------------------------------------
+// Adjust the balance owed
+// ---------------------------------------------------------------------------
+
+// The balance is what Mark Complete charges the saved card (or what the
+// balance link asks for). It is set when the quote goes out and stays fixed
+// unless someone changes it here: a job that ran short, extra work found on
+// site, or a balance collected outside the app that should be zeroed so it
+// is not charged twice. This never charges or refunds anything; it only
+// changes the number the next charge will use, and it says why on the
+// timeline.
+
+export const MAX_BALANCE_CENTS = 5_000_000; // $50,000
+
+export type AdjustBalanceResult =
+  | { ok: true; beforeCents: number; afterCents: number; message: string }
+  | { ok: false; error: string };
+
+function dollars(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+export async function adjustBalance(args: {
+  jobId: string;
+  newBalanceCents: number;
+  reason: string;
+  actor: string;
+}): Promise<AdjustBalanceResult> {
+  const { jobId, newBalanceCents, actor } = args;
+  if (!Number.isInteger(newBalanceCents) || newBalanceCents < 0) {
+    return { ok: false, error: "Balance must be a whole number of cents, zero or more." };
+  }
+  if (newBalanceCents > MAX_BALANCE_CENTS) {
+    return { ok: false, error: `Balance can't exceed ${dollars(MAX_BALANCE_CENTS)}.` };
+  }
+  const reason = (args.reason ?? "").trim().slice(0, 500);
+  if (reason.length < 3) {
+    return { ok: false, error: "Say why the balance changed (a few words is enough)." };
+  }
+
+  const found = await findRowByJobId(jobId);
+  if (!found) return { ok: false, error: "Job not found" };
+
+  const beforeCents = Number(found.row.balance_owed_cents || "0") || 0;
+  if (beforeCents === newBalanceCents) {
+    return {
+      ok: true,
+      beforeCents,
+      afterCents: newBalanceCents,
+      message: `Balance already ${dollars(newBalanceCents)}; nothing changed.`,
+    };
+  }
+
+  await updateRowByJobId(jobId, { balance_owed_cents: String(newBalanceCents) });
+  await appendAuditRow({
+    actor,
+    action: ACTIONS.BALANCE_ADJUSTED,
+    target: jobId,
+    jobId,
+    before: dollars(beforeCents),
+    after: dollars(newBalanceCents),
+    notes: reason,
+  });
+  logger.info(
+    { jobId, actor, beforeCents, afterCents: newBalanceCents },
+    "crm: balance adjusted",
+  );
+  return {
+    ok: true,
+    beforeCents,
+    afterCents: newBalanceCents,
+    message: `Balance owed changed from ${dollars(beforeCents)} to ${dollars(newBalanceCents)}.`,
+  };
+}
