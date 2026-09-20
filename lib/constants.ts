@@ -417,33 +417,6 @@ export const VALUES = [
   },
 ];
 
-export const TESTIMONIALS = [
-  {
-    quote:
-      "David showed up exactly when he said he would, fixed three things on our list that I'd been putting off for months, and left the place cleaner than he found it. Finally — a handyman I can trust.",
-    name: "Sarah M.",
-    location: "Garner, NC",
-  },
-  {
-    quote:
-      "We had a rotted section of deck and a wobbly railing that was scaring the grandkids. David replaced the boards, rebuilt the rail, and the whole thing feels solid as new. Fair price, no drama.",
-    name: "Tom & Linda R.",
-    location: "Clayton, NC",
-  },
-  {
-    quote:
-      "Hired Forge for a full day of odd jobs — ceiling fan, new faucet, patched a hole in the drywall, hung some shelves. Quoted me an honest estimate and stuck to it. Already have him booked again.",
-    name: "Marcus J.",
-    location: "Raleigh, NC",
-  },
-  {
-    quote:
-      "I don't leave reviews usually, but David earned this one. Knew exactly what he was doing, explained everything, and treated my home like it was his own.",
-    name: "Priya K.",
-    location: "Garner, NC",
-  },
-];
-
 export const REFERRAL_SOURCES = [
   "Nextdoor",
   "Google",
