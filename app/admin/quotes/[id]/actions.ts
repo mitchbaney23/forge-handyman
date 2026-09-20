@@ -4,27 +4,27 @@ import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
 import * as Sentry from "@sentry/nextjs";
 import { authOptions, isAllowlistedEmail } from "@/lib/auth";
-import { sendQuoteEmail } from "@/lib/email/quote";
-import { logger, maskEmail } from "@/lib/security/logger";
+import { sendQuote as sendQuoteCore, type QuoteTier } from "@/lib/crm/quote";
 import { checkLimit } from "@/lib/security/rate-limit";
-import { appendAuditRow, findRowByJobId, updateRowByJobId } from "@/lib/data";
-import { createQuotePaymentLink } from "@/lib/stripe/payment-links";
 
 export type SendQuoteResult =
   | { ok: true; paymentLinkUrl: string; expiresAt: string }
   | { ok: false; error: string };
 
-const TIERS = new Set(["small", "medium", "large"] as const);
-type Tier = "small" | "medium" | "large";
+const TIERS = new Set<string>(["small", "medium", "large"]);
 
 export interface SendQuoteInput {
   jobId: string;
   depositDollars: number;
   balanceDollars: number;
-  tier: Tier;
+  tier: QuoteTier;
   descriptionOverride?: string;
 }
 
+// The admin side of "build a quote". The work itself (Stripe Payment Link,
+// customer email, status to Quoted, quote.sent activity) lives in
+// lib/crm/quote.ts and is shared with the MCP send_quote tool; this action
+// owns the trust boundary: the session, the money rate limit, revalidation.
 export async function sendQuote(input: SendQuoteInput): Promise<SendQuoteResult> {
   const session = await getServerSession(authOptions);
   const adminEmail = session?.user?.email ?? null;
@@ -50,106 +50,31 @@ export async function sendQuote(input: SendQuoteInput): Promise<SendQuoteResult>
     return { ok: false, error: "Deposit must be at least $1.00" };
   }
 
-  const found = await findRowByJobId(input.jobId);
-  if (!found) return { ok: false, error: "Job not found" };
-
-  const customerEmail = found.row.email;
-  const customerName = found.row.name;
-  const serviceType = found.row.service_type;
-  if (!customerEmail || !customerName) {
-    return { ok: false, error: "Customer email or name missing on job row" };
-  }
-
-  const depositCents = Math.round(input.depositDollars * 100);
-  const balanceCents = Math.round(input.balanceDollars * 100);
-  const description = (input.descriptionOverride || found.row.description || serviceType).slice(0, 500);
-
-  let paymentLink;
-  try {
-    paymentLink = await createQuotePaymentLink(
-      {
-        jobId: input.jobId,
-        customerEmail,
-        customerName,
-        depositCents,
-        balanceCents,
-        tier: input.tier,
-        description,
-      },
-      adminEmail,
-    );
-  } catch (err) {
-    Sentry.captureException(err, {
-      tags: { route: "admin", action: "sendQuote", step: "createPaymentLink" },
-      extra: { jobId: input.jobId },
-    });
-    logger.error({ err, jobId: input.jobId }, "admin: createQuotePaymentLink failed");
-    const msg = err instanceof Error ? err.message : "Couldn't create Payment Link";
-    return { ok: false, error: msg };
-  }
-
-  try {
-    await sendQuoteEmail({
-      toEmail: customerEmail,
-      toName: customerName,
-      serviceType,
-      description,
-      depositCents,
-      balanceCents,
-      paymentLinkUrl: paymentLink.url,
-      expiresAt: paymentLink.expiresAt,
-    });
-  } catch (err) {
-    Sentry.captureException(err, {
-      tags: { route: "admin", action: "sendQuote", step: "sendEmail" },
-      extra: { jobId: input.jobId },
-    });
-    logger.error({ err, jobId: input.jobId }, "admin: sendQuoteEmail failed");
-    return {
-      ok: false,
-      error:
-        "Payment Link was created but the email failed to send. Copy the link from Stripe Dashboard and send manually.",
-    };
-  }
-
-  await updateRowByJobId(input.jobId, {
-    status: "Quoted",
-    balance_owed_cents: String(balanceCents),
-  });
-  await appendAuditRow({
-    actor: adminEmail,
-    action: "quote.sent",
-    target: input.jobId,
+  const result = await sendQuoteCore({
     jobId: input.jobId,
-    after: JSON.stringify({
-      paymentLinkId: paymentLink.paymentLinkId,
-      // The lifecycle cron's quote-nudge check reads these back from the
-      // activity payload (there are no quote columns on the job row).
-      paymentLinkUrl: paymentLink.url,
-      expiresAt: paymentLink.expiresAt,
-      depositCents,
-      balanceCents,
-      tier: input.tier,
-      customerEmail: maskEmail(customerEmail),
-    }),
+    depositCents: Math.round(input.depositDollars * 100),
+    balanceCents: Math.round(input.balanceDollars * 100),
+    tier: input.tier,
+    description: input.descriptionOverride,
+    actor: adminEmail,
   });
-  logger.info(
-    {
-      jobId: input.jobId,
-      paymentLinkId: paymentLink.paymentLinkId,
-      depositCents,
-      balanceCents,
-      tier: input.tier,
-      maskedEmail: maskEmail(customerEmail),
-    },
-    "admin: quote sent",
-  );
+
+  if (!result.ok) {
+    if (result.cause !== undefined) {
+      Sentry.captureException(result.cause, {
+        tags: { route: "admin", action: "sendQuote", step: result.step },
+        extra: { jobId: input.jobId },
+      });
+    }
+    return { ok: false, error: result.error };
+  }
+
   revalidatePath(`/admin/jobs/${input.jobId}`);
   revalidatePath("/admin");
 
   return {
     ok: true,
-    paymentLinkUrl: paymentLink.url,
-    expiresAt: paymentLink.expiresAt,
+    paymentLinkUrl: result.paymentLinkUrl,
+    expiresAt: result.expiresAt,
   };
 }
