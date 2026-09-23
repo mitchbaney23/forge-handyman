@@ -28,6 +28,9 @@ Each person also has a rate limit of 60 calls a minute (`lib/security/rate-limit
 
 ## Adding it to Claude
 
+Who uses it and how their Claude is set up: `docs/assistants/handyman-office.md` (Mom). Mitch's co-CEO Project, which spans both businesses, is described in the platform repo (`mitchbaney23/forge-platform`, `docs/assistants/co-ceo.md`).
+
+
 claude.ai, Settings, Connectors, Add custom connector: name "Forge Handyman", URL `https://forgehandyman.com/api/mcp`, authentication bearer token, paste the person's token. Then enable it in the Project that should use it. The same works in the Claude desktop and mobile apps once the connector is on the account.
 
 ## Trying it without Claude
