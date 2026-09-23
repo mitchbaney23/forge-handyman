@@ -1,6 +1,7 @@
 import { google } from 'googleapis'
 import type { JWT } from 'google-auth-library'
 import { BUSINESS } from '@/lib/constants'
+import { getGoogleReviewUrl } from '@/lib/reviews/google'
 
 // "Work's done — here's your receipt" email, sent best-effort from
 // markComplete. Doubles as the review ask (the caller stamps review_sent_at on
@@ -44,12 +45,6 @@ function encodeMimeHeader(value: string): string {
   return `=?UTF-8?B?${Buffer.from(value, 'utf-8').toString('base64')}?=`
 }
 
-// Mirrors lib/email/review-request.ts: explicit Place URL when configured,
-// else a search that surfaces the GBP card.
-function getReviewUrl(): string {
-  if (process.env.GOOGLE_REVIEW_URL) return process.env.GOOGLE_REVIEW_URL
-  return 'https://www.google.com/search?q=Forge+Handyman+Service+Garner+NC'
-}
 
 export interface CompletionReceiptEmailInput {
   toEmail: string
@@ -121,7 +116,7 @@ function buildHtml(data: CompletionReceiptEmailInput): string {
                 difference for a small local business:
               </p>
               <div style="margin:0 0 16px;">
-                <a href="${getReviewUrl()}" style="display:inline-block;background:#D97706;color:#ffffff;font-size:14px;font-weight:600;padding:10px 18px;border-radius:8px;text-decoration:none;">
+                <a href="${getGoogleReviewUrl()}" style="display:inline-block;background:#D97706;color:#ffffff;font-size:14px;font-weight:600;padding:10px 18px;border-radius:8px;text-decoration:none;">
                   Leave a Google review &rarr;
                 </a>
               </div>
@@ -162,7 +157,7 @@ function buildText(data: CompletionReceiptEmailInput): string {
       : []),
     '',
     'If you were happy with the work, a quick Google review makes a real difference for a small local business:',
-    getReviewUrl(),
+    getGoogleReviewUrl(),
     '',
     "If anything wasn't up to standard, please reply to this email instead. We'll make it right.",
     '',
