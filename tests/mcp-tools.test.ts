@@ -24,6 +24,8 @@ const mutations = vi.hoisted(() => ({ createCustomer: vi.fn(), moveJobStatus: vi
 vi.mock('@/lib/crm/mutations', () => mutations)
 const payments = vi.hoisted(() => ({ listPaymentsSince: vi.fn() }))
 vi.mock('@/lib/data/pg/payments', () => payments)
+const quote = vi.hoisted(() => ({ sendQuote: vi.fn() }))
+vi.mock('@/lib/crm/quote', async (importOriginal) => ({ ...(await importOriginal<object>()), sendQuote: quote.sendQuote }))
 vi.mock('@/lib/data/backend', () => ({ getBackend: () => 'postgres' }))
 vi.mock('@/lib/security/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -40,6 +42,9 @@ import {
   listJobsTool,
   logPhoneJob,
   moveJob,
+  previewQuote,
+  priceMenu,
+  sendQuoteTool,
   todaySchedule,
   TOOLS,
 } from '@/lib/mcp/tools'
@@ -78,7 +83,7 @@ beforeEach(() => {
 })
 
 describe('registry', () => {
-  it('exposes the nine tools and nothing that moves money', () => {
+  it('exposes the twelve tools; send_quote is the only one that moves money', () => {
     expect(TOOLS.map((t) => t.name)).toEqual([
       'find_customer',
       'customer_history',
@@ -89,8 +94,12 @@ describe('registry', () => {
       'move_job',
       'add_note',
       'business_snapshot',
+      'price_menu',
+      'preview_quote',
+      'send_quote',
     ])
-    expect(TOOLS.filter((t) => !t.readOnly).map((t) => t.name)).toEqual(['log_phone_job', 'move_job', 'add_note'])
+    expect(TOOLS.filter((t) => !t.readOnly).map((t) => t.name)).toEqual(['log_phone_job', 'move_job', 'add_note', 'send_quote'])
+    expect(TOOLS.filter((t) => t.money).map((t) => t.name)).toEqual(['send_quote'])
   })
 
   it('derives the actor from the token label', () => {
@@ -280,5 +289,130 @@ describe('business_snapshot', () => {
     expect(res.balanceOwedAfterCompleteCents).toBe(1200)
     expect(res.revenueThisMonthCents).toBe(15000)
     expect(payments.listPaymentsSince).toHaveBeenCalled()
+  })
+})
+
+describe('price_menu', () => {
+  it('returns the flat-rate menu with add-on prices, the bundles and the rules', async () => {
+    const res = (await priceMenu.run({}, ACTOR)) as {
+      minimumChargeCents: number
+      rules: string[]
+      packages: { number: number; priceCents: number; quoteFirst: boolean }[]
+      sections: { category: string; items: { id: string; priceCents: number; addOnCents: number | null; packageEligible: boolean }[] }[]
+    }
+    expect(res.minimumChargeCents).toBe(9500)
+    expect(res.rules.length).toBeGreaterThan(3)
+    expect(res.packages.map((p) => [p.number, p.priceCents, p.quoteFirst])).toEqual([[1, 16900, false], [2, 29900, false], [3, 62900, true]])
+    const items = res.sections.flatMap((s) => s.items)
+    // $95 item: half is $47.50, rounded down to $45 (the floor). $225 item: no add-on price.
+    expect(items.find((i) => i.id === 'door-fix')).toMatchObject({ priceCents: 9500, addOnCents: 4500, packageEligible: true })
+    expect(items.find((i) => i.id === 'tv-large')).toMatchObject({ priceCents: 22500, addOnCents: null, packageEligible: false })
+  })
+
+  it('narrows to a section by name fragment', async () => {
+    const res = (await priceMenu.run({ section: 'plumb' }, ACTOR)) as { sections: { category: string }[] }
+    expect(res.sections.map((s) => s.category)).toEqual(['Minor Plumbing'])
+  })
+})
+
+describe('preview_quote', () => {
+  it('builds the quote from the booked estimate and flags nothing on a clean New job', async () => {
+    data.findRowByJobId.mockResolvedValue({
+      rowNumber: 2,
+      row: row({ description: 'TV up to 60" ×1\n\nEstimated: 1 items · $135 (final on site)' }),
+    })
+    const res = (await previewQuote.run({ jobId: JOB, tier: 'medium' }, ACTOR)) as Record<string, unknown>
+    expect(res.found).toBe(true)
+    expect(res.sendTo).toEqual({ name: 'Sarah Kim', email: 'sarah@example.com' })
+    expect(res.bookedEstimateCents).toBe(13500)
+    expect(res.quote).toMatchObject({ depositCents: 13500, balanceCents: 0, totalCents: 13500, tier: 'medium', expiresInDays: 7 })
+    expect(res.lastQuote).toBeNull()
+    expect(res.canSend).toBe(true)
+    expect(res.blockers).toEqual([])
+    expect(res.warnings).toEqual([])
+  })
+
+  it('uses the given amounts and description, and warns when they differ from the booked price', async () => {
+    data.findRowByJobId.mockResolvedValue({
+      rowNumber: 2,
+      row: row({ description: 'Estimated: 1 items · $135 (final on site)' }),
+    })
+    const res = (await previewQuote.run(
+      { jobId: JOB, depositDollars: 100, balanceDollars: 50.5, tier: 'small', description: '  Mount one TV  ' },
+      ACTOR,
+    )) as { quote: Record<string, unknown>; warnings: string[] }
+    expect(res.quote).toMatchObject({ depositCents: 10000, balanceCents: 5050, totalCents: 15050, tier: 'small', description: 'Mount one TV' })
+    expect(res.warnings).toEqual([expect.stringContaining('$135.00 at booking')])
+  })
+
+  it('blocks a job with no email, a job past Quoted, and a missing deposit; warns about an earlier quote', async () => {
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row({ email: '', status: 'In Progress' }) })
+    data.listActivitiesForJob.mockResolvedValue([
+      { at: '2026-09-18T12:00:00.000Z', actor: 'admin:x', action: 'quote.sent', notes: '', before: '', after: '', data: { after: { depositCents: 20000, balanceCents: 0, expiresAt: '2026-09-25T12:00:00.000Z', paymentLinkUrl: 'https://buy.stripe.com/x' } } },
+    ])
+    const res = (await previewQuote.run({ jobId: JOB, tier: 'medium' }, ACTOR)) as { canSend: boolean; blockers: string[]; warnings: string[]; lastQuote: unknown }
+    expect(res.canSend).toBe(false)
+    expect(res.blockers).toEqual([
+      expect.stringContaining('no customer email'),
+      expect.stringContaining('In Progress'),
+      expect.stringContaining('at least $1.00'),
+    ])
+    expect(res.lastQuote).toEqual({ sentAt: '2026-09-18T12:00:00.000Z', expiresAt: '2026-09-25T12:00:00.000Z', depositCents: 20000, balanceCents: 0 })
+    expect(res.warnings).toEqual([expect.stringContaining('already sent on 2026-09-18')])
+    data.findRowByJobId.mockResolvedValue(null)
+    expect(await previewQuote.run({ jobId: JOB, tier: 'medium' }, ACTOR)).toEqual({ found: false })
+  })
+})
+
+describe('send_quote', () => {
+  it('refuses a job that is In Progress or later, or already has a deposit, without touching the core', async () => {
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row({ status: 'Complete' }) })
+    const res = await sendQuoteTool.run({ jobId: JOB, depositDollars: 135, balanceDollars: 0, tier: 'medium' }, ACTOR)
+    expect(res).toMatchObject({ ok: false, error: expect.stringContaining('Complete') })
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row({ status: 'Booked', deposit_paid_cents: '13500' }) })
+    const paid = await sendQuoteTool.run({ jobId: JOB, depositDollars: 135, balanceDollars: 0, tier: 'medium' }, ACTOR)
+    expect(paid).toMatchObject({ ok: false, error: expect.stringContaining('deposit has already been paid') })
+    expect(quote.sendQuote).not.toHaveBeenCalled()
+    data.findRowByJobId.mockResolvedValue(null)
+    expect(await sendQuoteTool.run({ jobId: JOB, depositDollars: 135, balanceDollars: 0, tier: 'medium' }, ACTOR)).toEqual({ ok: false, error: 'Job not found' })
+  })
+
+  it('quotes a self-scheduled Booked job with nothing paid', async () => {
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row({ status: 'Booked', deposit_paid_cents: '0' }) })
+    quote.sendQuote.mockResolvedValue({
+      ok: true, paymentLinkUrl: 'u', paymentLinkId: 'p', expiresAt: 'e', depositCents: 13500, balanceCents: 0, sentTo: 'sarah@example.com',
+    })
+    const res = await sendQuoteTool.run({ jobId: JOB, depositDollars: 135, balanceDollars: 0, tier: 'medium' }, ACTOR)
+    expect(res).toMatchObject({ ok: true, status: 'Quoted' })
+    expect(quote.sendQuote).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends through the shared core in cents under the actor and reports what went out', async () => {
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row({ status: 'Pending Follow-Up' }) })
+    quote.sendQuote.mockResolvedValue({
+      ok: true, paymentLinkUrl: 'https://buy.stripe.com/x', paymentLinkId: 'plink_1', expiresAt: '2026-09-27T00:00:00.000Z', depositCents: 13500, balanceCents: 22550, sentTo: 'sarah@example.com',
+    })
+    const res = await sendQuoteTool.run(
+      { jobId: JOB, depositDollars: 135, balanceDollars: 225.5, tier: 'large', description: 'Two TVs' },
+      ACTOR,
+    )
+    expect(quote.sendQuote).toHaveBeenCalledWith({ jobId: JOB, depositCents: 13500, balanceCents: 22550, tier: 'large', description: 'Two TVs', actor: ACTOR })
+    expect(res).toEqual({
+      ok: true, sentTo: 'sarah@example.com', paymentLinkUrl: 'https://buy.stripe.com/x', expiresAt: '2026-09-27T00:00:00.000Z', depositCents: 13500, balanceCents: 22550, status: 'Quoted',
+    })
+  })
+
+  it('hands back a core failure without the raw cause', async () => {
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row() })
+    quote.sendQuote.mockResolvedValue({ ok: false, error: 'Stripe down', step: 'payment_link', cause: new Error('Stripe down') })
+    expect(await sendQuoteTool.run({ jobId: JOB, depositDollars: 135, balanceDollars: 0, tier: 'medium' }, ACTOR)).toEqual({ ok: false, error: 'Stripe down', step: 'payment_link' })
+  })
+
+  it('rejects a deposit under $1, fractional cents, and an unknown tier at the schema', () => {
+    const base = { jobId: JOB, depositDollars: 135, balanceDollars: 0, tier: 'medium' }
+    expect(sendQuoteTool.inputSchema.safeParse(base).success).toBe(true)
+    expect(sendQuoteTool.inputSchema.safeParse({ ...base, depositDollars: 0.5 }).success).toBe(false)
+    expect(sendQuoteTool.inputSchema.safeParse({ ...base, depositDollars: 135.005 }).success).toBe(false)
+    expect(sendQuoteTool.inputSchema.safeParse({ ...base, tier: 'huge' }).success).toBe(false)
   })
 })

@@ -17,8 +17,13 @@ A Model Context Protocol server (Streamable HTTP, `mcp-handler` on Vercel) at `h
 | `move_job` | status move under the admin rules; Complete and payment states refused | yes |
 | `add_note` | a timeline note | yes |
 | `business_snapshot` | counts, triage, open quotes, balances, revenue this month, lead sources | no |
+| `price_menu` | the flat-rate menu with add-on prices, the numbered bundles, the pricing rules | no |
+| `preview_quote` | builds a quote for a job without sending: recipient, amounts, email text, the price picked at booking, the last quote sent, blockers and warnings | no |
+| `send_quote` | Stripe Payment Link for the deposit, quote email to the customer, job to Quoted, balance owed recorded | yes, money |
 
-Deliberately absent: send quote, charge, refund, cancel appointment, anonymize, any email. Money and customer-facing sends stay in `/admin`.
+`send_quote` is the one action here that reaches a customer. It runs the same core as the admin quote page (`lib/crm/quote.ts`, shared by both), so the link, the email, the status change and the `quote.sent` activity are identical whoever sends. Two guards on top of the admin site's: the `admin-money` limit of 5 a minute per person applies as well as the `mcp` limit, and jobs with a deposit already paid, or In Progress or later, are refused (a re-quote would flip a paid job back to Quoted); re-quote those from `/admin`. Self-scheduled jobs are Booked with nothing paid, so they can be quoted. The server instructions tell Claude to run `preview_quote`, read the amounts and recipient back, and get a yes before sending.
+
+Deliberately absent: charge, refund, cancel appointment, anonymize, any other email. Those stay in `/admin`.
 
 ## Env (Vercel)
 
