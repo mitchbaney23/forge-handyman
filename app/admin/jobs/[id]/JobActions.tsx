@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { statusOptionsFor } from "@/lib/jobs/status-machine";
 import type { ActionResult } from "@/lib/admin/guard";
 import {
+  adjustBalance,
   collectBalance,
   dispatchToDavid,
   markComplete,
@@ -29,6 +30,9 @@ export function JobActions({
   const [feedback, setFeedback] = useState<ActionResult | null>(null);
   const [confirmingComplete, setConfirmingComplete] = useState(false);
   const [confirmingCollect, setConfirmingCollect] = useState(false);
+  const [adjusting, setAdjusting] = useState(false);
+  const [newBalance, setNewBalance] = useState((balanceOwedCents / 100).toFixed(2));
+  const [adjustReason, setAdjustReason] = useState("");
 
   const handleStatusChange = (newStatus: string) => {
     setFeedback(null);
@@ -69,6 +73,26 @@ export function JobActions({
     startTransition(async () => {
       const res = await collectBalance(jobId);
       setFeedback(res);
+    });
+  };
+
+  const openAdjust = () => {
+    setFeedback(null);
+    setConfirmingComplete(false);
+    setConfirmingCollect(false);
+    setNewBalance((balanceOwedCents / 100).toFixed(2));
+    setAdjustReason("");
+    setAdjusting(true);
+  };
+
+  const handleAdjustBalance = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setFeedback(null);
+    const amount = parseFloat(newBalance);
+    startTransition(async () => {
+      const res = await adjustBalance(jobId, amount, adjustReason);
+      setFeedback(res);
+      if (res.ok) setAdjusting(false);
     });
   };
 
@@ -151,7 +175,92 @@ export function JobActions({
               : `Email payment link for $${(balanceOwedCents / 100).toFixed(2)}`}
           </button>
         )}
+        <button
+          type="button"
+          disabled={pending}
+          onClick={openAdjust}
+          className="rounded-lg border border-navy/15 bg-white px-4 py-2 text-sm font-medium text-navy hover:border-navy hover:bg-navy hover:text-white disabled:opacity-50"
+        >
+          Adjust balance
+        </button>
       </div>
+
+      {adjusting && (
+        <form
+          onSubmit={handleAdjustBalance}
+          className="rounded-lg border border-navy/15 bg-navy/[0.03] p-4 text-sm"
+        >
+          <div className="font-medium text-navy">Change the balance owed</div>
+          <p className="mt-1 text-xs text-ink/65">
+            Currently <strong>${(balanceOwedCents / 100).toFixed(2)}</strong>.
+            This is what Mark Complete charges the saved card (or what the
+            payment link asks for). Nothing is charged or refunded now; the
+            change and your reason go on the timeline. If a payment link was
+            already emailed, it is cancelled so the old amount can&rsquo;t be
+            paid.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[10rem_1fr]">
+            <div>
+              <label
+                htmlFor="new-balance"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink/60"
+              >
+                New balance (USD)
+              </label>
+              <div className="relative">
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-ink/50">
+                  $
+                </span>
+                <input
+                  id="new-balance"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={newBalance}
+                  onChange={(e) => setNewBalance(e.target.value)}
+                  className="block w-full rounded-lg border border-navy/15 bg-white py-2 pl-7 pr-3 text-sm focus:border-navy focus:outline-none focus:ring-2 focus:ring-amber-forge/40"
+                />
+              </div>
+            </div>
+            <div>
+              <label
+                htmlFor="adjust-reason"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink/60"
+              >
+                Why
+              </label>
+              <input
+                id="adjust-reason"
+                type="text"
+                required
+                minLength={3}
+                maxLength={500}
+                value={adjustReason}
+                onChange={(e) => setAdjustReason(e.target.value)}
+                placeholder="Job took less time than quoted"
+                className="block w-full rounded-lg border border-navy/15 bg-white px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-2 focus:ring-amber-forge/40"
+              />
+            </div>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="submit"
+              disabled={pending || !newBalance || adjustReason.trim().length < 3}
+              className="rounded-md bg-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-navy/90 disabled:opacity-50"
+            >
+              {pending ? "Saving…" : "Save balance"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdjusting(false)}
+              className="rounded-md border border-navy/15 px-3 py-1.5 text-xs font-medium text-navy hover:bg-navy/5"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
 
       {confirmingComplete && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm">
