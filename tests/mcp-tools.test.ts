@@ -346,7 +346,7 @@ describe('preview_quote', () => {
   })
 
   it('blocks a job with no email, a job past Quoted, and a missing deposit; warns about an earlier quote', async () => {
-    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row({ email: '', status: 'Booked' }) })
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row({ email: '', status: 'In Progress' }) })
     data.listActivitiesForJob.mockResolvedValue([
       { at: '2026-09-18T12:00:00.000Z', actor: 'admin:x', action: 'quote.sent', notes: '', before: '', after: '', data: { after: { depositCents: 20000, balanceCents: 0, expiresAt: '2026-09-25T12:00:00.000Z', paymentLinkUrl: 'https://buy.stripe.com/x' } } },
     ])
@@ -354,7 +354,7 @@ describe('preview_quote', () => {
     expect(res.canSend).toBe(false)
     expect(res.blockers).toEqual([
       expect.stringContaining('no customer email'),
-      expect.stringContaining('Booked'),
+      expect.stringContaining('In Progress'),
       expect.stringContaining('at least $1.00'),
     ])
     expect(res.lastQuote).toEqual({ sentAt: '2026-09-18T12:00:00.000Z', expiresAt: '2026-09-25T12:00:00.000Z', depositCents: 20000, balanceCents: 0 })
@@ -365,13 +365,26 @@ describe('preview_quote', () => {
 })
 
 describe('send_quote', () => {
-  it('refuses a job that is Booked or later without touching the core', async () => {
+  it('refuses a job that is In Progress or later, or already has a deposit, without touching the core', async () => {
     data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row({ status: 'Complete' }) })
     const res = await sendQuoteTool.run({ jobId: JOB, depositDollars: 135, balanceDollars: 0, tier: 'medium' }, ACTOR)
     expect(res).toMatchObject({ ok: false, error: expect.stringContaining('Complete') })
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row({ status: 'Booked', deposit_paid_cents: '13500' }) })
+    const paid = await sendQuoteTool.run({ jobId: JOB, depositDollars: 135, balanceDollars: 0, tier: 'medium' }, ACTOR)
+    expect(paid).toMatchObject({ ok: false, error: expect.stringContaining('deposit has already been paid') })
     expect(quote.sendQuote).not.toHaveBeenCalled()
     data.findRowByJobId.mockResolvedValue(null)
     expect(await sendQuoteTool.run({ jobId: JOB, depositDollars: 135, balanceDollars: 0, tier: 'medium' }, ACTOR)).toEqual({ ok: false, error: 'Job not found' })
+  })
+
+  it('quotes a self-scheduled Booked job with nothing paid', async () => {
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row({ status: 'Booked', deposit_paid_cents: '0' }) })
+    quote.sendQuote.mockResolvedValue({
+      ok: true, paymentLinkUrl: 'u', paymentLinkId: 'p', expiresAt: 'e', depositCents: 13500, balanceCents: 0, sentTo: 'sarah@example.com',
+    })
+    const res = await sendQuoteTool.run({ jobId: JOB, depositDollars: 135, balanceDollars: 0, tier: 'medium' }, ACTOR)
+    expect(res).toMatchObject({ ok: true, status: 'Quoted' })
+    expect(quote.sendQuote).toHaveBeenCalledTimes(1)
   })
 
   it('sends through the shared core in cents under the actor and reports what went out', async () => {

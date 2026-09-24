@@ -365,10 +365,22 @@ export const businessSnapshot = define({
 // send_quote emails the Stripe Payment Link. Same core as the admin page.
 // ---------------------------------------------------------------------------
 
-// Statuses a quote may go out from. Booked and later are refused here: a
-// re-quote flips the job back to Quoted and rewrites the balance owed, which
-// on a paid or finished job is damage. The admin site can still do it.
-export const QUOTABLE_STATUSES = new Set(['New', 'Quoted', 'Pending Follow-Up', 'Cancelled'])
+// A quote may not go out once money has moved or work has started: a re-quote
+// flips the job back to Quoted and rewrites the balance owed, which on a paid
+// or finished job is damage. The admin site can still do it. Booked alone is
+// NOT a reason to refuse: a self-scheduled booking lands as Booked with
+// nothing paid (app/api/contact/route.ts), and the quote is what collects it.
+const PAST_QUOTING_STATUSES = new Set(['In Progress', 'Complete', 'Payment Failed', 'Refunded', 'Partial Refund'])
+
+export function quoteBlockReason(row: Pick<ContactRow, 'status' | 'deposit_paid_cents'>): string | null {
+  if (PAST_QUOTING_STATUSES.has(row.status)) {
+    return `The job is ${row.status}; re-quoting a job that far along is done from the admin site.`
+  }
+  if ((Number(row.deposit_paid_cents || '0') || 0) > 0) {
+    return 'A deposit has already been paid on this job; re-quoting it is done from the admin site.'
+  }
+  return null
+}
 
 const dollars = (min: number) =>
   z
@@ -453,9 +465,8 @@ export const previewQuote = define({
     const blockers: string[] = []
     if (!row.email) blockers.push('The job has no customer email, so there is nowhere to send the quote.')
     if (!row.name) blockers.push('The job has no customer name.')
-    if (!QUOTABLE_STATUSES.has(row.status)) {
-      blockers.push(`The job is ${row.status}; re-quoting a job that far along is done from the admin site.`)
-    }
+    const blocked = quoteBlockReason(row)
+    if (blocked) blockers.push(blocked)
     if (depositCents < 100) blockers.push('The deposit must be at least $1.00; pick an amount.')
 
     const warnings: string[] = []
@@ -497,7 +508,7 @@ export const sendQuoteTool = define({
   name: 'send_quote',
   title: 'Send a quote',
   description:
-    'Email the customer a quote: creates a Stripe Payment Link for the deposit (their card is saved for the balance), sends the quote email, sets the job to Quoted and records the balance owed. This reaches the customer, so run preview_quote first and get a clear yes on the amounts and recipient. Refused for jobs already Booked or later.',
+    'Email the customer a quote: creates a Stripe Payment Link for the deposit (their card is saved for the balance), sends the quote email, sets the job to Quoted and records the balance owed. This reaches the customer, so run preview_quote first and get a clear yes on the amounts and recipient. Works on self-scheduled Booked jobs; refused once a deposit is paid or the job is In Progress or later.',
   inputSchema: z.object({
     jobId: z.string().uuid(),
     depositDollars: dollars(1).describe('Charged when they pay the link; at least $1.00'),
@@ -510,12 +521,8 @@ export const sendQuoteTool = define({
   run: async ({ jobId, depositDollars, balanceDollars, tier, description }, actor) => {
     const found = await findRowByJobId(jobId)
     if (!found) return { ok: false, error: 'Job not found' }
-    if (!QUOTABLE_STATUSES.has(found.row.status)) {
-      return {
-        ok: false,
-        error: `The job is ${found.row.status}; re-quoting a job that far along is done from the admin site.`,
-      }
-    }
+    const blocked = quoteBlockReason(found.row)
+    if (blocked) return { ok: false, error: blocked }
     const result = await sendQuote({
       jobId,
       depositCents: Math.round(depositDollars * 100),
