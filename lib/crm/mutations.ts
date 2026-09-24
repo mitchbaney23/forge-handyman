@@ -312,3 +312,27 @@ export async function adjustBalance(args: {
     message: `Balance owed changed from ${dollars(beforeCents)} to ${dollars(newBalanceCents)}.`,
   };
 }
+
+// The Stripe payment-link ids of every balance link created for a job, from
+// its timeline (the `balance_link.created` activity). The id lives in the
+// activity's JSON `after`, surfaced either as `data.after` or as the raw
+// string, depending on how the row was read. De-duplicated, order kept.
+export function balanceLinkIdsFrom(
+  activities: { action: string; after?: string; data?: unknown }[],
+): string[] {
+  const ids: string[] = [];
+  for (const a of activities) {
+    if (a.action !== "balance_link.created") continue;
+    let after: unknown = (a.data as { after?: unknown } | null)?.after;
+    if (!after && a.after) {
+      try {
+        after = JSON.parse(a.after);
+      } catch {
+        after = null;
+      }
+    }
+    const id = (after as { paymentLinkId?: unknown } | null)?.paymentLinkId;
+    if (typeof id === "string" && id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}

@@ -248,3 +248,18 @@ export async function createBalancePaymentLink(
     expiresAt,
   }
 }
+
+// Switch off payment links so they can no longer be paid. Used when the
+// balance owed changes after a balance link was emailed: Stripe links never
+// expire on their own (expiresAt above is what the email says, not a Stripe
+// setting), so the old link would still charge the old amount and, once paid,
+// zero the balance. Deactivating an already-used link is harmless. Throws on
+// the first failure so the caller can refuse the change.
+export async function deactivatePaymentLinks(paymentLinkIds: string[], actor: string): Promise<void> {
+  if (paymentLinkIds.length === 0) return
+  const stripe = getStripe()
+  for (const id of paymentLinkIds) {
+    await stripe.paymentLinks.update(id, { active: false })
+  }
+  logger.info({ paymentLinkIds, actor }, 'stripe: payment links deactivated')
+}

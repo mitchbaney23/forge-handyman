@@ -57,7 +57,13 @@ export async function chargeBalance(
   actor: string,
 ): Promise<ChargeBalanceResult> {
   const stripe = getStripe()
-  const idempotencyKey = buildIdempotencyKey('balance-charge', input.jobId)
+  // The amount is part of the key. The balance can be adjusted between a failed
+  // attempt and a retry (a job that ran short); with a jobId-only key Stripe
+  // rejects the retry for 24h ("Keys for idempotent requests can only be used
+  // with the same parameters"). A double-click at the same amount still reuses
+  // the key. The durable double-charge guard is the payments table, whose live-
+  // attempt index is on (job_id, purpose) regardless of amount.
+  const idempotencyKey = buildIdempotencyKey('balance-charge', input.jobId, String(input.amountCents))
 
   try {
     const intent = await stripe.paymentIntents.create(

@@ -26,7 +26,7 @@ vi.mock("@/lib/security/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { adjustBalance, createCustomer, moveJobStatus } from "@/lib/crm/mutations";
+import { adjustBalance, balanceLinkIdsFrom, createCustomer, moveJobStatus } from "@/lib/crm/mutations";
 
 const ACTOR = "admin:owner@forge.test";
 
@@ -262,5 +262,20 @@ describe("adjustBalance", () => {
   it("returns Job not found when the row is missing", async () => {
     data.findRowByJobId.mockResolvedValue(null);
     expect(await adjustBalance({ jobId: "nope", newBalanceCents: 1000, reason: "ran short", actor: ACTOR })).toEqual({ ok: false, error: "Job not found" });
+  });
+});
+
+describe("balanceLinkIdsFrom", () => {
+  it("collects balance-link ids from either activity shape, de-duplicated, ignoring other actions", () => {
+    expect(
+      balanceLinkIdsFrom([
+        { action: "balance_link.created", data: { after: { paymentLinkId: "plink_a", amountCents: 13500 } } },
+        { action: "balance_link.created", after: JSON.stringify({ paymentLinkId: "plink_b" }) },
+        { action: "balance_link.created", after: JSON.stringify({ paymentLinkId: "plink_a" }) },
+        { action: "payment_link.created", after: JSON.stringify({ paymentLinkId: "plink_quote" }) },
+        { action: "balance_link.created", after: "not json" },
+      ]),
+    ).toEqual(["plink_a", "plink_b"]);
+    expect(balanceLinkIdsFrom([])).toEqual([]);
   });
 });

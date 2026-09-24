@@ -195,7 +195,9 @@ export function JobActions({
             Currently <strong>${(balanceOwedCents / 100).toFixed(2)}</strong>.
             This is what Mark Complete charges the saved card (or what the
             payment link asks for). Nothing is charged or refunded now; the
-            change and your reason go on the timeline.
+            change and your reason go on the timeline. If a payment link was
+            already emailed, it is cancelled so the old amount can&rsquo;t be
+            paid.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-[10rem_1fr]">
             <div>
