@@ -3,10 +3,10 @@ import Link from "next/link";
 import { Hero } from "@/components/Hero";
 import { TrustBar } from "@/components/TrustBar";
 import { ServiceCard } from "@/components/ServiceCard";
-import { TestimonialCard } from "@/components/TestimonialCard";
+import { GoogleReviews } from "@/components/GoogleReviews";
 import { CTABanner } from "@/components/CTABanner";
 import { Reveal } from "@/components/Reveal";
-import { SERVICES, TESTIMONIALS, BUSINESS } from "@/lib/constants";
+import { SERVICES, BUSINESS } from "@/lib/constants";
 import { Icon, type IconName } from "@/lib/icons";
 
 export default function HomePage() {
@@ -140,25 +140,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Testimonials */}
-      <section className="bg-paper">
-        <div className="container-page section">
-          <Reveal className="mx-auto max-w-2xl text-center">
-            <p className="eyebrow">What Our Neighbors Say</p>
-            <h2 className="mt-3 font-display text-3xl font-bold sm:text-4xl">
-              Trusted by homeowners across{" "}
-              <span className="ink-underline">the Triangle</span>
-            </h2>
-          </Reveal>
-          <div className="mt-12 grid gap-[22px] md:grid-cols-2">
-            {TESTIMONIALS.map((t, i) => (
-              <Reveal key={t.name} delay={i * 80}>
-                <TestimonialCard {...t} />
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Google reviews — live from the listing, see components/GoogleReviews.tsx */}
+      <GoogleReviews />
 
       <CTABanner />
     </>
