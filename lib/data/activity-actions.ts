@@ -49,6 +49,8 @@ export const ACTIONS = {
   PAYMENT_BALANCE_CHARGE_SUCCEEDED: 'payment.balance-charge.succeeded',
   PAYMENT_FAILED: 'payment.failed',
   BALANCE_CHARGED: 'balance.charged',
+  // Admin (or Claude) changed what the balance charge will be, before it runs
+  BALANCE_ADJUSTED: 'balance.adjusted',
   BALANCE_CHARGE_FAILED: 'balance.charge_failed',
   REFUND_ISSUED: 'refund.issued',
   REFUND_FAILED: 'refund.failed',

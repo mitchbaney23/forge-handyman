@@ -8,6 +8,7 @@ import {
   appendAuditRow,
   findRowByJobId,
   getAppointmentByJobId,
+  listActivitiesForJob,
   updateRowByJobId,
 } from "@/lib/data";
 import {
@@ -16,7 +17,11 @@ import {
   requireAdmin,
   type ActionResult,
 } from "@/lib/admin/guard";
-import { moveJobStatus } from "@/lib/crm/mutations";
+import {
+  adjustBalance as adjustBalanceCore,
+  balanceLinkIdsFrom,
+  moveJobStatus,
+} from "@/lib/crm/mutations";
 import { performCancellation } from "@/lib/scheduling/cancel";
 import { adminActor } from "@/lib/data/activity-actions";
 import { getBackend } from "@/lib/data/backend";
@@ -27,7 +32,7 @@ import {
   recordPaymentOutcome,
 } from "@/lib/data/pg/payments";
 import { chargeBalance, type ChargeBalanceResult } from "@/lib/stripe/charges";
-import { createBalancePaymentLink } from "@/lib/stripe/payment-links";
+import { createBalancePaymentLink, deactivatePaymentLinks } from "@/lib/stripe/payment-links";
 import { refundCharge } from "@/lib/stripe/refunds";
 import { sendBalanceRequestEmail } from "@/lib/email/balance-request";
 import { sendCompletionReceiptEmail } from "@/lib/email/completion-receipt";
@@ -135,6 +140,82 @@ export async function recordFirstTouch(jobId: string): Promise<ActionResult> {
   });
   revalidatePath(`/admin/jobs/${jobId}`);
   return { ok: true, message: "First touch recorded." };
+}
+
+// Change the balance the next charge will use (a job that ran short, extra
+// work, or a balance collected outside the app). Cheap bucket: this moves no
+// money itself; Mark Complete / Collect balance still sit in the money bucket.
+export async function adjustBalance(
+  jobId: string,
+  newBalanceDollars: number,
+  reason: string,
+): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdmin(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  if (!Number.isFinite(newBalanceDollars) || newBalanceDollars < 0) {
+    return { ok: false, error: "Balance must be a non-negative number" };
+  }
+  const newBalanceCents = Math.round(newBalanceDollars * 100);
+  const found = await findRowByJobId(jobId);
+  if (!found) return { ok: false, error: "Job not found" };
+  const unchanged = (Number(found.row.balance_owed_cents || "0") || 0) === newBalanceCents;
+
+  let cancelledLinks = 0;
+  if (!unchanged && getBackend() === "postgres") {
+    // A charge already in flight (3DS pending) is for the old amount; changing
+    // the number under it would leave the job and Stripe disagreeing.
+    const live = await findLiveAttempt(jobId, BALANCE_PURPOSE);
+    if (live && (live.status === "pending" || live.status === "requires_action")) {
+      return {
+        ok: false,
+        error:
+          "A balance charge is already in progress for this job. Let it finish (or fail) before changing the balance.",
+      };
+    }
+    // An emailed balance link still charges the OLD amount and never expires.
+    // Switch it off first; if Stripe won't, don't change the balance.
+    const linkIds = balanceLinkIdsFrom(await listActivitiesForJob(jobId));
+    if (linkIds.length > 0) {
+      try {
+        await deactivatePaymentLinks(linkIds, auth.email);
+        cancelledLinks = linkIds.length;
+      } catch (err) {
+        Sentry.captureException(err, {
+          tags: { route: "admin", action: "adjustBalance", step: "deactivateLinks" },
+          extra: { jobId },
+        });
+        logger.error({ err, jobId }, "admin: deactivating balance links failed");
+        return {
+          ok: false,
+          error:
+            "Couldn't cancel the payment link already emailed for the old amount, so the balance was not changed. Try again, or deactivate it in the Stripe Dashboard first.",
+        };
+      }
+    }
+  }
+
+  const res = await adjustBalanceCore({
+    jobId,
+    newBalanceCents,
+    reason:
+      cancelledLinks > 0
+        ? `${reason.trim()} (cancelled the payment link already emailed for the old amount)`
+        : reason,
+    actor: adminActor(auth.email),
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/admin");
+  return {
+    ok: true,
+    message:
+      cancelledLinks > 0
+        ? `${res.message} The payment link already emailed for the old amount no longer works; use “Email payment link” to send one for the new amount.`
+        : res.message,
+  };
 }
 
 export async function markComplete(jobId: string): Promise<ActionResult> {
@@ -457,7 +538,7 @@ async function chargeBalanceGuarded(args: {
     jobId,
     purpose: BALANCE_PURPOSE,
     amountCents: balanceCents,
-    idempotencyKey: `${BALANCE_PURPOSE}:${jobId}`,
+    idempotencyKey: `${BALANCE_PURPOSE}:${jobId}:${balanceCents}`,
     stripeCustomerId: customerId,
   });
   if (!claimed) {

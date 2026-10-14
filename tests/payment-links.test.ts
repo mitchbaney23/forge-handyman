@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const created = {
   paymentLinks: [] as Record<string, unknown>[],
+  updates: [] as { id: string; params: Record<string, unknown> }[],
 };
 
 vi.mock("@/lib/stripe/client", () => ({
@@ -23,6 +24,11 @@ vi.mock("@/lib/stripe/client", () => ({
         created.paymentLinks.push(params);
         return Promise.resolve({ id: "plink_1", url: "https://buy.stripe.com/test" });
       },
+      update: (id: string, params: Record<string, unknown>) => {
+        created.updates.push({ id, params });
+        if (id === "plink_broken") return Promise.reject(new Error("No such payment link"));
+        return Promise.resolve({ id, active: false });
+      },
     },
   }),
   buildIdempotencyKey: (...parts: string[]) => parts.join(":"),
@@ -35,10 +41,15 @@ vi.mock("@/lib/security/logger", () => ({
   maskEmail: (v: string | undefined) => v ?? "",
 }));
 
-import { createBalancePaymentLink, createQuotePaymentLink } from "@/lib/stripe/payment-links";
+import {
+  createBalancePaymentLink,
+  createQuotePaymentLink,
+  deactivatePaymentLinks,
+} from "@/lib/stripe/payment-links";
 
 beforeEach(() => {
   created.paymentLinks = [];
+  created.updates = [];
 });
 
 describe("payment links save a reusable card", () => {
@@ -88,5 +99,21 @@ describe("payment links save a reusable card", () => {
     expect(link.metadata?.purpose).toBe("balance-link");
     expect(link.payment_intent_data?.metadata?.purpose).toBe("balance-link");
     expect(link.restrictions?.completed_sessions?.limit).toBe(1);
+  });
+});
+
+describe("deactivatePaymentLinks", () => {
+  it("switches each link off and does nothing for an empty list", async () => {
+    await deactivatePaymentLinks([], "admin@x");
+    expect(created.updates).toEqual([]);
+    await deactivatePaymentLinks(["plink_a", "plink_b"], "admin@x");
+    expect(created.updates).toEqual([
+      { id: "plink_a", params: { active: false } },
+      { id: "plink_b", params: { active: false } },
+    ]);
+  });
+
+  it("throws when Stripe refuses, so the caller can keep the old balance", async () => {
+    await expect(deactivatePaymentLinks(["plink_broken"], "admin@x")).rejects.toThrow("No such payment link");
   });
 });
