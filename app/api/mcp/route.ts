@@ -16,10 +16,11 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 const INSTRUCTIONS = [
-  'Forge Handyman: customers, jobs, appointments, notes and a business snapshot.',
+  'Forge Handyman: customers, jobs, appointments, notes, quotes and a business snapshot.',
   'Jobs move New, Quoted, Pending Follow-Up, Booked, In Progress, Complete; Cancelled; and payment states Stripe owns.',
-  'Complete, quotes, charges and refunds happen in the admin site, never here. David is dispatched from the admin site, not by log_phone_job.',
-  'Read results back to the person in two lines. Never send anything to a customer.',
+  'Quotes: price_menu for the flat-rate prices, preview_quote to build one and see who gets it, send_quote to email it. send_quote is the only thing here that reaches a customer (a Stripe payment link by email), so read the amounts and the recipient back and get a clear yes first.',
+  'Complete, charges and refunds happen in the admin site, never here. David is dispatched from the admin site, not by log_phone_job.',
+  'Read results back to the person in two lines.',
 ].join(' ')
 
 type AuthContext = { http?: { authInfo?: { extra?: Record<string, unknown> } } }
@@ -52,6 +53,14 @@ const handler = createMcpHandler(
             return text(`Too many requests; try again in ${limit.retryAfterSeconds}s`, true)
           }
           const actor = actorFor(label)
+          if (tool.money) {
+            // Same tight bucket the admin site uses for quote sends, charges
+            // and refunds, keyed by the Claude actor so it is per person.
+            const money = await checkLimit('admin-money', actor)
+            if (!money.success) {
+              return text(`Too many money actions; try again in ${money.retryAfterSeconds}s`, true)
+            }
+          }
           try {
             const result = await tool.run(input, actor)
             logger.info({ tool: tool.name, actor }, 'mcp: tool call')
