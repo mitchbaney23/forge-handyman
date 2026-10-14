@@ -169,7 +169,8 @@ forge-handyman/
 │   ├── Hero.tsx
 │   ├── TrustBar.tsx
 │   ├── ServiceCard.tsx
-│   ├── TestimonialCard.tsx
+│   ├── ReviewCard.tsx
+│   ├── GoogleReviews.tsx
 │   ├── ContactForm.tsx       # Client-side validation + submit
 │   ├── MobileCTA.tsx         # Sticky bottom bar on mobile
 │   ├── CTABanner.tsx
@@ -209,5 +210,7 @@ into `public/` and un-comment.
   (shared across all serverless instances) — see `lib/security/rate-limit.ts`.
 - Email is the critical path — if that fails the user gets an error. Calendar
   and Sheets failures are logged but don't block the success response.
-- No CMS, no DB — content lives in `lib/constants.ts`. Testimonials,
-  services, and service area are all edited there.
+- No CMS, no DB — content lives in `lib/constants.ts`. Services and
+  service area are edited there. Homepage reviews are the real Google reviews,
+  fetched server-side in `lib/reviews/google.ts` (needs `GOOGLE_PLACE_ID` +
+  a server key with Places API (New) enabled; see `.env.example`).
