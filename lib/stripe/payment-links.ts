@@ -4,7 +4,7 @@ import { buildIdempotencyKey, getStripe } from '@/lib/stripe/client'
 import { appendAuditRow } from '@/lib/data'
 import { logger, maskEmail } from '@/lib/security/logger'
 
-// One checkout line of a quote built from the menu (lib/quote-lines.ts).
+// One checkout line of an itemized quote (lib/quote-lines.ts).
 export interface QuoteLineItem {
   name: string
   unitCents: number
@@ -19,7 +19,7 @@ export interface QuoteInput {
   balanceCents: number
   tier: 'small' | 'medium' | 'large'
   description: string
-  // Menu quotes only. Shown as separate checkout lines when the link collects
+  // Itemized quotes only. Shown as separate checkout lines when the link collects
   // the whole total; a deposit-only link stays a single deposit line.
   lines?: QuoteLineItem[]
 }
@@ -66,12 +66,15 @@ export function quoteContentHash(
 // items, quantities and add-on prices the email showed. null when the link
 // should stay a single deposit line — a custom-amount quote, or a deposit
 // smaller than the total (charging "2 × $55" toward a partial deposit would
-// misstate what the money is for). Exported for unit testing.
+// misstate what the money is for), or a quote with a $0 or negative line (a
+// discount, an "included" item), which Stripe will not sell as a line item;
+// the email still lists every line. Exported for unit testing.
 export function itemizedLinkLineItems(
   quote: Pick<QuoteInput, 'jobId' | 'depositCents' | 'balanceCents' | 'lines'>,
 ): Stripe.PaymentLinkCreateParams.LineItem[] | null {
   const lines = quote.lines ?? []
   if (lines.length === 0 || quote.balanceCents !== 0) return null
+  if (lines.some((line) => line.unitCents <= 0)) return null
   const sum = lines.reduce((total, line) => total + line.unitCents * line.quantity, 0)
   if (sum !== quote.depositCents) return null
   return lines.map((line) => ({

@@ -245,10 +245,44 @@ describe('sendQuote from the menu', () => {
     expect(await sendQuote({ ...menuArgs, expectedTotalCents: 30000 })).toMatchObject({
       ok: false,
       step: 'validate',
-      error: 'The menu prices this quote at $265.00, not $300.00. Reload and check it before sending.',
+      error: 'This quote now prices at $265.00, not $300.00. Reload and check it before sending.',
     })
     expect(stripe.createQuotePaymentLink).not.toHaveBeenCalled()
     expect(mail.sendQuoteEmail).not.toHaveBeenCalled()
     expect(await sendQuote({ ...menuArgs, expectedTotalCents: 26500 })).toMatchObject({ ok: true })
+  })
+
+  it('adds custom lines after the menu lines, on the link, the email and the stamped payload', async () => {
+    const res = await sendQuote({
+      ...menuArgs,
+      customLines: [{ name: 'Travel fee', qty: 1, unitCents: 3500 }],
+      expectedTotalCents: 30000,
+    })
+    expect(res).toMatchObject({ ok: true, depositCents: 30000, balanceCents: 0 })
+    const link = vi.mocked(stripe.createQuotePaymentLink).mock.calls[0][0]
+    expect(link.lines?.at(-1)).toEqual({ name: 'Travel fee', unitCents: 3500, quantity: 1 })
+    const emailed = vi.mocked(mail.sendQuoteEmail).mock.calls[0][0]
+    expect(emailed.lines?.at(-1)).toMatchObject({ kind: 'custom', name: 'Travel fee', totalCents: 3500 })
+    const stamped = JSON.parse(String(data.appendAuditRow.mock.calls.at(-1)?.[0].after))
+    expect(stamped.totalCents).toBe(30000)
+  })
+
+  it('sends a quote of custom lines alone, and refuses a bad one before touching Stripe', async () => {
+    expect(
+      await sendQuote({
+        ...menuArgs,
+        menu: { items: [], packageNumber: null },
+        customLines: [{ name: 'Fence repair', qty: 1, unitCents: 45000 }],
+      }),
+    ).toMatchObject({ ok: true, depositCents: 45000 })
+    vi.mocked(stripe.createQuotePaymentLink).mockClear()
+    expect(
+      await sendQuote({
+        ...menuArgs,
+        menu: { items: [], packageNumber: null },
+        customLines: [{ name: '', qty: 1, unitCents: 45000 }],
+      }),
+    ).toMatchObject({ ok: false, step: 'validate', error: expect.stringContaining('give it a name') })
+    expect(stripe.createQuotePaymentLink).not.toHaveBeenCalled()
   })
 })

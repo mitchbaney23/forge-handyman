@@ -170,6 +170,19 @@ describe("menu quotes on the Stripe checkout page", () => {
     expect(itemizedLinkLineItems({ ...quote, lines: [] })).toBeNull();
   });
 
+  it("stays a single line when a quote has a discount or an included $0 line Stripe can't sell", () => {
+    const discount = { name: "Discount", unitCents: -2000, quantity: 1 };
+    expect(
+      itemizedLinkLineItems({ ...quote, depositCents: 20000, lines: [...lines, discount] }),
+    ).toBeNull();
+    const included = { name: "Haul-away", unitCents: 0, quantity: 1 };
+    expect(itemizedLinkLineItems({ ...quote, lines: [...lines, included] })).toBeNull();
+    const travel = { name: "Travel fee", unitCents: 3500, quantity: 1 };
+    expect(
+      itemizedLinkLineItems({ ...quote, depositCents: 25500, lines: [...lines, travel] }),
+    ).toHaveLength(3);
+  });
+
   it("uses the single deposit price for a deposit-only menu quote", async () => {
     await createQuotePaymentLink({ ...quote, depositCents: 10000, balanceCents: 12000 }, "admin:test");
     expect(created.paymentLinks[0].line_items).toEqual([{ price: "price_1", quantity: 1 }]);

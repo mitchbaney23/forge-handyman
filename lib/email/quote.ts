@@ -47,15 +47,15 @@ export interface QuoteEmailInput {
   toEmail: string
   toName: string
   serviceType: string
-  // Custom quotes: the scope. Menu quotes: an optional note above the items
+  // Bare amount: the scope. Itemized quotes: an optional note above the lines
   // (empty hides the box).
   description: string
   depositCents: number
   balanceCents: number
   paymentLinkUrl: string
   expiresAt: string
-  // Menu quotes only: the priced lines (lib/quote-lines.ts). Their total is
-  // deposit + balance.
+  // Itemized quotes only: the priced lines (lib/quote-lines.ts). Their total
+  // is deposit + balance.
   lines?: QuoteLine[]
   family?: boolean
 }
@@ -81,7 +81,9 @@ function buildLinesHtml(lines: QuoteLine[], totalCents: number, family: boolean)
                   </tr>`,
     )
     .join('')
-  const notes = [lines.some((l) => l.addOn) ? ADD_ON_RULE : '', family ? FAMILY_NOTE : '']
+  // The family rate applies to menu prices; a quote of custom lines only has none.
+  const familyApplies = family && lines.some((l) => l.kind !== 'custom')
+  const notes = [lines.some((l) => l.addOn) ? ADD_ON_RULE : '', familyApplies ? FAMILY_NOTE : '']
     .filter(Boolean)
     .map((note) => `<div style="margin-top:4px;">${escapeHtml(note)}</div>`)
     .join('')
@@ -216,6 +218,7 @@ export function buildQuoteText(data: QuoteEmailInput): string {
   const totalDollars = (totalCents / 100).toFixed(2)
   const itemized = data.lines && data.lines.length > 0 ? data.lines : null
   const paidInFull = data.balanceCents === 0
+  const familyNote = Boolean(data.family && itemized?.some((l) => l.kind !== 'custom'))
   const scope = data.description.trim() ? [data.description, ''] : []
   const amounts = itemized
     ? [
@@ -223,8 +226,8 @@ export function buildQuoteText(data: QuoteEmailInput): string {
         `Total: ${formatCents(totalCents)}`,
         '',
         ...(itemized.some((l) => l.addOn) ? [ADD_ON_RULE] : []),
-        ...(data.family ? [FAMILY_NOTE] : []),
-        ...(itemized.some((l) => l.addOn) || data.family ? [''] : []),
+        ...(familyNote ? [FAMILY_NOTE] : []),
+        ...(itemized.some((l) => l.addOn) || familyNote ? [''] : []),
         paidInFull
           ? `Due today: $${depositDollars}`
           : `Deposit (due today):     $${depositDollars}\nBalance (on completion): $${balanceDollars}`,
