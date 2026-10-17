@@ -82,3 +82,33 @@ describe('custom quote email', () => {
     expect(html).not.toContain('Add-on price')
   })
 })
+
+describe('custom lines in the quote email', () => {
+  it('lists them like any line, a discount with its minus sign, and drops the family note when no menu price applies', () => {
+    const q = itemizeQuote(
+      { items: [], packageNumber: null },
+      {
+        family: true,
+        custom: [
+          { name: 'Deck boards, replace 6', qty: 1, unitCents: 48000 },
+          { name: 'Friends discount', qty: 1, unitCents: -3000 },
+        ],
+      },
+    )
+    const data = { ...base, depositCents: q.totalCents, lines: q.lines, family: true }
+    const text = buildQuoteText(data)
+    expect(text).toContain('Deck boards, replace 6 — 1 × $480.00 = $480.00')
+    expect(text).toContain('Friends discount — 1 × -$30.00 = -$30.00')
+    expect(text).toContain('Total: $450.00')
+    expect(text).not.toContain('Forge Family rate')
+    expect(buildQuoteHtml(data)).not.toContain('Forge Family rate')
+  })
+
+  it('keeps the family note when menu lines sit beside custom ones', () => {
+    const q = itemizeQuote(
+      { items: [{ id: 'door-knob', qty: 1 }], packageNumber: null },
+      { family: true, custom: [{ name: 'Travel fee', qty: 1, unitCents: 2500 }] },
+    )
+    expect(buildQuoteText({ ...base, depositCents: q.totalCents, lines: q.lines, family: true })).toContain('Forge Family rate')
+  })
+})

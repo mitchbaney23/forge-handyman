@@ -23,10 +23,11 @@ import { extractQuoteMeta } from "@/lib/automation/lifecycle";
 import { estimateCentsFromDescription } from "@/lib/cart";
 import {
   cartFromQuoteLines,
+  customFromQuoteLines,
   isForgeFamilyJob,
   menuCartFromDescription,
 } from "@/lib/quote-lines";
-import type { MenuPrefill } from "./QuoteComposer";
+import type { QuotePrefill } from "./QuoteComposer";
 
 export const metadata: Metadata = {
   title: "Send Quote — Forge Admin",
@@ -66,31 +67,39 @@ export default async function QuotePage({
   if (!found) notFound();
   const { row } = found;
 
-  // For self-scheduled jobs, the price they picked lives in the description's
-  // cart summary — pull it back out to pre-fill the quote amount.
+  // For self-scheduled jobs, the price they saw lives in the description's
+  // cart summary; the builder flags a quote that totals something else.
   const estimateCents = estimateCentsFromDescription(row.description);
 
-  // The menu builder starts from what was last quoted from the menu (a
-  // re-quote), else from the items the customer picked at booking.
-  let menuPrefill: MenuPrefill | null = null;
+  // The builder starts from the lines of the last itemized quote (a re-quote),
+  // else from what the customer picked at booking. Booked items the menu no
+  // longer has come in as custom lines with the price left for you to fill.
+  let prefill: QuotePrefill | null = null;
   if (crmEnabled()) {
     try {
       const lastQuote = extractQuoteMeta(await listActivitiesForJob(decoded));
       if (lastQuote?.itemized) {
-        menuPrefill = {
+        prefill = {
           cart: cartFromQuoteLines(lastQuote.itemized.lines),
+          custom: customFromQuoteLines(lastQuote.itemized.lines),
           source: "last-quote",
           sentAt: lastQuote.sentAt,
-          unmatched: [],
         };
       }
     } catch (err) {
       logger.warn({ err, jobId: decoded }, "admin: reading the last quote failed");
     }
   }
-  if (!menuPrefill) {
+  if (!prefill) {
     const booked = menuCartFromDescription(row.description);
-    if (booked) menuPrefill = { ...booked, source: "booking", sentAt: "" };
+    if (booked) {
+      prefill = {
+        cart: booked.cart,
+        custom: booked.unmatched.map((name) => ({ name, qty: 1, unitCents: null })),
+        source: "booking",
+        sentAt: "",
+      };
+    }
   }
 
   // Audit log on quote-builder open (Amendment §21.5.5).
@@ -147,7 +156,8 @@ export default async function QuotePage({
           Send a Payment Link
         </h1>
         <p className="mt-2 text-sm text-ink/60">
-          Build the quote from the menu, or enter a custom amount. Sending
+          Add menu items and your own lines (travel, materials, a discount,
+          anything) in any mix. Sending
           creates a Stripe Payment Link and emails it to the customer. The
           deposit charges when they pay, saves their card on file, and flips
           this job&rsquo;s status to <strong>Quoted</strong>. Any balance
@@ -212,12 +222,8 @@ export default async function QuotePage({
         customerName={row.name || ""}
         customerEmail={row.email || ""}
         serviceType={categoryLabels}
-        initialDescription={row.description || ""}
-        prefillDepositDollars={
-          estimateCents != null ? estimateCents / 100 : undefined
-        }
         bookedEstimateCents={estimateCents}
-        menuPrefill={menuPrefill}
+        prefill={prefill}
         family={isForgeFamilyJob(row.description)}
       />
     </div>

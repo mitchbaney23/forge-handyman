@@ -14,10 +14,15 @@ import { QUOTE_DESCRIPTION_MAX, QUOTE_TIERS, sendQuote } from '@/lib/crm/quote'
 import { easternWindow, scheduleJob } from '@/lib/crm/schedule'
 import { FORGE_FAMILY } from '@/lib/family-pricing'
 import {
+  CUSTOM_MAX_QTY,
+  CUSTOM_MAX_UNIT_CENTS,
+  CUSTOM_NAME_MAX,
+  QUOTE_MAX_CUSTOM_LINES,
   QUOTE_MAX_LINES,
   QUOTE_MAX_QTY,
   menuCartFromDescription,
   planMenuQuote,
+  type CustomLineInput,
   type ItemizedQuote,
 } from '@/lib/quote-lines'
 import {
@@ -459,9 +464,11 @@ export const businessSnapshot = define({
 // Quotes. price_menu gives Claude the flat-rate numbers, preview_quote builds
 // the quote without sending (who gets it, what it says, the last one sent),
 // send_quote emails the Stripe Payment Link. Same core as the admin page.
-// A quote is either built from the menu (items: ids + quantities, priced by
-// the add-on engine in lib/quote-lines.ts — Claude never supplies a menu
-// price) or a custom deposit + balance for work the menu doesn't cover.
+// A quote is a list of lines in any mix: menu items (ids + quantities, priced
+// by the add-on engine in lib/quote-lines.ts — Claude never supplies a menu
+// price), a bundle, and custom lines Claude types (travel fee, materials, a
+// discount, the #3 Whole List), charged as entered. A bare deposit + balance
+// with no lines still works.
 // ---------------------------------------------------------------------------
 
 // A quote may not go out once money has moved or work has started: a re-quote
@@ -497,11 +504,32 @@ const menuItems = z
   )
   .max(QUOTE_MAX_LINES)
 const menuPackage = z.number().int().min(1).max(9)
+const customLines = z
+  .array(
+    z.object({
+      name: z.string().min(1).max(CUSTOM_NAME_MAX).describe('What the customer sees, e.g. "Travel fee (Benson)"'),
+      qty: z.number().int().min(1).max(CUSTOM_MAX_QTY).default(1),
+      unitDollars: z
+        .number()
+        .min(-CUSTOM_MAX_UNIT_CENTS / 100)
+        .max(CUSTOM_MAX_UNIT_CENTS / 100)
+        .refine((n) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6, { message: 'Use whole cents' })
+        .describe('Price of one; negative for a discount or credit, 0 for something included'),
+    }),
+  )
+  .max(QUOTE_MAX_CUSTOM_LINES)
 
-// The menu cart a tool call asked for, or null for a custom-amount quote.
-function menuFrom(items: { id: string; qty: number }[] | undefined, packageNumber: number | undefined) {
-  if (!items?.length && packageNumber == null) return null
-  return { items: items ?? [], packageNumber: packageNumber ?? null }
+// The lines a tool call asked for, or null for a bare deposit/balance quote.
+function linesFrom(
+  items: { id: string; qty: number }[] | undefined,
+  packageNumber: number | undefined,
+  custom: { name: string; qty: number; unitDollars: number }[] | undefined,
+): { menu: { items: { id: string; qty: number }[]; packageNumber: number | null }; customLines: CustomLineInput[] } | null {
+  if (!items?.length && packageNumber == null && !custom?.length) return null
+  return {
+    menu: { items: items ?? [], packageNumber: packageNumber ?? null },
+    customLines: (custom ?? []).map((c) => ({ name: c.name, qty: c.qty, unitCents: Math.round(c.unitDollars * 100) })),
+  }
 }
 
 export const priceMenu = define({
@@ -537,7 +565,7 @@ export const priceMenu = define({
         'Auto Maintenance items ride along with other work, or two or more together to reach the minimum.',
         `Forge Family (friends and family who booked through /family) pay ${Math.round(FORGE_FAMILY.discountRate * 100)}% less, rounded down to the nearest $5; the job description starts with FORGE FAMILY when it applies.`,
         'Quotes are a deposit charged now plus a balance charged at completion; for menu work the whole price is usually the deposit and the balance is $0.',
-        'For menu work, pass items [{ id, qty }] (and packageNumber 1 or 2 for a bundle) to preview_quote and send_quote: they price it line by line with these rules, Forge Family included, and the email lists every line. Use a custom deposit and balance only for work the menu does not cover (the #3 Whole List is always custom).',
+        'A quote is lines in any mix: items [{ id, qty }] from this menu (and packageNumber 1 or 2 for a bundle), priced line by line with these rules, Forge Family included; plus customLines [{ name, qty, unitDollars }] for anything else (a travel fee, materials, disposal, the #3 Whole List, a discount as a negative price), charged exactly as given. The email lists every line.',
       ],
       packages: SERVICE_PACKAGES.map((p) => ({
         number: p.number,
@@ -557,24 +585,25 @@ export const previewQuote = define({
   name: 'preview_quote',
   title: 'Preview a quote',
   description:
-    'Build a quote for a job without sending it: who it would go to, the lines and amounts the email would show, the price and items the customer picked at booking if any, the last quote sent, and anything that would block or should give pause. Pass items to price it from the menu, or a deposit and balance for a custom amount. Call this before send_quote and read it back to the person.',
+    'Build a quote for a job without sending it: who it would go to, the lines and amounts the email would show, the price and items the customer picked at booking if any, the last quote sent, and anything that would block or should give pause. Pass menu items, customLines (travel fee, materials, a discount, anything off the menu) or both. Call this before send_quote and read it back to the person.',
   inputSchema: z.object({
     jobId: z.string().uuid(),
     items: menuItems.optional().describe('Menu items and quantities; prices come from the menu. bookedItems in a preview without items is what the customer picked.'),
     packageNumber: menuPackage.optional().describe('1 or 2 to include a fixed-price bundle'),
+    customLines: customLines.optional().describe('Lines off the menu, charged as given'),
     depositDollars: dollars(0)
       .optional()
-      .describe('With items: defaults to the whole total. Custom: defaults to the price picked at booking, if any'),
-    balanceDollars: dollars(0).optional().describe('Custom quotes only; defaults to 0. With items the balance is the total minus the deposit'),
+      .describe('With lines: defaults to the whole total. Bare amount: defaults to the price picked at booking, if any'),
+    balanceDollars: dollars(0).optional().describe('Bare amount only; defaults to 0. With lines the balance is the total minus the deposit'),
     tier: z.enum(QUOTE_TIERS).default('medium'),
     description: z
       .string()
       .max(QUOTE_DESCRIPTION_MAX)
       .optional()
-      .describe('Custom: overrides the job description in the email. With items: an optional note above the lines'),
+      .describe('Bare amount: overrides the job description in the email. With lines: an optional note above them'),
   }),
   readOnly: true,
-  run: async ({ jobId, items, packageNumber, depositDollars, balanceDollars, tier, description }) => {
+  run: async ({ jobId, items, packageNumber, customLines: custom, depositDollars, balanceDollars, tier, description }) => {
     const found = await findRowByJobId(jobId)
     if (!found) return { found: false }
     const row = found.row
@@ -582,7 +611,7 @@ export const previewQuote = define({
     const lastQuote = extractQuoteMeta(activities)
     const bookedEstimateCents = estimateCentsFromDescription(row.description)
     const booked = menuCartFromDescription(row.description)
-    const menu = menuFrom(items, packageNumber)
+    const lines = linesFrom(items, packageNumber, custom)
 
     const blockers: string[] = []
     if (!row.email) blockers.push('The job has no customer email, so there is nowhere to send the quote.')
@@ -594,11 +623,16 @@ export const previewQuote = define({
     let balanceCents: number
     let emailDescription: string
     let itemized: ItemizedQuote | null = null
-    if (menu) {
+    if (lines) {
       if (balanceDollars != null) {
-        blockers.push('With items the balance is the menu total minus the deposit; leave balanceDollars out.')
+        blockers.push('With lines the balance is the quote total minus the deposit; leave balanceDollars out.')
       }
-      const plan = planMenuQuote(menu, row.description, depositDollars != null ? Math.round(depositDollars * 100) : undefined)
+      const plan = planMenuQuote(
+        lines.menu,
+        row.description,
+        depositDollars != null ? Math.round(depositDollars * 100) : undefined,
+        lines.customLines,
+      )
       if (plan.ok) {
         ;({ depositCents, balanceCents } = plan)
         itemized = plan.quote
@@ -621,14 +655,17 @@ export const previewQuote = define({
         `A quote was already sent on ${lastQuote.sentAt.slice(0, 10)} for $${((lastQuote.depositCents ?? 0) / 100).toFixed(2)} deposit; sending again emails the customer a second link.`,
       )
     }
-    const priced = !menu || itemized != null
+    const priced = !lines || itemized != null
     if (priced && bookedEstimateCents != null && depositCents + balanceCents !== bookedEstimateCents) {
       warnings.push(
         `The customer picked $${(bookedEstimateCents / 100).toFixed(2)} at booking; this quote totals $${((depositCents + balanceCents) / 100).toFixed(2)}.`,
       )
     }
-    if (!menu && booked && (booked.cart.items.length > 0 || booked.cart.packageNumber != null)) {
+    if (!lines && booked && (booked.cart.items.length > 0 || booked.cart.packageNumber != null)) {
       warnings.push('The customer picked menu items at booking (bookedItems); pass them as items to send an itemized quote.')
+    }
+    if (booked && booked.unmatched.length > 0) {
+      warnings.push(`Booked but no longer on the menu: ${booked.unmatched.join(', ')}. Add them as customLines with a price if they are still part of the job.`)
     }
 
     return {
@@ -638,7 +675,7 @@ export const previewQuote = define({
       bookedEstimateCents,
       bookedItems: booked ? { ...booked.cart, notOnMenu: booked.unmatched } : null,
       quote: {
-        pricing: menu ? 'menu' : 'custom',
+        pricing: lines ? 'lines' : 'amount',
         ...(itemized ? { lines: itemized.lines, family: itemized.family } : {}),
         depositCents,
         balanceCents,
@@ -667,43 +704,45 @@ export const sendQuoteTool = define({
   name: 'send_quote',
   title: 'Send a quote',
   description:
-    'Email the customer a quote: creates a Stripe Payment Link for the deposit (their card is saved for the balance), sends the quote email, sets the job to Quoted and records the balance owed. Pass items to send an itemized menu quote (priced from the menu; the deposit defaults to the whole total), or a deposit and balance for a custom amount. This reaches the customer, so run preview_quote first and get a clear yes on the lines, amounts and recipient. Works on self-scheduled Booked jobs; refused once a deposit is paid or the job is In Progress or later.',
+    'Email the customer a quote: creates a Stripe Payment Link for the deposit (their card is saved for the balance), sends the quote email, sets the job to Quoted and records the balance owed. Pass menu items, customLines or both, as previewed (the deposit defaults to the whole total). This reaches the customer, so run preview_quote first and get a clear yes on the lines, amounts and recipient. Works on self-scheduled Booked jobs; refused once a deposit is paid or the job is In Progress or later.',
   inputSchema: z.object({
     jobId: z.string().uuid(),
     items: menuItems.optional().describe('Menu items and quantities, as previewed; prices come from the menu'),
     packageNumber: menuPackage.optional().describe('1 or 2 to include a fixed-price bundle'),
+    customLines: customLines.optional().describe('Lines off the menu, as previewed, charged as given'),
     depositDollars: dollars(1)
       .optional()
-      .describe('Charged when they pay the link; at least $1.00. Required for a custom quote; with items it defaults to the whole total'),
+      .describe('Charged when they pay the link; at least $1.00. With lines it defaults to the whole total; required for a bare amount'),
     balanceDollars: dollars(0)
       .optional()
-      .describe('Custom quotes only (required there): charged to the saved card at completion. With items the balance is the total minus the deposit'),
+      .describe('Bare amount only (required there): charged to the saved card at completion. With lines the balance is the total minus the deposit'),
     tier: z.enum(QUOTE_TIERS).describe('small: half-day or less, medium: full day, large: multi-day'),
     description: z
       .string()
       .max(QUOTE_DESCRIPTION_MAX)
       .optional()
-      .describe('Custom: what the email shows as the scope; defaults to the job description. With items: an optional note above the lines'),
+      .describe('Bare amount: what the email shows as the scope; defaults to the job description. With lines: an optional note above them'),
   }),
   readOnly: false,
   money: true,
-  run: async ({ jobId, items, packageNumber, depositDollars, balanceDollars, tier, description }, actor) => {
-    const menu = menuFrom(items, packageNumber)
-    if (menu && balanceDollars != null) {
-      return { ok: false, error: 'With items the balance is the menu total minus the deposit; leave balanceDollars out.' }
+  run: async ({ jobId, items, packageNumber, customLines: custom, depositDollars, balanceDollars, tier, description }, actor) => {
+    const lines = linesFrom(items, packageNumber, custom)
+    if (lines && balanceDollars != null) {
+      return { ok: false, error: 'With lines the balance is the quote total minus the deposit; leave balanceDollars out.' }
     }
-    if (!menu && (depositDollars == null || balanceDollars == null)) {
-      return { ok: false, error: 'Pass items for a menu quote, or both depositDollars and balanceDollars for a custom amount.' }
+    if (!lines && (depositDollars == null || balanceDollars == null)) {
+      return { ok: false, error: 'Pass items or customLines for an itemized quote, or both depositDollars and balanceDollars for a bare amount.' }
     }
     const found = await findRowByJobId(jobId)
     if (!found) return { ok: false, error: 'Job not found' }
     const blocked = quoteBlockReason(found.row)
     if (blocked) return { ok: false, error: blocked }
     const result = await sendQuote(
-      menu
+      lines
         ? {
             jobId,
-            menu,
+            menu: lines.menu,
+            customLines: lines.customLines,
             ...(depositDollars != null ? { depositCents: Math.round(depositDollars * 100) } : {}),
             tier,
             description,

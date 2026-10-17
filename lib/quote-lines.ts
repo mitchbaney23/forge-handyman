@@ -8,17 +8,26 @@ import { familyCents } from '@/lib/family-pricing'
 // (lib/crm/quote.ts) re-prices with it on the server before anything is sent,
 // so the number on screen and the number emailed come from the same code.
 //
-// A menu quote is a Cart (lib/cart.ts): menu items with a quantity, plus at
-// most one fixed-price bundle. Items price through the cart's add-on engine
-// (itemizeLines); the bundle is its posted flat price, as at booking. Nothing
-// here can price above the posted menu: there are no price overrides — custom
-// work goes through the free-form deposit/balance quote instead.
+// A quote is one list of lines from three sources, mixed freely:
+//   - menu items with a quantity, priced by the cart's add-on engine
+//     (itemizeLines), so they never price above the posted menu;
+//   - at most one fixed-price bundle, at its posted flat price;
+//   - custom lines the sender types (a travel fee, materials, a dump run, the
+//     #3 Whole List, a discount), charged exactly as entered. A custom line can
+//     be $0 ("included") or negative (a discount or credit); the quote total
+//     must still be at least $1.
 // ---------------------------------------------------------------------------
 
 // Matches the booking cart's per-line cap (resolveCart clamps to 10), so a
 // quote never prices a quantity the engine would silently change.
 export const QUOTE_MAX_QTY = 10
 export const QUOTE_MAX_LINES = 20
+// Custom lines: a quantity can be hours, miles or units, so it runs higher
+// than a menu line's, and one line is capped like a balance adjustment.
+export const QUOTE_MAX_CUSTOM_LINES = 20
+export const CUSTOM_MAX_QTY = 999
+export const CUSTOM_MAX_UNIT_CENTS = 5_000_000 // $50,000
+export const CUSTOM_NAME_MAX = 120
 // Stripe will not sell a $0 line item, and a deposit is what saves the card.
 export const MIN_DEPOSIT_CENTS = 100
 
@@ -34,8 +43,9 @@ const MENU_ID_BY_NAME = new Map(
 )
 
 export type QuoteLine = {
-  kind: 'item' | 'package'
-  // The menu item id, or `package-<number>` for a bundle.
+  kind: 'item' | 'package' | 'custom'
+  // The menu item id, `package-<number>` for a bundle, or `custom-<n>` for a
+  // typed line (n = its position among the custom lines).
   id: string
   name: string
   qty: number
@@ -52,8 +62,19 @@ export type ItemizedQuote = {
   family: boolean
 }
 
+// A line the sender typed: what it is, how many, and the price of one.
+export type CustomLineInput = {
+  name: string
+  qty: number
+  unitCents: number
+}
+
 export function packageLineId(packageNumber: number): string {
   return `package-${packageNumber}`
+}
+
+export function customLineId(index: number): string {
+  return `custom-${index + 1}`
 }
 
 // Jobs booked through /family carry the marker at the top of the description
@@ -68,7 +89,9 @@ export type ParsedQuoteCart = { ok: true; cart: Cart } | { ok: false; error: str
 // where the booking cart is forgiving: an unknown id, a bad quantity or a
 // duplicate line is refused with a reason rather than dropped or clamped,
 // because the person sending the quote has to see what will be charged.
-export function parseQuoteCart(input: unknown): ParsedQuoteCart {
+// `allowEmpty` when the quote has custom lines, so no menu pick is needed.
+export function parseQuoteCart(input: unknown, opts?: { allowEmpty?: boolean }): ParsedQuoteCart {
+  if (input == null && opts?.allowEmpty) return { ok: true, cart: { items: [], packageNumber: null } }
   if (!input || typeof input !== 'object') return { ok: false, error: 'Pick at least one menu item or bundle.' }
   const raw = input as { items?: unknown; packageNumber?: unknown }
   const rawItems = raw.items ?? []
@@ -111,17 +134,57 @@ export function parseQuoteCart(input: unknown): ParsedQuoteCart {
     packageNumber = pkg.number
   }
 
-  if (items.length === 0 && packageNumber == null) {
+  if (items.length === 0 && packageNumber == null && !opts?.allowEmpty) {
     return { ok: false, error: 'Pick at least one menu item or bundle.' }
   }
   return { ok: true, cart: { items, packageNumber } }
 }
 
-// Price a validated menu cart into the lines the customer sees. The bundle
-// (if any) leads at its flat price; the menu items follow, priced by the add-on
-// engine on their own — so the total is exactly what the posted menu charges
-// for the bundle plus those items.
-export function itemizeQuote(cart: Cart, opts?: { family?: boolean }): ItemizedQuote {
+export type ParsedCustomLines = { ok: true; lines: CustomLineInput[] } | { ok: false; error: string }
+
+// Validate untrusted custom lines. A name, a whole-number quantity, and a
+// whole-cent unit price that may be zero or negative; refused with a reason
+// rather than fixed up, like parseQuoteCart.
+export function parseCustomLines(input: unknown): ParsedCustomLines {
+  if (input == null) return { ok: true, lines: [] }
+  if (!Array.isArray(input)) return { ok: false, error: 'Custom lines must be a list.' }
+  if (input.length > QUOTE_MAX_CUSTOM_LINES) {
+    return { ok: false, error: `A quote can have at most ${QUOTE_MAX_CUSTOM_LINES} custom lines.` }
+  }
+  const lines: CustomLineInput[] = []
+  for (const [index, entry] of input.entries()) {
+    const raw = (entry ?? {}) as { name?: unknown; qty?: unknown; unitCents?: unknown }
+    const name = typeof raw.name === 'string' ? raw.name.trim().replace(/\s+/g, ' ') : ''
+    const label = name || `Custom line ${index + 1}`
+    if (!name) return { ok: false, error: `${label}: give it a name the customer will see.` }
+    if (name.length > CUSTOM_NAME_MAX) {
+      return { ok: false, error: `${label}: keep the name under ${CUSTOM_NAME_MAX} characters.` }
+    }
+    const qty = raw.qty
+    if (typeof qty !== 'number' || !Number.isInteger(qty) || qty < 1 || qty > CUSTOM_MAX_QTY) {
+      return { ok: false, error: `${label}: quantity must be a whole number from 1 to ${CUSTOM_MAX_QTY}.` }
+    }
+    const unit = raw.unitCents
+    if (typeof unit !== 'number' || !Number.isInteger(unit)) {
+      return { ok: false, error: `${label}: enter a price.` }
+    }
+    if (Math.abs(unit) > CUSTOM_MAX_UNIT_CENTS) {
+      return { ok: false, error: `${label}: a price can't be more than ${formatCents(CUSTOM_MAX_UNIT_CENTS)}.` }
+    }
+    lines.push({ name, qty, unitCents: unit })
+  }
+  return { ok: true, lines }
+}
+
+// Price a validated quote into the lines the customer sees. The bundle (if
+// any) leads at its flat price; the menu items follow, priced by the add-on
+// engine on their own, so they total exactly what the posted menu charges;
+// custom lines come last, as entered (Forge Family pricing applies to menu
+// prices only — a custom line is whatever the sender typed).
+export function itemizeQuote(
+  cart: Cart,
+  opts?: { family?: boolean; custom?: CustomLineInput[] },
+): ItemizedQuote {
   const family = opts?.family ?? false
   const { lines, pkg } = resolveCart(cart)
   const quoteLines: QuoteLine[] = []
@@ -145,6 +208,19 @@ export function itemizeQuote(cart: Cart, opts?: { family?: boolean }): ItemizedQ
     quoteLines.push({ kind: 'item', ...row, totalCents: row.unitCents * row.qty })
   }
 
+  for (const [index, line] of (opts?.custom ?? []).entries()) {
+    quoteLines.push({
+      kind: 'custom',
+      id: customLineId(index),
+      name: line.name,
+      qty: line.qty,
+      unitCents: line.unitCents,
+      fullUnitCents: line.unitCents,
+      addOn: false,
+      totalCents: line.unitCents * line.qty,
+    })
+  }
+
   return {
     lines: quoteLines,
     totalCents: quoteLines.reduce((sum, line) => sum + line.totalCents, 0),
@@ -156,19 +232,33 @@ export type MenuQuotePlan =
   | { ok: true; quote: ItemizedQuote; depositCents: number; balanceCents: number }
   | { ok: false; error: string }
 
-// Everything a menu quote needs before it can be sent: validate the cart,
-// price it at the job's rate (Forge Family when the job carries the marker),
-// and split it into deposit + balance. The deposit defaults to the whole
-// total; a smaller deposit leaves the rest as the balance charged at
-// completion, so deposit + balance always equals the menu total.
+// Everything a quote needs before it can be sent: validate the menu picks and
+// the custom lines, price them (menu lines at the job's rate, Forge Family
+// when the job carries the marker), and split the total into deposit +
+// balance. The deposit defaults to the whole total; a smaller deposit leaves
+// the rest as the balance charged at completion, so deposit + balance always
+// equals the quote total.
 export function planMenuQuote(
   menu: unknown,
   jobDescription: string | null | undefined,
   depositCents?: number,
+  customLines?: unknown,
 ): MenuQuotePlan {
-  const parsed = parseQuoteCart(menu)
-  if (!parsed.ok) return parsed
-  const quote = itemizeQuote(parsed.cart, { family: isForgeFamilyJob(jobDescription) })
+  const custom = parseCustomLines(customLines)
+  if (!custom.ok) return custom
+  const parsed = parseQuoteCart(menu, { allowEmpty: custom.lines.length > 0 })
+  if (!parsed.ok) {
+    return custom.lines.length === 0 && (menu == null || isEmptyCart(menu))
+      ? { ok: false, error: 'Add at least one line: a menu item, a bundle, or your own.' }
+      : parsed
+  }
+  const quote = itemizeQuote(parsed.cart, {
+    family: isForgeFamilyJob(jobDescription),
+    custom: custom.lines,
+  })
+  if (quote.totalCents < MIN_DEPOSIT_CENTS) {
+    return { ok: false, error: `The quote total is ${formatCents(quote.totalCents)}; it must be at least $1.00.` }
+  }
   const deposit = depositCents ?? quote.totalCents
   if (!Number.isInteger(deposit) || deposit < MIN_DEPOSIT_CENTS) {
     return { ok: false, error: 'Deposit must be at least $1.00' }
@@ -179,8 +269,15 @@ export function planMenuQuote(
   return { ok: true, quote, depositCents: deposit, balanceCents: quote.totalCents - deposit }
 }
 
+function isEmptyCart(menu: unknown): boolean {
+  const m = menu as { items?: unknown; packageNumber?: unknown }
+  return (!Array.isArray(m.items) || m.items.length === 0) && m.packageNumber == null
+}
+
+// "$12.50", and "-$20.00" for a discount line.
 export function formatCents(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`
+  const abs = `$${(Math.abs(cents) / 100).toFixed(2)}`
+  return cents < 0 ? `-${abs}` : abs
 }
 
 // How a line is named on the Stripe checkout page and in plain-text email.
@@ -207,12 +304,20 @@ export function summarizeQuoteLines(lines: QuoteLine[]): string {
     .join(', ')
 }
 
+// The custom lines of a quote that was sent, to pre-fill a re-quote.
+export function customFromQuoteLines(lines: QuoteLine[]): CustomLineInput[] {
+  return lines
+    .filter((line) => line.kind === 'custom')
+    .map((line) => ({ name: line.name, qty: line.qty, unitCents: line.unitCents }))
+}
+
 // The cart a set of quoted lines came from (a split anchor line folds back
 // into one selection). Used to pre-fill a re-quote from the last one sent.
 export function cartFromQuoteLines(lines: QuoteLine[]): Cart {
   const items: CartSelection[] = []
   let packageNumber: number | null = null
   for (const line of lines) {
+    if (line.kind === 'custom') continue
     if (line.kind === 'package') {
       const n = Number(line.id.slice('package-'.length))
       if (Number.isInteger(n)) packageNumber = n
@@ -262,7 +367,7 @@ export function menuCartFromDescription(
 
 // The itemized part of a quote.sent activity payload, read back defensively
 // (the job page and preview_quote show what was quoted). null for quotes sent
-// as a custom amount, or before quotes were itemized.
+// as a bare deposit/balance amount, or before quotes were itemized.
 export function readQuotedLines(after: unknown): ItemizedQuote | null {
   if (!after || typeof after !== 'object') return null
   const { lines, totalCents, family } = after as { lines?: unknown; totalCents?: unknown; family?: unknown }
@@ -272,7 +377,7 @@ export function readQuotedLines(after: unknown): ItemizedQuote | null {
     const l = raw as Partial<QuoteLine> | null
     if (
       !l ||
-      (l.kind !== 'item' && l.kind !== 'package') ||
+      (l.kind !== 'item' && l.kind !== 'package' && l.kind !== 'custom') ||
       typeof l.id !== 'string' ||
       typeof l.name !== 'string' ||
       typeof l.qty !== 'number' ||

@@ -5,10 +5,13 @@ import { familyCents } from '@/lib/family-pricing'
 import {
   QUOTE_MAX_QTY,
   cartFromQuoteLines,
+  customFromQuoteLines,
+  formatCents,
   formatQuoteLineText,
   isForgeFamilyJob,
   itemizeQuote,
   menuCartFromDescription,
+  parseCustomLines,
   parseQuoteCart,
   planMenuQuote,
   readQuotedLines,
@@ -317,5 +320,79 @@ describe('stored lines and text', () => {
     for (const pkg of SERVICE_PACKAGES) {
       expect(parseQuoteCart({ items: [], packageNumber: pkg.number }).ok).toBe(!pkg.quoteFirst)
     }
+  })
+})
+
+describe('custom lines: anything off the menu, charged as entered', () => {
+  const travel = { name: 'Travel fee (Benson)', qty: 1, unitCents: 3500 }
+
+  it('follow the menu lines, priced exactly as typed, untouched by the add-on engine or Forge Family', () => {
+    const q = itemizeQuote(cart([['light-fixture', 2]]), {
+      family: true,
+      custom: [travel, { name: 'Wire, 50 ft', qty: 2, unitCents: 1899 }],
+    })
+    const custom = q.lines.filter((l) => l.kind === 'custom')
+    expect(custom).toEqual([
+      { kind: 'custom', id: 'custom-1', name: 'Travel fee (Benson)', qty: 1, unitCents: 3500, fullUnitCents: 3500, addOn: false, totalCents: 3500 },
+      { kind: 'custom', id: 'custom-2', name: 'Wire, 50 ft', qty: 2, unitCents: 1899, fullUnitCents: 1899, addOn: false, totalCents: 3798 },
+    ])
+    const menuOnly = itemizeQuote(cart([['light-fixture', 2]]), { family: true })
+    expect(q.totalCents).toBe(menuOnly.totalCents + 3500 + 3798)
+    expect(q.lines.slice(0, menuOnly.lines.length)).toEqual(menuOnly.lines)
+  })
+
+  it('make a quote on their own, with a discount and an included line', () => {
+    const plan = planMenuQuote(undefined, '', undefined, [
+      { name: '#3 Whole List', qty: 1, unitCents: 62900 },
+      { name: 'Haul-away', qty: 1, unitCents: 0 },
+      { name: 'Returning customer discount', qty: 1, unitCents: -5000 },
+    ])
+    expect(plan).toMatchObject({ ok: true, depositCents: 57900, balanceCents: 0 })
+    if (plan.ok) expect(plan.quote.lines.map((l) => l.totalCents)).toEqual([62900, 0, -5000])
+  })
+
+  it('split into a deposit and a balance like any quote', () => {
+    expect(planMenuQuote({ items: [], packageNumber: null }, '', 10000, [travel, { name: 'Deck repair', qty: 1, unitCents: 90000 }])).toMatchObject({
+      ok: true,
+      depositCents: 10000,
+      balanceCents: 83500,
+    })
+  })
+
+  it('refuse a quote that nets under $1, or one with no lines at all', () => {
+    expect(planMenuQuote(undefined, '', undefined, [{ name: 'Discount', qty: 1, unitCents: -100 }])).toEqual({
+      ok: false,
+      error: 'The quote total is -$1.00; it must be at least $1.00.',
+    })
+    expect(planMenuQuote({ items: [], packageNumber: null }, '', undefined, [])).toEqual({
+      ok: false,
+      error: 'Add at least one line: a menu item, a bundle, or your own.',
+    })
+  })
+
+  it('are validated with a reason rather than fixed up', () => {
+    expect(parseCustomLines([{ name: '  Travel   fee ', qty: 3, unitCents: -250 }])).toEqual({
+      ok: true,
+      lines: [{ name: 'Travel fee', qty: 3, unitCents: -250 }],
+    })
+    expect(parseCustomLines(undefined)).toEqual({ ok: true, lines: [] })
+    expect(parseCustomLines([{ name: '', qty: 1, unitCents: 100 }])).toMatchObject({ ok: false, error: expect.stringContaining('give it a name') })
+    expect(parseCustomLines([{ name: 'X', qty: 0, unitCents: 100 }])).toMatchObject({ ok: false, error: expect.stringContaining('quantity') })
+    expect(parseCustomLines([{ name: 'X', qty: 1.5, unitCents: 100 }])).toMatchObject({ ok: false })
+    expect(parseCustomLines([{ name: 'X', qty: 1, unitCents: 12.5 }])).toMatchObject({ ok: false, error: expect.stringContaining('enter a price') })
+    expect(parseCustomLines([{ name: 'X', qty: 1, unitCents: 5_000_001 }])).toMatchObject({ ok: false, error: expect.stringContaining('$50000.00') })
+    expect(parseCustomLines('travel')).toMatchObject({ ok: false })
+  })
+
+  it('come back out of a sent quote for a re-quote, apart from the menu cart', () => {
+    const q = itemizeQuote(cart([['door-knob', 1]]), { custom: [travel] })
+    expect(customFromQuoteLines(q.lines)).toEqual([travel])
+    expect(cartFromQuoteLines(q.lines)).toEqual(cart([['door-knob', 1]]))
+    expect(readQuotedLines({ lines: q.lines, totalCents: q.totalCents, family: false })?.lines).toEqual(q.lines)
+  })
+
+  it('format a discount with the minus sign in front', () => {
+    expect(formatCents(-2000)).toBe('-$20.00')
+    expect(formatCents(1999)).toBe('$19.99')
   })
 })

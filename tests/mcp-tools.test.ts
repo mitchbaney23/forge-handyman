@@ -461,7 +461,7 @@ describe('itemized quotes from the menu', () => {
       blockers: string[]
     }
     // Fan anchors at $135; both fixtures at the $55 add-on price.
-    expect(res.quote).toMatchObject({ pricing: 'menu', family: false, depositCents: 24500, balanceCents: 0, totalCents: 24500, description: '' })
+    expect(res.quote).toMatchObject({ pricing: 'lines', family: false, depositCents: 24500, balanceCents: 0, totalCents: 24500, description: '' })
     expect(res.quote.lines.map((l) => [l.id, l.qty, l.unitCents, l.addOn])).toEqual([
       ['ceiling-fan', 1, 13500, false],
       ['light-fixture', 2, 5500, true],
@@ -515,6 +515,7 @@ describe('itemized quotes from the menu', () => {
     expect(quote.sendQuote).toHaveBeenCalledWith({
       jobId: JOB,
       menu: { items, packageNumber: 1 },
+      customLines: [],
       tier: 'small',
       description: 'Ladder needed',
       actor: ACTOR,
@@ -532,11 +533,49 @@ describe('itemized quotes from the menu', () => {
     })
     expect(await sendQuoteTool.run({ jobId: JOB, depositDollars: 135, tier: 'small' }, ACTOR)).toMatchObject({
       ok: false,
-      error: expect.stringContaining('Pass items for a menu quote'),
+      error: expect.stringContaining('Pass items or customLines'),
     })
     expect(quote.sendQuote).not.toHaveBeenCalled()
     expect(sendQuoteTool.inputSchema.safeParse({ jobId: JOB, items: [{ id: 'ceiling-fan', qty: 11 }], tier: 'small' }).success).toBe(false)
     expect(sendQuoteTool.inputSchema.safeParse({ jobId: JOB, items, tier: 'small' }).success).toBe(true)
+  })
+})
+
+describe('custom quote lines over MCP', () => {
+  it('preview_quote prices custom lines alone, dollars to cents, discount included', async () => {
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row() })
+    const res = (await previewQuote.run(
+      {
+        jobId: JOB,
+        customLines: [
+          { name: 'Travel fee', qty: 1, unitDollars: 35 },
+          { name: 'Discount', qty: 1, unitDollars: -10.5 },
+        ],
+        tier: 'small',
+      },
+      ACTOR,
+    )) as { quote: { pricing: string; totalCents: number; lines: { kind: string; unitCents: number }[] }; canSend: boolean }
+    expect(res.quote).toMatchObject({ pricing: 'lines', totalCents: 2450 })
+    expect(res.quote.lines.map((l) => [l.kind, l.unitCents])).toEqual([
+      ['custom', 3500],
+      ['custom', -1050],
+    ])
+    expect(res.canSend).toBe(true)
+  })
+
+  it('send_quote passes menu items and custom lines together to the core', async () => {
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row() })
+    quote.sendQuote.mockResolvedValue({ ok: true, paymentLinkUrl: 'u', paymentLinkId: 'p', expiresAt: 'e', depositCents: 1, balanceCents: 0, sentTo: 's' })
+    await sendQuoteTool.run(
+      { jobId: JOB, items: [{ id: 'door-knob', qty: 1 }], customLines: [{ name: 'Materials', qty: 2, unitDollars: 12.99 }], tier: 'small' },
+      ACTOR,
+    )
+    expect(quote.sendQuote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        menu: { items: [{ id: 'door-knob', qty: 1 }], packageNumber: null },
+        customLines: [{ name: 'Materials', qty: 2, unitCents: 1299 }],
+      }),
+    )
   })
 })
 

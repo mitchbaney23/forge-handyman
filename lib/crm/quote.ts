@@ -5,10 +5,12 @@ import { sendQuoteEmail } from '@/lib/email/quote'
 import {
   MIN_DEPOSIT_CENTS,
   formatCents,
+  parseCustomLines,
   parseQuoteCart,
   planMenuQuote,
   quoteLineLabel,
   summarizeQuoteLines,
+  type CustomLineInput,
   type ItemizedQuote,
 } from '@/lib/quote-lines'
 import { logger, maskEmail } from '@/lib/security/logger'
@@ -20,9 +22,11 @@ import { createQuotePaymentLink } from '@/lib/stripe/payment-links'
 // "Build a quote" in this business means: create a Stripe Payment Link for the
 // deposit (card saved for the balance), email it to the customer, flip the job
 // to Quoted and stamp the quote.sent activity the lifecycle cron reads back.
-// A quote is either a custom amount (deposit + balance, typed in) or built
-// from the flat-rate menu (items + quantities, priced here by the add-on
-// engine via lib/quote-lines.ts — the caller never supplies a menu price).
+// A quote is a list of lines (lib/quote-lines.ts): menu items + quantities
+// and a bundle, priced here by the add-on engine (the caller never supplies a
+// menu price), plus custom lines the sender typed (travel fee, materials, a
+// discount), charged as entered. A bare deposit + balance with no lines is
+// still accepted for older callers.
 // Both callers run exactly this code:
 //   - the admin quote page (app/admin/quotes/[id]/actions.ts), actor
 //     `admin:<email>`, which wraps it with the session check, the admin-money
@@ -42,26 +46,29 @@ export { MIN_DEPOSIT_CENTS }
 interface SendQuoteBase {
   jobId: string
   tier: QuoteTier
-  // Custom quotes: overrides the job's own description in the email; empty or
+  // Bare amount: overrides the job's own description in the email; empty or
   // whitespace falls back to the job description, then the service type.
-  // Menu quotes: an optional note shown above the items (no fallback — the
-  // job description would repeat the booking summary the items replace).
+  // Itemized: an optional note shown above the lines (no fallback — the job
+  // description would repeat the booking summary the lines replace).
   description?: string
   actor: string
 }
 
 export type SendQuoteArgs = SendQuoteBase &
   (
-    | { menu?: undefined; depositCents: number; balanceCents: number }
+    | { menu?: undefined; customLines?: undefined; depositCents: number; balanceCents: number }
     | {
-        // Menu items + quantities and at most one bundle. Re-validated
-        // (parseQuoteCart) and priced here at the job's rate (Forge Family
-        // when it applies) — callers pass ids and quantities, never prices.
+        // Menu items + quantities and at most one bundle (may be empty when
+        // there are custom lines). Re-validated (parseQuoteCart) and priced
+        // here at the job's rate (Forge Family when it applies) — callers pass
+        // ids and quantities, never menu prices.
         menu: Cart
-        // Defaults to the whole menu total; the rest becomes the balance.
+        // Lines the sender typed, charged as entered (parseCustomLines).
+        customLines?: CustomLineInput[]
+        // Defaults to the whole quote total; the rest becomes the balance.
         depositCents?: number
-        // The total the sender was shown. When given and the menu now prices
-        // the quote differently, nothing is sent.
+        // The total the sender was shown. When given and the quote now prices
+        // differently, nothing is sent.
         expectedTotalCents?: number
         balanceCents?: undefined
       }
@@ -78,7 +85,7 @@ export type SendQuoteResult =
       depositCents: number
       balanceCents: number
       sentTo: string
-      // Menu quotes only.
+      // Itemized quotes only.
       itemized?: ItemizedQuote
     }
   | { ok: false; error: string; step: SendQuoteStep; cause?: unknown }
@@ -92,7 +99,9 @@ export async function sendQuote(args: SendQuoteArgs): Promise<SendQuoteResult> {
 
   if (!QUOTE_TIERS.includes(tier)) return refuse('Invalid tier')
   if (args.menu !== undefined) {
-    const parsed = parseQuoteCart(args.menu)
+    const custom = parseCustomLines(args.customLines)
+    if (!custom.ok) return refuse(custom.error)
+    const parsed = parseQuoteCart(args.menu, { allowEmpty: custom.lines.length > 0 })
     if (!parsed.ok) return refuse(parsed.error)
   } else {
     if (!Number.isInteger(args.depositCents) || args.depositCents < 0) {
@@ -122,11 +131,11 @@ export async function sendQuote(args: SendQuoteArgs): Promise<SendQuoteResult> {
   // The scope string the Stripe product and the idempotency hash use.
   let description: string
   if (args.menu !== undefined) {
-    const plan = planMenuQuote(args.menu, found.row.description, args.depositCents)
+    const plan = planMenuQuote(args.menu, found.row.description, args.depositCents, args.customLines)
     if (!plan.ok) return refuse(plan.error)
     if (args.expectedTotalCents != null && args.expectedTotalCents !== plan.quote.totalCents) {
       return refuse(
-        `The menu prices this quote at ${formatCents(plan.quote.totalCents)}, not ${formatCents(args.expectedTotalCents)}. Reload and check it before sending.`,
+        `This quote now prices at ${formatCents(plan.quote.totalCents)}, not ${formatCents(args.expectedTotalCents)}. Reload and check it before sending.`,
       )
     }
     ;({ depositCents, balanceCents } = plan)
@@ -217,8 +226,8 @@ export async function sendQuote(args: SendQuoteArgs): Promise<SendQuoteResult> {
       balanceCents,
       tier,
       customerEmail: maskEmail(customerEmail),
-      // Menu quotes: what was quoted, line by line (readQuotedLines reads it
-      // back for the job page and preview_quote).
+      // Itemized quotes: what was quoted, line by line (readQuotedLines reads
+      // it back for the job page and preview_quote).
       ...(itemized
         ? { lines: itemized.lines, totalCents: itemized.totalCents, family: itemized.family }
         : {}),
