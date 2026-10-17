@@ -161,3 +161,94 @@ describe('sendQuote failures', () => {
     expect(data.appendAuditRow).not.toHaveBeenCalled()
   })
 })
+
+describe('sendQuote from the menu', () => {
+  const menu = { items: [{ id: 'light-fixture', qty: 3 }, { id: 'door-knob', qty: 1 }], packageNumber: null }
+  const menuArgs = { jobId: JOB, menu, tier: 'small' as const, actor: ACTOR }
+  // light-fixture anchors: $110 + 2 × $55 add-on, door knob at its $45 add-on.
+  const expectedLines = [
+    { kind: 'item', id: 'light-fixture', name: 'Light fixture swap', qty: 1, unitCents: 11000, fullUnitCents: 11000, addOn: false, totalCents: 11000 },
+    { kind: 'item', id: 'light-fixture', name: 'Light fixture swap', qty: 2, unitCents: 5500, fullUnitCents: 11000, addOn: true, totalCents: 11000 },
+    { kind: 'item', id: 'door-knob', name: 'Door knob replacement', qty: 1, unitCents: 4500, fullUnitCents: 9500, addOn: true, totalCents: 4500 },
+  ]
+
+  it('prices the items itself, itemizes the link and email, and stamps the lines', async () => {
+    const res = await sendQuote({ ...menuArgs, description: '  Bring the long ladder  ' })
+    expect(stripe.createQuotePaymentLink).toHaveBeenCalledWith(
+      {
+        jobId: JOB,
+        customerEmail: 'sarah@example.com',
+        customerName: 'Sarah Kim',
+        depositCents: 26500,
+        balanceCents: 0,
+        tier: 'small',
+        description: 'Bring the long ladder',
+        lines: [
+          { name: 'Light fixture swap', unitCents: 11000, quantity: 1 },
+          { name: 'Light fixture swap (add-on price)', unitCents: 5500, quantity: 2 },
+          { name: 'Door knob replacement (add-on price)', unitCents: 4500, quantity: 1 },
+        ],
+      },
+      ACTOR,
+    )
+    expect(mail.sendQuoteEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: 'Bring the long ladder',
+        depositCents: 26500,
+        balanceCents: 0,
+        lines: expectedLines,
+        family: false,
+      }),
+    )
+    expect(data.updateRowByJobId).toHaveBeenCalledWith(JOB, { status: 'Quoted', balance_owed_cents: '0' })
+    const after = JSON.parse(data.appendAuditRow.mock.calls[0][0].after)
+    expect(after).toMatchObject({ depositCents: 26500, balanceCents: 0, totalCents: 26500, family: false, lines: expectedLines })
+    expect(res).toMatchObject({ ok: true, depositCents: 26500, balanceCents: 0, itemized: { totalCents: 26500 } })
+  })
+
+  it('does not fall back to the job description for the note; the Stripe name uses the items', async () => {
+    await sendQuote(menuArgs)
+    expect(mail.sendQuoteEmail.mock.calls[0][0].description).toBe('')
+    expect(stripe.createQuotePaymentLink.mock.calls[0][0].description).toBe(
+      'Light fixture swap ×3, Door knob replacement ×1',
+    )
+  })
+
+  it('takes a smaller deposit and records the rest as the balance owed', async () => {
+    const res = await sendQuote({ ...menuArgs, depositCents: 10000 })
+    expect(stripe.createQuotePaymentLink.mock.calls[0][0]).toMatchObject({ depositCents: 10000, balanceCents: 16500 })
+    expect(data.updateRowByJobId).toHaveBeenCalledWith(JOB, { status: 'Quoted', balance_owed_cents: '16500' })
+    expect(res).toMatchObject({ ok: true, depositCents: 10000, balanceCents: 16500 })
+  })
+
+  it('prices a Forge Family job at the family rate', async () => {
+    data.findRowByJobId.mockResolvedValue({
+      rowNumber: 2,
+      row: row({ description: '🏷️ FORGE FAMILY — 30% off applied\n\n• Light fixture swap ×3 — $75 first / $35 add-on' }),
+    })
+    const res = await sendQuote({ ...menuArgs, menu: { items: [{ id: 'light-fixture', qty: 3 }], packageNumber: null } })
+    // $110 → $75 family, $55 add-on → $35 family.
+    expect(res).toMatchObject({ ok: true, depositCents: 7500 + 2 * 3500, itemized: { family: true } })
+    expect(mail.sendQuoteEmail.mock.calls[0][0].family).toBe(true)
+  })
+
+  it('refuses a bad menu, a deposit over the total, or a total that moved, before touching Stripe', async () => {
+    expect(await sendQuote({ ...menuArgs, menu: { items: [{ id: 'gutters', qty: 1 }], packageNumber: null } })).toMatchObject({
+      ok: false,
+      step: 'validate',
+      error: expect.stringMatching(/Unknown menu item/),
+    })
+    expect(await sendQuote({ ...menuArgs, depositCents: 26600 })).toMatchObject({
+      ok: false,
+      error: "Deposit can't be more than the $265.00 total",
+    })
+    expect(await sendQuote({ ...menuArgs, expectedTotalCents: 30000 })).toMatchObject({
+      ok: false,
+      step: 'validate',
+      error: 'The menu prices this quote at $265.00, not $300.00. Reload and check it before sending.',
+    })
+    expect(stripe.createQuotePaymentLink).not.toHaveBeenCalled()
+    expect(mail.sendQuoteEmail).not.toHaveBeenCalled()
+    expect(await sendQuote({ ...menuArgs, expectedTotalCents: 26500 })).toMatchObject({ ok: true })
+  })
+})

@@ -45,6 +45,8 @@ import {
   createBalancePaymentLink,
   createQuotePaymentLink,
   deactivatePaymentLinks,
+  itemizedLinkLineItems,
+  quoteContentHash,
 } from "@/lib/stripe/payment-links";
 
 beforeEach(() => {
@@ -115,5 +117,71 @@ describe("deactivatePaymentLinks", () => {
 
   it("throws when Stripe refuses, so the caller can keep the old balance", async () => {
     await expect(deactivatePaymentLinks(["plink_broken"], "admin@x")).rejects.toThrow("No such payment link");
+  });
+});
+
+describe("menu quotes on the Stripe checkout page", () => {
+  const JOB = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const lines = [
+    { name: "Light fixture swap", unitCents: 11000, quantity: 1 },
+    { name: "Light fixture swap (add-on price)", unitCents: 5500, quantity: 2 },
+  ];
+  const quote = {
+    jobId: JOB,
+    customerEmail: "jane@example.com",
+    customerName: "Jane",
+    depositCents: 22000,
+    balanceCents: 0,
+    tier: "small" as const,
+    description: "Light fixture swap ×3",
+    lines,
+  };
+
+  it("lists each quoted line with its quantity and unit price when the link collects the whole total", async () => {
+    await createQuotePaymentLink(quote, "admin:test");
+    const link = created.paymentLinks[0];
+    expect(link.line_items).toEqual([
+      {
+        price_data: {
+          currency: "usd",
+          unit_amount: 11000,
+          product_data: { name: "Light fixture swap", metadata: { jobId: JOB } },
+        },
+        quantity: 1,
+      },
+      {
+        price_data: {
+          currency: "usd",
+          unit_amount: 5500,
+          product_data: { name: "Light fixture swap (add-on price)", metadata: { jobId: JOB } },
+        },
+        quantity: 2,
+      },
+    ]);
+    // Same card-saving setup as every deposit link.
+    expect(link.customer_creation).toBe("always");
+    expect(link.payment_intent_data).toMatchObject({ setup_future_usage: "off_session" });
+  });
+
+  it("stays a single deposit line when a balance is left for completion, or the lines do not add up", () => {
+    expect(itemizedLinkLineItems({ ...quote, depositCents: 10000, balanceCents: 12000 })).toBeNull();
+    expect(itemizedLinkLineItems({ ...quote, depositCents: 21000 })).toBeNull();
+    expect(itemizedLinkLineItems({ ...quote, lines: undefined })).toBeNull();
+    expect(itemizedLinkLineItems({ ...quote, lines: [] })).toBeNull();
+  });
+
+  it("uses the single deposit price for a deposit-only menu quote", async () => {
+    await createQuotePaymentLink({ ...quote, depositCents: 10000, balanceCents: 12000 }, "admin:test");
+    expect(created.paymentLinks[0].line_items).toEqual([{ price: "price_1", quantity: 1 }]);
+  });
+
+  it("changes the idempotency hash when the lines change, and leaves custom quotes' hash alone", () => {
+    const { lines: _lines, ...custom } = quote;
+    void _lines;
+    expect(quoteContentHash(quote)).not.toBe(quoteContentHash(custom));
+    expect(quoteContentHash({ ...custom, lines: [] })).toBe(quoteContentHash(custom));
+    expect(quoteContentHash(quote)).not.toBe(
+      quoteContentHash({ ...quote, lines: [{ ...lines[0], name: "Door knob replacement" }, lines[1]] }),
+    );
   });
 });

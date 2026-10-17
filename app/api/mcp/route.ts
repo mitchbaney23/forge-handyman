@@ -18,7 +18,7 @@ export const maxDuration = 60
 const INSTRUCTIONS = [
   'Forge Handyman: customers, jobs, appointments, notes, quotes and a business snapshot.',
   'Jobs move New, Quoted, Pending Follow-Up, Booked, In Progress, Complete; Cancelled; and payment states Stripe owns.',
-  'Quotes: price_menu for the flat-rate prices, preview_quote to build one and see who gets it, send_quote to email it. send_quote is the only thing here that reaches a customer (a Stripe payment link by email), so read the amounts and the recipient back and get a clear yes first.',
+  'Quotes: price_menu for the flat-rate prices, preview_quote to build one (items from the menu, or a custom amount for work the menu does not cover) and see who gets it, send_quote to email it. send_quote is the only thing here that reaches a customer (a Stripe payment link by email), so read the amounts and the recipient back and get a clear yes first.',
   'Complete, charges and refunds happen in the admin site, never here. David is dispatched from the admin site, not by log_phone_job.',
   'Read results back to the person in two lines.',
 ].join(' ')

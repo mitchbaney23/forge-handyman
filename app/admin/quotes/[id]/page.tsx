@@ -13,8 +13,20 @@ import {
 } from "@/lib/constants";
 import { authOptions } from "@/lib/auth";
 import { logger } from "@/lib/security/logger";
-import { appendAuditRow, findRowByJobId } from "@/lib/data";
+import {
+  appendAuditRow,
+  crmEnabled,
+  findRowByJobId,
+  listActivitiesForJob,
+} from "@/lib/data";
+import { extractQuoteMeta } from "@/lib/automation/lifecycle";
 import { estimateCentsFromDescription } from "@/lib/cart";
+import {
+  cartFromQuoteLines,
+  isForgeFamilyJob,
+  menuCartFromDescription,
+} from "@/lib/quote-lines";
+import type { MenuPrefill } from "./QuoteComposer";
 
 export const metadata: Metadata = {
   title: "Send Quote — Forge Admin",
@@ -57,6 +69,29 @@ export default async function QuotePage({
   // For self-scheduled jobs, the price they picked lives in the description's
   // cart summary — pull it back out to pre-fill the quote amount.
   const estimateCents = estimateCentsFromDescription(row.description);
+
+  // The menu builder starts from what was last quoted from the menu (a
+  // re-quote), else from the items the customer picked at booking.
+  let menuPrefill: MenuPrefill | null = null;
+  if (crmEnabled()) {
+    try {
+      const lastQuote = extractQuoteMeta(await listActivitiesForJob(decoded));
+      if (lastQuote?.itemized) {
+        menuPrefill = {
+          cart: cartFromQuoteLines(lastQuote.itemized.lines),
+          source: "last-quote",
+          sentAt: lastQuote.sentAt,
+          unmatched: [],
+        };
+      }
+    } catch (err) {
+      logger.warn({ err, jobId: decoded }, "admin: reading the last quote failed");
+    }
+  }
+  if (!menuPrefill) {
+    const booked = menuCartFromDescription(row.description);
+    if (booked) menuPrefill = { ...booked, source: "booking", sentAt: "" };
+  }
 
   // Audit log on quote-builder open (Amendment §21.5.5).
   const session = await getServerSession(authOptions);
@@ -112,9 +147,10 @@ export default async function QuotePage({
           Send a Payment Link
         </h1>
         <p className="mt-2 text-sm text-ink/60">
-          Generates a Stripe Payment Link and emails it to the customer. The
+          Build the quote from the menu, or enter a custom amount. Sending
+          creates a Stripe Payment Link and emails it to the customer. The
           deposit charges when they pay, saves their card on file, and flips
-          this job&rsquo;s status to <strong>Quoted</strong>. The balance
+          this job&rsquo;s status to <strong>Quoted</strong>. Any balance
           auto-charges later when you Mark Complete.
         </p>
       </header>
@@ -180,6 +216,9 @@ export default async function QuotePage({
         prefillDepositDollars={
           estimateCents != null ? estimateCents / 100 : undefined
         }
+        bookedEstimateCents={estimateCents}
+        menuPrefill={menuPrefill}
+        family={isForgeFamilyJob(row.description)}
       />
     </div>
   );
