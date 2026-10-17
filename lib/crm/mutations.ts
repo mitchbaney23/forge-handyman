@@ -403,7 +403,8 @@ export type CreateJobResult =
 export async function createJobForCustomer(args: {
   customerId: string;
   job: NewJobInput;
-  schedule?: { startsAt: string; endsAt: string };
+  // emailCustomer: send them the booking confirmation (default true).
+  schedule?: { startsAt: string; endsAt: string; emailCustomer?: boolean };
   actor: string;
 }): Promise<CreateJobResult> {
   const { customerId, job, schedule, actor } = args;

@@ -326,6 +326,10 @@ const scheduleInput = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('YYYY-MM-DD, Eastern'),
   startTime: z.string().regex(/^\d{2}:\d{2}$/).describe('HH:MM, 24-hour, Eastern'),
   durationMinutes: z.number().int().min(30).max(720),
+  emailCustomer: z
+    .boolean()
+    .default(true)
+    .describe('Email the customer a confirmation with the date and time (default true)'),
 })
 
 export const updateCustomer = define({
@@ -348,7 +352,7 @@ export const createJob = define({
   name: 'create_job',
   title: 'Create a job for a customer',
   description:
-    `Add a new job for a customer already on file (find_customer gives the id). It lands at New. With schedule, it also books that Eastern-time slot, puts it on the ${operationsCalendarEmail()} Google Calendar, sets the job to Booked and holds the time so the website can't double-book it; the customer then gets the usual reminder email the day before. Read the date, time and length back and get a clear yes before scheduling. David is NOT notified; dispatch him from the admin site.`,
+    `Add a new job for a customer already on file (find_customer gives the id). It lands at New. With schedule, it also books that Eastern-time slot, puts it on the ${operationsCalendarEmail()} Google Calendar, sets the job to Booked and holds the time so the website can't double-book it; the customer is emailed a confirmation (unless emailCustomer is false) and a reminder the day before, and the office gets a notice. Read the date, time and length back and get a clear yes before scheduling. David is NOT notified; dispatch him from the admin site.`,
   inputSchema: z.object({
     customerId: z.string().uuid(),
     serviceType: z.string().min(1).max(120).describe('Short description of the service, e.g. "TV mounting"'),
@@ -361,11 +365,11 @@ export const createJob = define({
   }),
   readOnly: false,
   run: async ({ customerId, serviceType, description, address, urgency, referralSource, preferredDate, schedule }, actor) => {
-    let window: { startsAt: string; endsAt: string } | undefined
+    let window: { startsAt: string; endsAt: string; emailCustomer: boolean } | undefined
     if (schedule) {
       const w = easternWindow(schedule)
       if (!w) return { ok: false, error: 'That date and time is not a real Eastern time.' }
-      window = w
+      window = { ...w, emailCustomer: schedule.emailCustomer !== false }
     }
     return createJobForCustomer({
       customerId,
@@ -387,13 +391,13 @@ export const scheduleJobTool = define({
   name: 'schedule_job',
   title: 'Schedule a job',
   description:
-    `Book a time for a job that has no appointment yet (a website lead, a phone job, or one whose scheduling failed). Puts it on the ${operationsCalendarEmail()} Google Calendar, sets the job to Booked and holds the time so the website can't double-book it; the customer then gets the usual reminder email the day before. Refused if the time overlaps another booking or the job is already scheduled. Read the date, time and length back and get a clear yes first. David is NOT notified.`,
+    `Book a time for a job that has no appointment yet (a website lead, a phone job, or one whose scheduling failed). Puts it on the ${operationsCalendarEmail()} Google Calendar, sets the job to Booked and holds the time so the website can't double-book it; the customer is emailed a confirmation (unless emailCustomer is false) and a reminder the day before, and the office gets a notice. Refused if the time overlaps another booking or the job is already scheduled. Read the date, time and length back and get a clear yes first. David is NOT notified.`,
   inputSchema: z.object({ jobId: z.string().uuid() }).merge(scheduleInput),
   readOnly: false,
-  run: async ({ jobId, date, startTime, durationMinutes }, actor) => {
+  run: async ({ jobId, date, startTime, durationMinutes, emailCustomer }, actor) => {
     const window = easternWindow({ date, startTime, durationMinutes })
     if (!window) return { ok: false, error: 'That date and time is not a real Eastern time.' }
-    return scheduleJob({ jobId, ...window, actor })
+    return scheduleJob({ jobId, ...window, emailCustomer, actor })
   },
 })
 

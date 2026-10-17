@@ -608,21 +608,21 @@ describe('create_job', () => {
         customerId: CUST,
         serviceType: 'TV mounting',
         description: 'd',
-        schedule: { date: '2026-10-20', startTime: '10:00', durationMinutes: 120 },
+        schedule: { date: '2026-10-20', startTime: '10:00', durationMinutes: 120, emailCustomer: true },
       },
       ACTOR,
     )
     expect(mutations.createJobForCustomer).toHaveBeenCalledWith(
       expect.objectContaining({
         job: expect.objectContaining({ preferredDate: '2026-10-20' }),
-        schedule: { startsAt: '2026-10-20T14:00:00.000Z', endsAt: '2026-10-20T16:00:00.000Z' },
+        schedule: { startsAt: '2026-10-20T14:00:00.000Z', endsAt: '2026-10-20T16:00:00.000Z', emailCustomer: true },
       }),
     )
   })
 
   it('refuses a time that does not exist in Eastern time without calling the core', async () => {
     const res = await createJob.run(
-      { customerId: CUST, serviceType: 's', description: 'd', schedule: { date: '2026-03-08', startTime: '02:30', durationMinutes: 60 } },
+      { customerId: CUST, serviceType: 's', description: 'd', schedule: { date: '2026-03-08', startTime: '02:30', durationMinutes: 60, emailCustomer: true } },
       ACTOR,
     )
     expect(res).toMatchObject({ ok: false })
@@ -633,12 +633,14 @@ describe('create_job', () => {
 describe('schedule_job', () => {
   it('books an existing job at the Eastern time given', async () => {
     schedule.scheduleJob.mockResolvedValue({ ok: true, appointmentId: 'a', startsAt: '', endsAt: '', calendar: 'operations@forgehandyman.com', message: 'Scheduled.' })
-    await scheduleJobTool.run({ jobId: JOB, date: '2026-12-01', startTime: '13:30', durationMinutes: 90 }, ACTOR)
+    await scheduleJobTool.run({ jobId: JOB, date: '2026-12-01', startTime: '13:30', durationMinutes: 90, emailCustomer: false }, ACTOR)
     expect(schedule.scheduleJob).toHaveBeenCalledWith({
       jobId: JOB,
       startsAt: '2026-12-01T18:30:00.000Z',
       endsAt: '2026-12-01T20:00:00.000Z',
+      emailCustomer: false,
       actor: ACTOR,
     })
+    expect(scheduleJobTool.inputSchema.parse({ jobId: JOB, date: '2026-12-01', startTime: '13:30', durationMinutes: 90 })).toMatchObject({ emailCustomer: true })
   })
 })

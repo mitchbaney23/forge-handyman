@@ -792,7 +792,7 @@ export async function cancelBooking(jobId: string): Promise<ActionResult> {
 // the event on the operations calendar and moves the job to Booked.
 export async function scheduleJobAction(
   jobId: string,
-  input: { date: string; startTime: string; durationMinutes: number },
+  input: { date: string; startTime: string; durationMinutes: number; emailCustomer?: boolean },
 ): Promise<ActionResult> {
   const auth = await requireAdmin();
   if (!auth) return { ok: false, error: "Not authorized" };
@@ -805,7 +805,12 @@ export async function scheduleJobAction(
   const window = easternWindow(input);
   if (!window) return { ok: false, error: "Pick a date, a start time and a length." };
 
-  const res = await scheduleJob({ jobId, ...window, actor: adminActor(auth.email) });
+  const res = await scheduleJob({
+    jobId,
+    ...window,
+    emailCustomer: input.emailCustomer !== false,
+    actor: adminActor(auth.email),
+  });
   if (!res.ok) return { ok: false, error: res.error };
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");

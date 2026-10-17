@@ -9,6 +9,7 @@ import {
 } from '@/lib/data'
 import { getBackend } from '@/lib/data/backend'
 import { sendDepositReceiptEmail } from '@/lib/email/deposit-receipt'
+import { sendPaymentNotice } from '@/lib/email/office-notice'
 import { sendCompletionReceiptEmail } from '@/lib/email/completion-receipt'
 import { formatEtDay, formatEtTime } from '@/lib/scheduling/time'
 import { recordPayment, recordRefund, reconcileAttempt } from '@/lib/data/pg/payments'
@@ -159,31 +160,39 @@ export async function handleCheckoutSessionCompleted(
     }),
   )
 
-  // Deposit receipt to the customer — best-effort: a failed email must never
-  // 500 the webhook (the retry would re-run the whole handler for a send-only
-  // failure).
+  // Deposit receipt to the customer, then a notice to the office — both
+  // best-effort: a failed email must never 500 the webhook (the retry would
+  // re-run the whole handler for a send-only failure).
+  let found: Awaited<ReturnType<typeof findRowByJobId>> = null
+  let appointmentLabel: string | undefined
   try {
-    const found = await findRowByJobId(jobId)
-    const toEmail = found?.row.email || session.customer_details?.email || ''
-    if (toEmail) {
-      let appointmentLabel: string | undefined
-      if (getBackend() === 'postgres') {
-        const appt = await getAppointmentByJobId(jobId)
-        if (appt) {
-          const starts = new Date(appt.startsAt)
-          appointmentLabel = `${formatEtDay(starts)} · ${formatEtTime(starts)}`
-        }
+    found = await findRowByJobId(jobId)
+    if (getBackend() === 'postgres') {
+      const appt = await getAppointmentByJobId(jobId)
+      if (appt) {
+        const starts = new Date(appt.startsAt)
+        appointmentLabel = `${formatEtDay(starts)} · ${formatEtTime(starts)}`
       }
+    }
+  } catch (err) {
+    logger.warn({ err, jobId }, 'stripe: deposit job lookup for emails failed (non-fatal)')
+  }
+  const customerEmail = found?.row.email || session.customer_details?.email || ''
+  const customerName = found?.row.name || session.customer_details?.name || ''
+  const balanceCents = Number(found?.row.balance_owed_cents || '0')
+
+  try {
+    if (customerEmail) {
       await sendDepositReceiptEmail({
-        toEmail,
-        toName: found?.row.name || session.customer_details?.name || '',
+        toEmail: customerEmail,
+        toName: customerName,
         serviceType: found?.row.service_type || 'service',
         amountPaidCents: session.amount_total ?? 0,
-        balanceCents: Number(found?.row.balance_owed_cents || '0'),
+        balanceCents,
         appointmentLabel,
       })
       logger.info(
-        { jobId, maskedEmail: maskEmail(toEmail) },
+        { jobId, maskedEmail: maskEmail(customerEmail) },
         'stripe: deposit receipt sent',
       )
     }
@@ -192,6 +201,22 @@ export async function handleCheckoutSessionCompleted(
     Sentry.captureException(err, {
       tags: { route: 'stripe-webhook', step: 'deposit-receipt' },
     })
+  }
+
+  try {
+    await sendPaymentNotice({
+      jobId,
+      kind: 'deposit',
+      customerName,
+      customerEmail,
+      serviceType: found?.row.service_type || '',
+      amountPaidCents: session.amount_total ?? 0,
+      balanceCents,
+      appointmentLabel,
+      cardSaved: Boolean(customerId && paymentMethodId),
+    })
+  } catch (err) {
+    logger.warn({ err, jobId }, 'stripe: deposit office notice failed (non-fatal)')
   }
 }
 
@@ -288,6 +313,21 @@ async function handleBalanceLinkPaid(args: {
     Sentry.captureException(err, {
       tags: { route: 'stripe-webhook', step: 'balance-link-receipt' },
     })
+  }
+
+  try {
+    await sendPaymentNotice({
+      jobId,
+      kind: 'balance',
+      customerName: found.row.name || session.customer_details?.name || '',
+      customerEmail: found.row.email || session.customer_details?.email || '',
+      serviceType: found.row.service_type || '',
+      amountPaidCents: amountCents,
+      balanceCents: 0,
+      cardSaved: Boolean(customerId && paymentMethodId),
+    })
+  } catch (err) {
+    logger.warn({ err, jobId }, 'stripe: balance-link office notice failed (non-fatal)')
   }
 }
 

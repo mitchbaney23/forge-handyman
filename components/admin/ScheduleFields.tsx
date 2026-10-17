@@ -10,9 +10,16 @@ export interface ScheduleValue {
   date: string; // 'YYYY-MM-DD'
   startTime: string; // 'HH:MM'
   durationMinutes: number;
+  // Email the customer the "You're booked" confirmation.
+  emailCustomer: boolean;
 }
 
-export const DEFAULT_SCHEDULE: ScheduleValue = { date: "", startTime: "09:00", durationMinutes: 120 };
+export const DEFAULT_SCHEDULE: ScheduleValue = {
+  date: "",
+  startTime: "09:00",
+  durationMinutes: 120,
+  emailCustomer: true,
+};
 
 const DURATIONS = [
   { minutes: 60, label: "1 hour" },
@@ -74,12 +81,21 @@ export function ScheduleFields({
           </select>
         </Field>
       </div>
+      <label className="flex items-center gap-2 text-sm text-ink/80">
+        <input
+          type="checkbox"
+          checked={value.emailCustomer}
+          onChange={(e) => onChange({ ...value, emailCustomer: e.target.checked })}
+          className="h-4 w-4 rounded border-navy/30 text-amber-forge focus:ring-amber-forge/40"
+        />
+        Email the customer a confirmation with the date and time
+      </label>
       <p className="text-xs text-ink/55">
         Eastern time. This adds the job to the Google Calendar for{" "}
         {calendarEmail}, sets it to Booked, and holds the time so the website
-        won&rsquo;t book anyone else then. If the customer has an email on file they get the
-        usual reminder the day before. David isn&rsquo;t messaged; dispatch him
-        from the job page.
+        won&rsquo;t book anyone else then. The customer also gets a reminder
+        the day before, and you and operations@ get an email to check it.
+        David isn&rsquo;t messaged; dispatch him from the job page.
       </p>
     </div>
   );

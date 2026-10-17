@@ -116,11 +116,11 @@ export async function createJobAction(
     return { ok: false, error: "Adding jobs requires the Postgres backend." };
   }
 
-  let schedule: { startsAt: string; endsAt: string } | undefined;
+  let schedule: { startsAt: string; endsAt: string; emailCustomer: boolean } | undefined;
   if (input.schedule) {
     const window = easternWindow(input.schedule);
     if (!window) return { ok: false, error: "Pick a date, a start time and a length." };
-    schedule = window;
+    schedule = { ...window, emailCustomer: input.schedule.emailCustomer !== false };
   }
 
   const res = await createJobForCustomer({
