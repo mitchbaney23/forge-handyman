@@ -20,11 +20,18 @@ const data = vi.hoisted(() => ({
   QUOTED_STATUSES: new Set(['Quoted', 'Pending Follow-Up']),
 }))
 vi.mock('@/lib/data', () => data)
-const mutations = vi.hoisted(() => ({ createCustomer: vi.fn(), moveJobStatus: vi.fn() }))
+const mutations = vi.hoisted(() => ({
+  createCustomer: vi.fn(),
+  createJobForCustomer: vi.fn(),
+  moveJobStatus: vi.fn(),
+  updateCustomerContact: vi.fn(),
+}))
 vi.mock('@/lib/crm/mutations', () => mutations)
 const payments = vi.hoisted(() => ({ listPaymentsSince: vi.fn() }))
 vi.mock('@/lib/data/pg/payments', () => payments)
 const quote = vi.hoisted(() => ({ sendQuote: vi.fn() }))
+const schedule = vi.hoisted(() => ({ scheduleJob: vi.fn() }))
+vi.mock('@/lib/crm/schedule', async (importOriginal) => ({ ...(await importOriginal<object>()), scheduleJob: schedule.scheduleJob }))
 vi.mock('@/lib/crm/quote', async (importOriginal) => ({ ...(await importOriginal<object>()), sendQuote: quote.sendQuote }))
 vi.mock('@/lib/data/backend', () => ({ getBackend: () => 'postgres' }))
 vi.mock('@/lib/security/logger', () => ({
@@ -36,6 +43,7 @@ import {
   addNote,
   businessSnapshot,
   compactJob,
+  createJob,
   customerHistory,
   findCustomer,
   getJob,
@@ -44,9 +52,11 @@ import {
   moveJob,
   previewQuote,
   priceMenu,
+  scheduleJobTool,
   sendQuoteTool,
   todaySchedule,
   TOOLS,
+  updateCustomer,
 } from '@/lib/mcp/tools'
 import type { ContactRow } from '@/lib/data'
 
@@ -83,7 +93,7 @@ beforeEach(() => {
 })
 
 describe('registry', () => {
-  it('exposes the twelve tools; send_quote is the only one that moves money', () => {
+  it('exposes the fifteen tools; send_quote is the only one that moves money', () => {
     expect(TOOLS.map((t) => t.name)).toEqual([
       'find_customer',
       'customer_history',
@@ -91,6 +101,9 @@ describe('registry', () => {
       'get_job',
       'today_schedule',
       'log_phone_job',
+      'update_customer',
+      'create_job',
+      'schedule_job',
       'move_job',
       'add_note',
       'business_snapshot',
@@ -98,7 +111,15 @@ describe('registry', () => {
       'preview_quote',
       'send_quote',
     ])
-    expect(TOOLS.filter((t) => !t.readOnly).map((t) => t.name)).toEqual(['log_phone_job', 'move_job', 'add_note', 'send_quote'])
+    expect(TOOLS.filter((t) => !t.readOnly).map((t) => t.name)).toEqual([
+      'log_phone_job',
+      'update_customer',
+      'create_job',
+      'schedule_job',
+      'move_job',
+      'add_note',
+      'send_quote',
+    ])
     expect(TOOLS.filter((t) => t.money).map((t) => t.name)).toEqual(['send_quote'])
   })
 
@@ -128,6 +149,15 @@ describe('find_customer', () => {
     const res = await findCustomer.run({ query: 'Sarah@Example.com' }, ACTOR)
     expect(data.findCustomerByEmail).toHaveBeenCalledWith('sarah@example.com')
     expect(res).toEqual({ matches: [expect.objectContaining({ id: CUST, name: 'Sarah Kim', jobCount: '2' })] })
+  })
+
+  it('reports total spent as a number of cents', async () => {
+    data.findCustomerByEmail.mockResolvedValue({ id: CUST })
+    data.getCustomerById.mockResolvedValue({
+      id: CUST, name: 'Sarah Kim', phone: '', email: 'sarah@example.com', notes: '', jobCount: '2', lastJobAt: '', totalSpentCents: '24900', jobs: [], properties: [],
+    })
+    const res = (await findCustomer.run({ query: 'sarah@example.com' }, ACTOR)) as { matches: { totalSpentCents: number }[] }
+    expect(res.matches[0].totalSpentCents).toBe(24900)
   })
 
   it('matches by phone digits or name fragment and skips anonymized customers', async () => {
@@ -414,5 +444,69 @@ describe('send_quote', () => {
     expect(sendQuoteTool.inputSchema.safeParse({ ...base, depositDollars: 0.5 }).success).toBe(false)
     expect(sendQuoteTool.inputSchema.safeParse({ ...base, depositDollars: 135.005 }).success).toBe(false)
     expect(sendQuoteTool.inputSchema.safeParse({ ...base, tier: 'huge' }).success).toBe(false)
+  })
+})
+
+describe('update_customer', () => {
+  it('passes only the fields given through to the shared core, as the caller', async () => {
+    mutations.updateCustomerContact.mockResolvedValue({ ok: true, changed: ['phone'], jobsUpdated: 1, message: 'Saved the new phone. Also updated on their 1 job.' })
+    const res = await updateCustomer.run({ customerId: CUST, phone: '919-555-0199' }, ACTOR)
+    expect(mutations.updateCustomerContact).toHaveBeenCalledWith({
+      customerId: CUST,
+      changes: { name: undefined, phone: '919-555-0199', email: undefined },
+      actor: ACTOR,
+    })
+    expect(res).toMatchObject({ ok: true, changed: ['phone'] })
+  })
+})
+
+describe('create_job', () => {
+  it('creates an unscheduled job for a customer on file', async () => {
+    mutations.createJobForCustomer.mockResolvedValue({ ok: true, jobId: JOB, scheduled: null, message: 'Job added to the pipeline at New.' })
+    await createJob.run({ customerId: CUST, serviceType: 'TV mounting', description: '65 inch over the fireplace' }, ACTOR)
+    expect(mutations.createJobForCustomer).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: CUST, schedule: undefined, actor: ACTOR }),
+    )
+  })
+
+  it('turns an Eastern date, start time and length into the booking window', async () => {
+    mutations.createJobForCustomer.mockResolvedValue({ ok: true, jobId: JOB, scheduled: {}, message: '' })
+    await createJob.run(
+      {
+        customerId: CUST,
+        serviceType: 'TV mounting',
+        description: 'd',
+        schedule: { date: '2026-10-20', startTime: '10:00', durationMinutes: 120 },
+      },
+      ACTOR,
+    )
+    expect(mutations.createJobForCustomer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        job: expect.objectContaining({ preferredDate: '2026-10-20' }),
+        schedule: { startsAt: '2026-10-20T14:00:00.000Z', endsAt: '2026-10-20T16:00:00.000Z' },
+      }),
+    )
+  })
+
+  it('refuses a time that does not exist in Eastern time without calling the core', async () => {
+    const res = await createJob.run(
+      { customerId: CUST, serviceType: 's', description: 'd', schedule: { date: '2026-03-08', startTime: '02:30', durationMinutes: 60 } },
+      ACTOR,
+    )
+    expect(res).toMatchObject({ ok: false })
+    expect(mutations.createJobForCustomer).not.toHaveBeenCalled()
+  })
+})
+
+describe('schedule_job', () => {
+  it('books an existing job at the Eastern time given', async () => {
+    schedule.scheduleJob.mockResolvedValue({ ok: true, appointmentId: 'a', startsAt: '', endsAt: '', calendar: 'operations@forgehandyman.com', message: 'Scheduled.' })
+    await scheduleJobTool.run({ jobId: JOB, date: '2026-12-01', startTime: '13:30', durationMinutes: 90 }, ACTOR)
+    expect(schedule.scheduleJob).toHaveBeenCalledWith({
+      jobId: JOB,
+      startsAt: '2026-12-01T18:30:00.000Z',
+      endsAt: '2026-12-01T20:00:00.000Z',
+      actor: ACTOR,
+    })
   })
 })

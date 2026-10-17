@@ -1,4 +1,4 @@
-import { Icon } from "@/lib/icons";
+import { ContactDetails, type SaveContactAction } from "@/components/admin/EditContactForm";
 import { EditNotesForm, type SaveNotesAction } from "@/components/admin/EditNotesForm";
 import type { CustomerDetail } from "@/lib/data";
 
@@ -8,12 +8,14 @@ export interface CustomerHeaderProps {
   // (built in a later stage) and threaded through to EditNotesForm. This
   // component never imports a page-level action directly.
   saveNotesAction: SaveNotesAction;
+  // Name / phone / email edit, bound to this customer by the profile page.
+  saveContactAction: SaveContactAction;
 }
 
-// The profile header: who the customer is (name + contact) and a pinned,
-// editable "Standing notes" block. Server-rendered; the notes editor is the
-// one client island inside it.
-export function CustomerHeader({ customer, saveNotesAction }: CustomerHeaderProps) {
+// The profile header: who the customer is (name + contact, editable) and a
+// pinned, editable "Standing notes" block. Server-rendered; the contact and
+// notes editors are the client islands inside it.
+export function CustomerHeader({ customer, saveNotesAction, saveContactAction }: CustomerHeaderProps) {
   const name = customer.name || (customer.anonymized ? "(anonymized customer)" : "(no name)");
 
   return (
@@ -29,34 +31,19 @@ export function CustomerHeader({ customer, saveNotesAction }: CustomerHeaderProp
               </span>
             )}
           </h1>
-          <dl className="mt-3 space-y-1.5 text-sm text-ink/75">
-            {customer.phone && (
-              <ContactRow icon="phone" label="Phone">
-                <a href={`tel:${customer.phone}`} className="hover:underline">
-                  {customer.phone}
-                </a>
-              </ContactRow>
-            )}
-            {customer.email && (
-              <ContactRow icon="mail" label="Email">
-                <a href={`mailto:${customer.email}`} className="hover:underline">
-                  {customer.email}
-                </a>
-              </ContactRow>
-            )}
-            {!customer.phone && !customer.email && (
-              <span className="text-ink/50">No contact details on file.</span>
-            )}
-          </dl>
+          <ContactDetails
+            name={customer.name}
+            phone={customer.phone}
+            email={customer.email}
+            editable={!customer.anonymized}
+            action={saveContactAction}
+          />
         </div>
 
         <div className="flex shrink-0 gap-4 text-sm">
           <Stat label="Jobs" value={customer.jobCount || "0"} />
           <Stat label="Properties" value={customer.propertyCount || "0"} />
-          <Stat
-            label="Deposits collected"
-            value={formatMoney(customer.depositsCollectedCents)}
-          />
+          <Stat label="Total spent" value={formatMoney(customer.totalSpentCents)} />
         </div>
       </div>
 
@@ -65,24 +52,6 @@ export function CustomerHeader({ customer, saveNotesAction }: CustomerHeaderProp
         <EditNotesForm initialNotes={customer.notes} action={saveNotesAction} />
       </div>
     </header>
-  );
-}
-
-function ContactRow({
-  icon,
-  label,
-  children,
-}: {
-  icon: "phone" | "mail";
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <Icon name={icon} className="h-4 w-4 text-ink/45" aria-hidden="true" />
-      <span className="sr-only">{label}:</span>
-      <span className="text-navy">{children}</span>
-    </div>
   );
 }
 

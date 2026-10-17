@@ -3,6 +3,7 @@ import {
   medianCycleDays,
   quoteConversion,
   revenueThisMonthCents,
+  spentCentsByJob,
   topLeadSources,
   type PaymentLite,
 } from "@/lib/admin/metrics";
@@ -44,6 +45,14 @@ describe("revenueThisMonthCents", () => {
       payment({ purpose: "balance-charge", amountCents: null }), // no amount
     ];
     expect(revenueThisMonthCents(payments, NOW)).toBe(30000);
+  });
+
+  it("counts a balance paid through an emailed balance link", () => {
+    const payments = [
+      payment({ amountCents: 10000 }),
+      payment({ purpose: "balance-link", amountCents: 11900 }),
+    ];
+    expect(revenueThisMonthCents(payments, NOW)).toBe(21900);
   });
 
   it("buckets by EASTERN month: a July-1st-ET payment stored late June 30 UTC... counts", () => {
@@ -121,5 +130,41 @@ describe("topLeadSources", () => {
       { source: "nextdoor", count: 1 },
       { source: "Unknown", count: 1 },
     ]);
+  });
+});
+
+describe("spentCentsByJob", () => {
+  const pay = (jobId: string, purpose: string, amountCents: number | null, status = "succeeded") => ({
+    jobId,
+    purpose,
+    status,
+    amountCents,
+  });
+
+  it("nets deposits and both kinds of balance payment against refunds, per job", () => {
+    const net = spentCentsByJob(
+      [
+        pay("a", "deposit", 10000),
+        pay("a", "balance-link", 11900),
+        pay("a", "refund", 1900),
+        pay("b", "balance-charge", 5000),
+        pay("b", "deposit", 9999, "failed"),
+        pay("c", "deposit", null),
+      ],
+      [],
+    );
+    expect(Object.fromEntries(net)).toEqual({ a: 20000, b: 5000 });
+  });
+
+  it("falls back to deposit_paid_cents only for a job with no money-in ledger row", () => {
+    const net = spentCentsByJob(
+      [pay("a", "deposit", 10000)],
+      [
+        { jobId: "a", depositPaidCents: 10000 },
+        { jobId: "b", depositPaidCents: 7500 },
+        { jobId: "c", depositPaidCents: 0 },
+      ],
+    );
+    expect(Object.fromEntries(net)).toEqual({ a: 10000, b: 7500 });
   });
 });

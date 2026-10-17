@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ActivityTimeline } from "@/components/admin/ActivityTimeline";
 import { CustomerHeader } from "@/components/admin/CustomerHeader";
 import { JobCard } from "@/components/admin/JobCard";
+import { NewJobForm } from "@/components/admin/NewJobForm";
 import { PropertiesSection } from "@/components/admin/PropertiesSection";
 import {
   crmEnabled,
@@ -12,7 +13,14 @@ import {
   type Activity,
   type CustomerDetail,
 } from "@/lib/data";
-import { updateStandingNotes } from "./actions";
+import { operationsCalendarEmail } from "@/lib/scheduling/config";
+import type {
+  CreateJobActionResult,
+  NewJobFormInput,
+  UpdateContactActionResult,
+  UpdateContactInput,
+} from "../form-types";
+import { createJobAction, updateContactAction, updateStandingNotes } from "./actions";
 
 export const metadata: Metadata = {
   title: "Customer · Forge Admin",
@@ -87,11 +95,14 @@ export default async function CustomerProfilePage({
   // is one customer's jobs — small — so the per-job fan-out is acceptable; if a
   // landlord ever accumulates a very large job count this would warrant a
   // dedicated "activities by customer" read, noted in the report.
+  // The customer's own id is in the list too: customer-level entries (created,
+  // contact or notes edited) are logged with the customer id as their target,
+  // which the activity log files under that id.
   const jobIds = customer.jobs
     .map((job) => job.job_id ?? "")
     .filter((jobId) => jobId !== "");
   const activityLists = await Promise.all(
-    jobIds.map((jobId) => listActivitiesForJob(jobId)),
+    [customer.id, ...jobIds].map((id) => listActivitiesForJob(id)),
   );
   const activities: Activity[] = activityLists
     .flat()
@@ -109,6 +120,16 @@ export default async function CustomerProfilePage({
     "use server";
     return updateStandingNotes(cid, notes);
   }
+  async function saveContactAction(
+    input: UpdateContactInput,
+  ): Promise<UpdateContactActionResult> {
+    "use server";
+    return updateContactAction(cid, input);
+  }
+  async function newJobAction(input: NewJobFormInput): Promise<CreateJobActionResult> {
+    "use server";
+    return createJobAction(cid, input);
+  }
 
   return (
     <div className="space-y-8">
@@ -121,7 +142,11 @@ export default async function CustomerProfilePage({
         </Link>
       </div>
 
-      <CustomerHeader customer={customer} saveNotesAction={saveNotesAction} />
+      <CustomerHeader
+        customer={customer}
+        saveNotesAction={saveNotesAction}
+        saveContactAction={saveContactAction}
+      />
 
       <PropertiesSection properties={customer.properties} />
 
@@ -134,6 +159,15 @@ export default async function CustomerProfilePage({
             </span>
           </h2>
         </div>
+        {!customer.anonymized && (
+          <div className="mb-4">
+            <NewJobForm
+              action={newJobAction}
+              addressSuggestions={customer.properties.map((p) => p.address)}
+              calendarEmail={operationsCalendarEmail()}
+            />
+          </div>
+        )}
         {customer.jobs.length === 0 ? (
           <div className="rounded-lg border border-dashed border-navy/15 bg-white/50 p-6 text-center text-sm text-ink/55">
             No jobs on file yet.
