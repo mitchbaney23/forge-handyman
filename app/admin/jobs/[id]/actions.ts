@@ -22,6 +22,7 @@ import {
   balanceLinkIdsFrom,
   moveJobStatus,
 } from "@/lib/crm/mutations";
+import { easternWindow, scheduleJob } from "@/lib/crm/schedule";
 import { performCancellation } from "@/lib/scheduling/cancel";
 import { adminActor } from "@/lib/data/activity-actions";
 import { getBackend } from "@/lib/data/backend";
@@ -783,4 +784,31 @@ export async function cancelBooking(jobId: string): Promise<ActionResult> {
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
   return { ok: true, message: "Booking cancelled — the time slot is open again." };
+}
+
+// Book a time for a job with no appointment yet: a website lead that came in
+// without a slot, a phone job, or one whose scheduling step failed. Thin
+// wrapper over the shared scheduleJob core (lib/crm/schedule.ts), which puts
+// the event on the operations calendar and moves the job to Booked.
+export async function scheduleJobAction(
+  jobId: string,
+  input: { date: string; startTime: string; durationMinutes: number },
+): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdmin(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  if (getBackend() !== "postgres") {
+    return { ok: false, error: "Bookings are only available on the Postgres backend." };
+  }
+  const window = easternWindow(input);
+  if (!window) return { ok: false, error: "Pick a date, a start time and a length." };
+
+  const res = await scheduleJob({ jobId, ...window, actor: adminActor(auth.email) });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/admin");
+  revalidatePath("/admin/pipeline");
+  return { ok: true, message: res.message };
 }

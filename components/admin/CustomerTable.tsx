@@ -6,7 +6,7 @@ import type { CustomerSummary } from "@/lib/data";
 
 // Columns the table can sort by. `last` (last job date) is the default, newest
 // first — mirroring listCustomers()' server-side order.
-type SortKey = "name" | "jobs" | "properties" | "deposits" | "last";
+type SortKey = "name" | "jobs" | "properties" | "spent" | "last";
 type SortDir = "asc" | "desc";
 
 export interface CustomerTableProps {
@@ -92,10 +92,10 @@ export function CustomerTable({ customers }: CustomerTableProps) {
                 align="right"
               />
               <SortableTh
-                label="Deposits collected"
-                active={sortKey === "deposits"}
+                label="Total spent"
+                active={sortKey === "spent"}
                 dir={sortDir}
-                onClick={() => toggleSort("deposits")}
+                onClick={() => toggleSort("spent")}
                 align="right"
               />
               <SortableTh
@@ -142,7 +142,7 @@ export function CustomerTable({ customers }: CustomerTableProps) {
                     {c.propertyCount || "0"}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-ink/70">
-                    {formatMoney(c.depositsCollectedCents)}
+                    {formatMoney(c.totalSpentCents)}
                   </td>
                   <td className="px-4 py-3 text-ink/70">
                     {formatDate(c.lastJobAt)}
@@ -185,7 +185,7 @@ export function CustomerTable({ customers }: CustomerTableProps) {
               <div className="mt-2 flex gap-4 text-xs text-ink/55">
                 <span>{c.jobCount || "0"} jobs</span>
                 <span>{c.propertyCount || "0"} properties</span>
-                <span>{formatMoney(c.depositsCollectedCents)} deposits</span>
+                <span>{formatMoney(c.totalSpentCents)} spent</span>
               </div>
             </Link>
           ))
@@ -248,8 +248,8 @@ function compare(a: CustomerSummary, b: CustomerSummary, key: SortKey): number {
       return num(a.jobCount) - num(b.jobCount);
     case "properties":
       return num(a.propertyCount) - num(b.propertyCount);
-    case "deposits":
-      return num(a.depositsCollectedCents) - num(b.depositsCollectedCents);
+    case "spent":
+      return num(a.totalSpentCents) - num(b.totalSpentCents);
     case "last":
       // ISO strings sort lexicographically; '' (no jobs) sorts to the bottom.
       return a.lastJobAt.localeCompare(b.lastJobAt);

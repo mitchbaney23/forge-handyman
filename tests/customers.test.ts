@@ -20,7 +20,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // jobs read) resolve a per-table configurable result.
 // ---------------------------------------------------------------------------
 
-const captured: { fromCalls: string[] } = { fromCalls: [] }
+const captured: {
+  fromCalls: string[]
+  updates: { table: string; payload: Record<string, unknown> }[]
+} = { fromCalls: [], updates: [] }
 
 // Per-table result the next terminal builder resolves. customer_summary is read
 // via .eq().maybeSingle() (getCustomerById) or .order().order().range()
@@ -28,17 +31,34 @@ const captured: { fromCalls: string[] } = { fromCalls: [] }
 let summaryRow: unknown = null
 let summaryList: unknown[] = []
 let jobsRows: unknown[] = []
+// The payments ledger (total spent): read via .eq().order().range() for the
+// list and .eq().in() for one profile.
+let paymentsRows: unknown[] = []
+// What an .update().eq().select() resolves to, per table.
+let updateResult: Record<string, { data: unknown; error: unknown }> = {}
 
 function makeBuilder(table: string) {
   const builder: Record<string, unknown> = {}
-  builder.select = () => builder
+  const rows = () => (table === 'jobs' ? jobsRows : table === 'payments' ? paymentsRows : summaryList)
+  let updating = false
+  builder.select = () => {
+    if (updating) {
+      return Promise.resolve(updateResult[table] ?? { data: [{ id: 'x' }], error: null })
+    }
+    return builder
+  }
+  builder.update = (payload: Record<string, unknown>) => {
+    captured.updates.push({ table, payload })
+    updating = true
+    return builder
+  }
   builder.eq = () => builder
   builder.order = () => builder
-  // .range() terminal — listCustomers (customer_summary) and the jobs read.
-  builder.range = () => {
-    const data = table === 'jobs' ? jobsRows : summaryList
-    return Promise.resolve({ data, error: null })
-  }
+  // .in() terminal — one profile's payments.
+  builder.in = () => Promise.resolve({ data: rows(), error: null })
+  // .range() terminal — listCustomers (customer_summary), the jobs reads, and
+  // the payments read.
+  builder.range = () => Promise.resolve({ data: rows(), error: null })
   // .maybeSingle() terminal — getCustomerById's single customer_summary row.
   builder.maybeSingle = () => Promise.resolve({ data: summaryRow, error: null })
   return builder
@@ -59,9 +79,12 @@ vi.mock('@/lib/security/logger', () => ({
 
 beforeEach(() => {
   captured.fromCalls = []
+  captured.updates = []
   summaryRow = null
   summaryList = []
   jobsRows = []
+  paymentsRows = []
+  updateResult = {}
 })
 
 afterEach(() => {
@@ -324,5 +347,116 @@ describe('getCustomerById: non-UUID short-circuits, properties group by normaliz
     // No original PII anywhere in the serialized detail.
     expect(JSON.stringify(detail)).not.toContain('jane@real.com')
     expect(JSON.stringify(detail)).not.toContain('Jane Real')
+  })
+})
+
+const CUSTOMER_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+const JOB_A = '00000000-0000-4000-8000-00000000000a'
+const JOB_B = '00000000-0000-4000-8000-00000000000b'
+
+function summary(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: CUSTOMER_ID,
+    name: 'Jane Renter',
+    phone: '',
+    email: 'jane@example.com',
+    notes: '',
+    anonymized_at: null,
+    created_at: '2026-01-01 09:00:00+00:00',
+    job_count: 2,
+    last_job_at: '2026-06-12 14:00:00+00:00',
+    first_job_at: '2026-01-15 10:00:00+00:00',
+    deposits_collected_cents: 10000,
+    property_count: 1,
+    ...overrides,
+  }
+}
+
+describe('total spent: deposits + balance payments − refunds, from the payments ledger', () => {
+  it('listCustomers rolls each customer up across their jobs, including balance-link payments', async () => {
+    summaryList = [summary(), summary({ id: 'bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee', name: 'Nobody Paid' })]
+    jobsRows = [
+      { id: JOB_A, customer_id: CUSTOMER_ID, deposit_paid_cents: 10000 },
+      { id: JOB_B, customer_id: CUSTOMER_ID, deposit_paid_cents: 0 },
+    ]
+    paymentsRows = [
+      { job_id: JOB_A, purpose: 'deposit', status: 'succeeded', amount_cents: 10000 },
+      { job_id: JOB_A, purpose: 'balance-link', status: 'succeeded', amount_cents: 11900 },
+      { job_id: JOB_B, purpose: 'balance-charge', status: 'succeeded', amount_cents: 5000 },
+      { job_id: JOB_B, purpose: 'refund', status: 'succeeded', amount_cents: 2000 },
+    ]
+    const { listCustomers } = await import('@/lib/data/pg/customers')
+    const [jane, nobody] = await listCustomers()
+    expect(jane.totalSpentCents).toBe('24900')
+    expect(nobody.totalSpentCents).toBe('0')
+  })
+
+  it("falls back to the job's recorded deposit when its ledger row is missing", async () => {
+    summaryList = [summary()]
+    jobsRows = [{ id: JOB_A, customer_id: CUSTOMER_ID, deposit_paid_cents: 12500 }]
+    paymentsRows = []
+    const { listCustomers } = await import('@/lib/data/pg/customers')
+    const [c] = await listCustomers()
+    expect(c.totalSpentCents).toBe('12500')
+  })
+
+  it('getCustomerById totals only that customer\'s jobs', async () => {
+    summaryRow = summary()
+    jobsRows = [makeJobRow({ id: JOB_A, deposit_paid_cents: 10000 })]
+    paymentsRows = [
+      { job_id: JOB_A, purpose: 'deposit', status: 'succeeded', amount_cents: 10000 },
+      { job_id: JOB_A, purpose: 'balance-charge', status: 'succeeded', amount_cents: 4000 },
+    ]
+    const { getCustomerById } = await import('@/lib/data/pg/customers')
+    const c = await getCustomerById(CUSTOMER_ID)
+    expect(c?.totalSpentCents).toBe('14000')
+  })
+})
+
+describe('placeholder emails never reach the read surface', () => {
+  it("shows '' for unknown:/redacted: placeholders, the real address otherwise", async () => {
+    summaryList = [
+      summary({ email: 'unknown:3f1c2b9e-0000-4000-8000-000000000000' }),
+      summary({ id: 'bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee', email: 'redacted:abc' }),
+      summary({ id: 'cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee', email: 'real@example.com' }),
+    ]
+    const { listCustomers } = await import('@/lib/data/pg/customers')
+    const rows = await listCustomers()
+    expect(rows.map((r) => r.email)).toEqual(['', '', 'real@example.com'])
+  })
+})
+
+describe('updateCustomerContact: writes the customer, then copies the change to their jobs', () => {
+  it('writes only the fields given, to both tables, and counts the jobs', async () => {
+    updateResult = { jobs: { data: [{ id: JOB_A }, { id: JOB_B }], error: null } }
+    const { updateCustomerContact } = await import('@/lib/data/pg/customers')
+    const res = await updateCustomerContact(CUSTOMER_ID, { phone: '9195550142', email: 'new@example.com' })
+    expect(res).toEqual({ ok: true, jobsUpdated: 2 })
+    expect(captured.updates).toEqual([
+      { table: 'customers', payload: { phone: '9195550142', email: 'new@example.com' } },
+      { table: 'jobs', payload: { phone: '9195550142', email: 'new@example.com' } },
+    ])
+  })
+
+  it("clears an email to a fresh unknown: placeholder on the customer and '' on the jobs", async () => {
+    const { updateCustomerContact } = await import('@/lib/data/pg/customers')
+    await updateCustomerContact(CUSTOMER_ID, { email: '' })
+    const [customer, jobs] = captured.updates
+    expect(String(customer.payload.email)).toMatch(/^unknown:[0-9a-f-]{36}$/)
+    expect(jobs.payload.email).toBe('')
+  })
+
+  it('returns duplicate on a unique-email conflict and leaves the jobs alone', async () => {
+    updateResult = { customers: { data: null, error: { code: '23505', message: 'dup' } } }
+    const { updateCustomerContact } = await import('@/lib/data/pg/customers')
+    const res = await updateCustomerContact(CUSTOMER_ID, { email: 'taken@example.com' })
+    expect(res).toEqual({ ok: false, reason: 'duplicate' })
+    expect(captured.updates.map((u) => u.table)).toEqual(['customers'])
+  })
+
+  it('returns not_found for a non-UUID id without touching the client', async () => {
+    const { updateCustomerContact } = await import('@/lib/data/pg/customers')
+    expect(await updateCustomerContact('nope', { name: 'X' })).toEqual({ ok: false, reason: 'not_found' })
+    expect(captured.fromCalls).toEqual([])
   })
 })

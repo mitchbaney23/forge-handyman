@@ -57,8 +57,12 @@ export const ACTIONS = {
   CHARGE_FULLY_REFUNDED: 'charge.fully_refunded',
   CHARGE_PARTIALLY_REFUNDED: 'charge.partially_refunded',
 
-  // Customer (Stripe webhook)
+  // Customer (Stripe webhook, manual add) and edits from the admin or Claude
   CUSTOMER_CREATED: 'customer.created',
+  CUSTOMER_UPDATED: 'customer.updated',
+  CUSTOMER_NOTES_UPDATED: 'customer.notes_updated',
+  // A job added by hand to a customer already on file
+  JOB_CREATED: 'job.created',
 
   // Dispatch (admin + Telegram webhook)
   DISPATCH_SENT: 'dispatch.sent',

@@ -48,3 +48,36 @@ export function formatEtDay(d: Date): string {
     day: 'numeric',
   })
 }
+
+// An Eastern wall-clock time ('YYYY-MM-DD' + 'HH:MM', as a date and a time
+// input give them) to the UTC instant, DST-correct. null when either part is
+// malformed or the time does not exist (the skipped hour of spring-forward).
+export function easternWallTimeToIso(date: string, time: string): string | null {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  const t = /^(\d{2}):(\d{2})$/.exec(time)
+  if (!d || !t) return null
+  const [y, mo, da] = [Number(d[1]), Number(d[2]), Number(d[3])]
+  const [h, mi] = [Number(t[1]), Number(t[2])]
+  if (h > 23 || mi > 59) return null
+  const wall = Date.UTC(y, mo - 1, da, h, mi)
+  if (new Date(wall).getUTCDate() !== da) return null
+  // Read the guess back in Eastern; the gap is the offset. Twice, so a guess
+  // that lands across a DST change settles on the right side.
+  let instant = wall
+  for (let i = 0; i < 2; i++) instant = wall - (easternWallMs(instant) - instant)
+  return easternWallMs(instant) === wall ? new Date(instant).toISOString() : null
+}
+
+function easternWallMs(instant: number): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: ET_TIME_ZONE,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(new Date(instant))
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value)
+  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'))
+}

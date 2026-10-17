@@ -14,7 +14,12 @@ export interface PaymentLite {
   createdAt: string;
 }
 
-// Revenue collected this Eastern-calendar month: deposits + balance charges
+// The payment purposes that are money IN from a customer: the quote deposit,
+// the saved-card balance charge at Mark Complete, and a balance paid through
+// an emailed balance link. Refund rows are money back out.
+export const MONEY_IN_PURPOSES = new Set(["deposit", "balance-charge", "balance-link"]);
+
+// Revenue collected this Eastern-calendar month: deposits + balance payments
 // minus refunds. Refund rows hold the CUMULATIVE refunded amount per charge
 // (see lib/data/pg/payments.ts recordRefund), so summing them is correct.
 // Deliberately CASH-BASIS: a refund issued this month reduces this month's
@@ -31,13 +36,54 @@ export function revenueThisMonthCents(
     const created = new Date(p.createdAt);
     if (!Number.isFinite(created.getTime())) continue;
     if (!easternIsoDate(created).startsWith(monthKey)) continue;
-    if (p.purpose === "deposit" || p.purpose === "balance-charge") {
+    if (MONEY_IN_PURPOSES.has(p.purpose)) {
       total += p.amountCents;
     } else if (p.purpose === "refund") {
       total -= p.amountCents;
     }
   }
   return total;
+}
+
+// What each job has netted from its customer, all time: succeeded money-in
+// payments minus refunds (refund rows hold the cumulative refunded amount per
+// charge, so summing them is correct). recordPayment is best-effort, so a job
+// whose deposit landed (deposit_paid_cents) but whose ledger row is missing
+// falls back to that deposit rather than reading as $0. Jobs that net zero
+// are left out of the map.
+export interface SpendPayment {
+  jobId: string;
+  purpose: string;
+  status: string;
+  amountCents: number | null;
+}
+
+export interface SpendJob {
+  jobId: string;
+  depositPaidCents: number;
+}
+
+export function spentCentsByJob(
+  payments: SpendPayment[],
+  jobs: SpendJob[],
+): Map<string, number> {
+  const net = new Map<string, number>();
+  const hasMoneyIn = new Set<string>();
+  for (const p of payments) {
+    if (!p.jobId || p.status !== "succeeded" || p.amountCents === null) continue;
+    if (MONEY_IN_PURPOSES.has(p.purpose)) {
+      net.set(p.jobId, (net.get(p.jobId) ?? 0) + p.amountCents);
+      hasMoneyIn.add(p.jobId);
+    } else if (p.purpose === "refund") {
+      net.set(p.jobId, (net.get(p.jobId) ?? 0) - p.amountCents);
+    }
+  }
+  for (const j of jobs) {
+    if (!j.jobId || hasMoneyIn.has(j.jobId) || j.depositPaidCents <= 0) continue;
+    net.set(j.jobId, (net.get(j.jobId) ?? 0) + j.depositPaidCents);
+  }
+  for (const [jobId, cents] of net) if (cents === 0) net.delete(jobId);
+  return net;
 }
 
 // A job counts as "paid" once deposit money landed (status flip or recorded

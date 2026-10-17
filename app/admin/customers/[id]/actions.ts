@@ -1,12 +1,19 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getServerSession } from "next-auth";
-import { authOptions, isAllowlistedEmail } from "@/lib/auth";
 import { logger } from "@/lib/security/logger";
 import { checkLimit } from "@/lib/security/rate-limit";
-import { appendAuditRow, updateCustomerNotes } from "@/lib/data";
-import { adminActor } from "@/lib/data/activity-actions";
+import { rateLimitAdmin, requireAdmin } from "@/lib/admin/guard";
+import { createJobForCustomer, updateCustomerContact } from "@/lib/crm/mutations";
+import { easternWindow } from "@/lib/crm/schedule";
+import { appendAuditRow, crmEnabled, updateCustomerNotes } from "@/lib/data";
+import { ACTIONS, adminActor } from "@/lib/data/activity-actions";
+import type {
+  CreateJobActionResult,
+  NewJobFormInput,
+  UpdateContactActionResult,
+  UpdateContactInput,
+} from "../form-types";
 
 // Server actions for the customer profile page (Stage 14 / Phase B1). The one
 // write B1 owns on this surface is the customer's standing notes — the pinned,
@@ -19,13 +26,6 @@ import { adminActor } from "@/lib/data/activity-actions";
 
 // Shape EditNotesForm's SaveNotesAction expects: { updated, error? }.
 export type SaveNotesResult = { updated: boolean; error?: string };
-
-async function requireAdmin(): Promise<{ email: string } | null> {
-  const session = await getServerSession(authOptions);
-  const email = session?.user?.email ?? null;
-  if (!email || !isAllowlistedEmail(email)) return null;
-  return { email };
-}
 
 // Persist one customer's standing notes. Mirrors the requireAdmin +
 // checkLimit('admin-action', email) pattern from app/admin/jobs/[id]/actions.ts.
@@ -51,12 +51,10 @@ export async function updateStandingNotes(
     return { updated: false, error: "Couldn’t save notes." };
   }
 
-  // Free-form action string (not in the closed ACTIONS vocabulary — the column
-  // is text and the timeline renders unknowns generically). target = the
-  // customer id so the entry is attributable to this profile.
+  // target = the customer id so the entry is attributable to this profile.
   await appendAuditRow({
     actor: adminActor(auth.email),
-    action: "customer.notes_updated",
+    action: ACTIONS.CUSTOMER_NOTES_UPDATED,
     target: customerId,
   });
 
@@ -67,4 +65,86 @@ export async function updateStandingNotes(
   revalidatePath(`/admin/customers/${customerId}`);
   revalidatePath("/admin/customers");
   return { updated: true };
+}
+
+// Edit the customer's name / phone / email. Thin wrapper over the shared core
+// (lib/crm/mutations.ts updateCustomerContact): admin gate + rate limit +
+// revalidate. The core validates, refuses an email another customer has, and
+// copies the change onto the customer's jobs.
+export async function updateContactAction(
+  customerId: string,
+  input: UpdateContactInput,
+): Promise<UpdateContactActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdmin(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  if (!crmEnabled()) {
+    return { ok: false, error: "Editing customers requires the Postgres backend." };
+  }
+
+  const res = await updateCustomerContact({
+    customerId,
+    changes: { name: input.name, phone: input.phone, email: input.email },
+    actor: adminActor(auth.email),
+  });
+  if (!res.ok) {
+    return { ok: false, error: res.error, duplicateId: res.duplicate?.existingId };
+  }
+  if (res.changed.length > 0) {
+    revalidatePath(`/admin/customers/${customerId}`);
+    revalidatePath("/admin/customers");
+    revalidatePath("/admin/pipeline");
+  }
+  return { ok: true, message: res.message };
+}
+
+// Add a job for this customer, optionally scheduled. The form sends an Eastern
+// date + start time + length; the server turns that into instants so the
+// browser's own time zone never matters.
+export async function createJobAction(
+  customerId: string,
+  input: NewJobFormInput,
+): Promise<CreateJobActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdmin(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  if (!crmEnabled()) {
+    return { ok: false, error: "Adding jobs requires the Postgres backend." };
+  }
+
+  let schedule: { startsAt: string; endsAt: string } | undefined;
+  if (input.schedule) {
+    const window = easternWindow(input.schedule);
+    if (!window) return { ok: false, error: "Pick a date, a start time and a length." };
+    schedule = window;
+  }
+
+  const res = await createJobForCustomer({
+    customerId,
+    job: {
+      serviceType: input.serviceType,
+      address: input.address,
+      description: input.description,
+      preferredDate: input.schedule ? input.schedule.date : input.preferredDate,
+      urgency: input.urgency,
+    },
+    schedule,
+    actor: adminActor(auth.email),
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+
+  revalidatePath(`/admin/customers/${customerId}`);
+  revalidatePath("/admin/customers");
+  revalidatePath("/admin/pipeline");
+  return {
+    ok: true,
+    jobId: res.jobId,
+    scheduled: Boolean(res.scheduled),
+    scheduleError: res.scheduleError,
+    message: res.message,
+  };
 }

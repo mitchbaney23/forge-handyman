@@ -42,3 +42,10 @@ export const DEFAULT_SCHEDULING_CONFIG: SchedulingConfig = {
   minLeadMin: MIN_LEAD_MIN,
   bookingWindowDays: BOOKING_WINDOW_DAYS,
 }
+
+// The Google Calendar that jobs scheduled from the admin land on: the shared
+// operations@ account (the service account impersonates it, like a
+// technician's calendar). OPERATIONS_CALENDAR_EMAIL overrides it.
+export function operationsCalendarEmail(): string {
+  return (process.env.OPERATIONS_CALENDAR_EMAIL || '').trim() || 'operations@forgehandyman.com'
+}
