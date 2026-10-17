@@ -48,6 +48,7 @@ export interface NewJobFormInput {
     date: string; // 'YYYY-MM-DD', Eastern
     startTime: string; // 'HH:MM', Eastern
     durationMinutes: number;
+    emailCustomer: boolean;
   };
 }
 

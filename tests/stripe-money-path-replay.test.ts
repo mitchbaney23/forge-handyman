@@ -39,6 +39,7 @@ const calls = {
   auditRows: [] as Record<string, unknown>[],
   depositReceipts: [] as Record<string, unknown>[],
   completionReceipts: [] as Record<string, unknown>[],
+  officeNotices: [] as Record<string, unknown>[],
   refundsRecorded: [] as Record<string, unknown>[],
   piRetrieves: [] as string[],
   paymentsRecorded: [] as Record<string, unknown>[],
@@ -82,6 +83,12 @@ vi.mock("@/lib/data/pg/payments", () => ({
 vi.mock("@/lib/email/deposit-receipt", () => ({
   sendDepositReceiptEmail: (args: Record<string, unknown>) => {
     calls.depositReceipts.push(args);
+    return Promise.resolve();
+  },
+}));
+vi.mock("@/lib/email/office-notice", () => ({
+  sendPaymentNotice: (args: Record<string, unknown>) => {
+    calls.officeNotices.push(args);
     return Promise.resolve();
   },
 }));
@@ -172,6 +179,7 @@ beforeEach(() => {
   calls.auditRows = [];
   calls.depositReceipts = [];
   calls.completionReceipts = [];
+  calls.officeNotices = [];
   calls.refundsRecorded = [];
   calls.piRetrieves = [];
   calls.paymentsRecorded = [];
@@ -197,6 +205,16 @@ describe("money-path replay", () => {
       toEmail: "jane@example.com",
       amountPaidCents: 9500,
     });
+    // The office (admin@ + operations@) hears about it too.
+    expect(calls.officeNotices).toEqual([
+      expect.objectContaining({
+        jobId: JOB_ID,
+        kind: "deposit",
+        customerName: "Jane Homeowner",
+        amountPaidCents: 9500,
+        balanceCents: 20000,
+      }),
+    ]);
   });
 
   it("transient failure, then Stripe's retry RECOVERS the deposit (the old bug ate it)", async () => {
@@ -212,10 +230,12 @@ describe("money-path replay", () => {
     await deliver(checkoutEvent("evt_dep_3"));
     const updates = calls.rowUpdates.length;
     const receipts = calls.depositReceipts.length;
+    const notices = calls.officeNotices.length;
 
     expect(await deliver(checkoutEvent("evt_dep_3"))).toBe(200);
     expect(calls.rowUpdates).toHaveLength(updates);
     expect(calls.depositReceipts).toHaveLength(receipts);
+    expect(calls.officeNotices).toHaveLength(notices);
   });
 
   it("dashboard refund (bare charge) resolves the job via the parent PI and flips Refunded", async () => {
@@ -323,6 +343,9 @@ describe("money-path replay", () => {
     expect(row.stripe_payment_method_id).toBe("");
 
     expect(calls.depositReceipts).toHaveLength(0);
+    expect(calls.officeNotices).toEqual([
+      expect.objectContaining({ kind: "balance", amountPaidCents: 11900, balanceCents: 0 }),
+    ]);
     expect(calls.completionReceipts).toHaveLength(1);
     expect(calls.completionReceipts[0]).toMatchObject({
       balanceChargedCents: 11900,

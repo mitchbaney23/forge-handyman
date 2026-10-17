@@ -1,6 +1,7 @@
 import type { Cart } from '@/lib/cart'
 import { appendAuditRow, findRowByJobId, updateRowByJobId } from '@/lib/data'
 import { ACTIONS } from '@/lib/data/activity-actions'
+import { sendQuoteSentNotice } from '@/lib/email/office-notice'
 import { sendQuoteEmail } from '@/lib/email/quote'
 import {
   MIN_DEPOSIT_CENTS,
@@ -233,6 +234,25 @@ export async function sendQuote(args: SendQuoteArgs): Promise<SendQuoteResult> {
         : {}),
     }),
   })
+  // Tell the office (admin@ + operations@) the quote went out. Best-effort:
+  // the customer already has the quote, so a failed notice must not turn a
+  // sent quote into an error.
+  try {
+    await sendQuoteSentNotice({
+      jobId,
+      customerName,
+      customerEmail,
+      serviceType,
+      depositCents,
+      balanceCents,
+      lines: itemized?.lines,
+      expiresAt: paymentLink.expiresAt,
+      actor,
+    })
+  } catch (err) {
+    logger.warn({ err, jobId, actor }, 'quote: office notice failed (non-fatal)')
+  }
+
   logger.info(
     {
       jobId,

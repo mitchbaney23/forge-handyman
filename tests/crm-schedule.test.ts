@@ -26,10 +26,19 @@ const data = vi.hoisted(() => ({
   releaseSlot: vi.fn(),
   updateRowByJobId: vi.fn(),
 }));
-const google = vi.hoisted(() => ({ createBookingEvent: vi.fn(), deleteBookingEvent: vi.fn() }));
+const google = vi.hoisted(() => ({
+  createBookingEvent: vi.fn(),
+  deleteBookingEvent: vi.fn(),
+  sendBookingConfirmationToCustomer: vi.fn(),
+}));
+const office = vi.hoisted(() => ({ sendScheduledNotice: vi.fn() }));
 
 vi.mock("@/lib/data", () => data);
 vi.mock("@/lib/google", () => google);
+vi.mock("@/lib/email/office-notice", () => office);
+vi.mock("@/lib/scheduling/cancel-token", () => ({
+  buildCancelUrl: (id: string) => `https://forge.test/booking/cancel?token=${id}`,
+}));
 vi.mock("@/lib/telegram/dispatch", () => ({ notifyCancellation: vi.fn() }));
 vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }));
 vi.mock("@/lib/security/logger", () => ({
@@ -60,6 +69,8 @@ beforeEach(() => {
   data.appendAuditRow.mockResolvedValue(undefined);
   google.createBookingEvent.mockResolvedValue("evt-1");
   google.deleteBookingEvent.mockResolvedValue(undefined);
+  google.sendBookingConfirmationToCustomer.mockResolvedValue(undefined);
+  office.sendScheduledNotice.mockResolvedValue(undefined);
 });
 
 describe("checkScheduleWindow", () => {
@@ -128,6 +139,59 @@ describe("scheduleJob", () => {
     const res = await scheduleJob({ jobId: "job-1", startsAt: START, endsAt: END, actor: ACTOR, now: NOW });
     expect(res).toEqual({ ok: false, error: "That time was just taken. Pick another time." });
     expect(google.createBookingEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("scheduleJob: emails the customer and the office", () => {
+  it("sends the customer the booking confirmation with a cancel link, and tells the office it went out", async () => {
+    const res = await scheduleJob({ jobId: "job-1", startsAt: START, endsAt: END, actor: ACTOR, now: NOW });
+    expect(google.sendBookingConfirmationToCustomer).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: "Jane", email: "jane@example.com", address: "12 Oak St", jobId: "job-1" }),
+      startsAt: START,
+      endsAt: END,
+      cancelUrl: "https://forge.test/booking/cancel?token=appt-1",
+    });
+    expect(office.sendScheduledNotice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: "job-1",
+        whenLabel: "Tue, Oct 20, 10:00 AM–12:00 PM",
+        calendar: "operations@forgehandyman.com",
+        confirmation: "sent",
+        actor: ACTOR,
+      }),
+    );
+    expect(res).toMatchObject({ ok: true, confirmation: "sent" });
+    if (res.ok) expect(res.message).toContain("Confirmation emailed to jane@example.com.");
+  });
+
+  it("skips the customer email when asked, and says so to the office", async () => {
+    const res = await scheduleJob({ jobId: "job-1", startsAt: START, endsAt: END, actor: ACTOR, emailCustomer: false, now: NOW });
+    expect(google.sendBookingConfirmationToCustomer).not.toHaveBeenCalled();
+    expect(office.sendScheduledNotice).toHaveBeenCalledWith(expect.objectContaining({ confirmation: "skipped" }));
+    expect(res).toMatchObject({ ok: true, confirmation: "skipped" });
+  });
+
+  it("flags a customer with no email on file", async () => {
+    data.findRowByJobId.mockResolvedValue({ row: { status: "New", name: "Bob", email: "", phone: "", address: "", service_type: "", description: "", referral_source: "", submitted_at: "", preferred_date: "" } });
+    const res = await scheduleJob({ jobId: "job-1", startsAt: START, endsAt: END, actor: ACTOR, now: NOW });
+    expect(google.sendBookingConfirmationToCustomer).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ ok: true, confirmation: "no-email" });
+  });
+
+  it("keeps the booking when an email fails, and reports the failed confirmation", async () => {
+    google.sendBookingConfirmationToCustomer.mockRejectedValue(new Error("gmail down"));
+    office.sendScheduledNotice.mockRejectedValue(new Error("gmail down"));
+    const res = await scheduleJob({ jobId: "job-1", startsAt: START, endsAt: END, actor: ACTOR, now: NOW });
+    expect(res).toMatchObject({ ok: true, confirmation: "failed" });
+    expect(data.updateRowByJobId).toHaveBeenCalledWith("job-1", { status: "Booked", preferred_date: "2026-10-20" });
+    expect(data.releaseSlot).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing when the booking itself fails", async () => {
+    google.createBookingEvent.mockRejectedValue(new Error("unauthorized_client"));
+    await scheduleJob({ jobId: "job-1", startsAt: START, endsAt: END, actor: ACTOR, now: NOW });
+    expect(google.sendBookingConfirmationToCustomer).not.toHaveBeenCalled();
+    expect(office.sendScheduledNotice).not.toHaveBeenCalled();
   });
 });
 

@@ -12,8 +12,15 @@ import {
   type TechnicianRow,
 } from "@/lib/data";
 import { ACTIONS } from "@/lib/data/activity-actions";
-import { createBookingEvent, type ContactSubmission } from "@/lib/google";
+import { sendScheduledNotice, type ScheduledNoticeInput } from "@/lib/email/office-notice";
+import {
+  createBookingEvent,
+  sendBookingConfirmationToCustomer,
+  type ContactSubmission,
+} from "@/lib/google";
 import { canAdminTransition } from "@/lib/jobs/status-machine";
+import { isForgeFamilyJob } from "@/lib/quote-lines";
+import { buildCancelUrl } from "@/lib/scheduling/cancel-token";
 import { operationsCalendarEmail } from "@/lib/scheduling/config";
 import {
   easternIsoDate,
@@ -35,7 +42,11 @@ import { logger } from "@/lib/security/logger";
 // reminder all see it. Unlike a website booking the calendar event goes on
 // the operations calendar, not David's, and the appointment is marked
 // source 'admin' so a later cancel deletes the event from the right calendar.
-// David is not messaged; dispatch him from the job page as usual.
+// The customer gets the website's "You're booked" confirmation (date, time,
+// address, a cancel link) unless the sender turns it off, and the day-before
+// reminder from the lifecycle cron like any booking. The office (admin@ +
+// operations@) gets a notice to check it. David is not messaged; dispatch him
+// from the job page as usual.
 // ---------------------------------------------------------------------------
 
 export const MIN_APPOINTMENT_MIN = 30;
@@ -94,6 +105,8 @@ export type ScheduleJobResult =
       startsAt: string;
       endsAt: string;
       calendar: string;
+      // What happened with the customer's confirmation email.
+      confirmation: ScheduledNoticeInput["confirmation"];
       message: string;
     }
   | { ok: false; error: string };
@@ -103,6 +116,8 @@ export async function scheduleJob(args: {
   startsAt: string;
   endsAt: string;
   actor: string;
+  // Email the customer a confirmation. Default true.
+  emailCustomer?: boolean;
   now?: Date;
 }): Promise<ScheduleJobResult> {
   const { jobId, actor } = args;
@@ -184,13 +199,59 @@ export async function scheduleJob(args: {
     });
   }
   logger.info({ jobId, actor, startsAt, endsAt, calendar }, "crm: job scheduled");
+
+  // The booking stands from here; both emails are best-effort.
+  const submission = submissionFor(row, jobId);
+  let confirmation: ScheduledNoticeInput["confirmation"] = "skipped";
+  if (args.emailCustomer !== false) {
+    if (!row.email) {
+      confirmation = "no-email";
+    } else {
+      try {
+        await sendBookingConfirmationToCustomer({
+          data: submission,
+          startsAt,
+          endsAt,
+          cancelUrl: buildCancelUrl(appt.id),
+        });
+        confirmation = "sent";
+      } catch (err) {
+        confirmation = "failed";
+        logger.warn({ err, jobId }, "crm: schedule confirmation email failed (non-fatal)");
+      }
+    }
+  }
+  const whenLabel = describeWindow(startsAt, endsAt);
+  try {
+    await sendScheduledNotice({
+      jobId,
+      customerName: row.name,
+      customerEmail: row.email,
+      serviceType: row.service_type,
+      address: row.address,
+      whenLabel,
+      calendar,
+      confirmation,
+      actor,
+    });
+  } catch (err) {
+    logger.warn({ err, jobId }, "crm: schedule office notice failed (non-fatal)");
+  }
+
+  const confirmationNote: Record<ScheduledNoticeInput["confirmation"], string> = {
+    sent: ` Confirmation emailed to ${row.email}.`,
+    failed: " The confirmation email to the customer failed; let them know the time.",
+    "no-email": " No email on file, so no confirmation went out; let them know the time.",
+    skipped: " No confirmation emailed, as you chose.",
+  };
   return {
     ok: true,
     appointmentId: appt.id,
     startsAt,
     endsAt,
     calendar,
-    message: `Scheduled for ${describeWindow(startsAt, endsAt)} on the ${calendar} calendar.`,
+    confirmation,
+    message: `Scheduled for ${whenLabel} on the ${calendar} calendar.${confirmationNote[confirmation]}`,
   };
 }
 
@@ -226,5 +287,6 @@ function submissionFor(row: ContactRow, jobId: string): ContactSubmission {
     referralSource: row.referral_source,
     submittedAt: row.submitted_at,
     jobId,
+    family: isForgeFamilyJob(row.description),
   };
 }

@@ -17,6 +17,8 @@ const stripe = vi.hoisted(() => ({ createQuotePaymentLink: vi.fn() }))
 vi.mock('@/lib/stripe/payment-links', () => stripe)
 const mail = vi.hoisted(() => ({ sendQuoteEmail: vi.fn() }))
 vi.mock('@/lib/email/quote', () => mail)
+const office = vi.hoisted(() => ({ sendQuoteSentNotice: vi.fn() }))
+vi.mock('@/lib/email/office-notice', () => office)
 vi.mock('@/lib/security/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   maskEmail: (e: string) => `masked:${e}`,
@@ -265,6 +267,22 @@ describe('sendQuote from the menu', () => {
     expect(emailed.lines?.at(-1)).toMatchObject({ kind: 'custom', name: 'Travel fee', totalCents: 3500 })
     const stamped = JSON.parse(String(data.appendAuditRow.mock.calls.at(-1)?.[0].after))
     expect(stamped.totalCents).toBe(30000)
+  })
+
+  it('tells the office the quote went out, with the lines and who sent it, and a failed notice does not fail the quote', async () => {
+    await sendQuote({ ...menuArgs, customLines: [{ name: 'Travel fee', qty: 1, unitCents: 3500 }] })
+    expect(office.sendQuoteSentNotice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: JOB,
+        customerEmail: 'sarah@example.com',
+        depositCents: 30000,
+        balanceCents: 0,
+        actor: ACTOR,
+        lines: expect.arrayContaining([expect.objectContaining({ kind: 'custom', name: 'Travel fee' })]),
+      }),
+    )
+    office.sendQuoteSentNotice.mockRejectedValueOnce(new Error('gmail down'))
+    expect(await sendQuote(menuArgs)).toMatchObject({ ok: true })
   })
 
   it('sends a quote of custom lines alone, and refuses a bad one before touching Stripe', async () => {
