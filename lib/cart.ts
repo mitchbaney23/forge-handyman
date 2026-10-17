@@ -121,6 +121,60 @@ function addOnOrFullCents(line: ResolvedCartLine): number {
   return line.addOnCents ?? line.priceCents
 }
 
+// One priced row of the engine: `qty` units of one menu line, all at the same
+// unit price. A line splits into two rows when its first unit is the cart's
+// full-price unit and the rest are add-ons.
+export type PricedRow = {
+  id: string
+  name: string
+  qty: number
+  // What each unit charges (Forge Family rate when family).
+  unitCents: number
+  // The item's full price (Forge Family rate when family).
+  fullUnitCents: number
+  // True when the units charge the item's add-on price and it is lower than
+  // the full price. Add-on-only items (Auto Maintenance) are posted at their
+  // add-on price already, so they read as full price.
+  addOn: boolean
+}
+
+// THE ENGINE, per row: the first line with the highest full price charges one
+// unit at full price (that unit carries the trip); every other unit charges
+// its add-on price. $200+ items have no add-on price, so every unit of theirs
+// is full. Family rates discount + $5-round each unit price individually.
+// cartTotals sums these rows; the itemized quote shows them.
+export function itemizeLines(
+  lines: ResolvedCartLine[],
+  opts?: { family?: boolean },
+): PricedRow[] {
+  const family = opts?.family ?? false
+  const unit = (cents: number) => (family ? familyCents(cents) : cents)
+
+  let anchor: ResolvedCartLine | null = null
+  for (const line of lines) {
+    if (!anchor || line.priceCents > anchor.priceCents) anchor = line
+  }
+
+  const rows: PricedRow[] = []
+  for (const line of lines) {
+    const fullUnitCents = unit(line.priceCents)
+    const addOnUnitCents = unit(addOnOrFullCents(line))
+    const base = { id: line.id, name: line.name, fullUnitCents }
+    if (addOnUnitCents >= fullUnitCents) {
+      rows.push({ ...base, qty: line.qty, unitCents: fullUnitCents, addOn: false })
+      continue
+    }
+    const fullUnits = line === anchor ? 1 : 0
+    if (fullUnits > 0) {
+      rows.push({ ...base, qty: fullUnits, unitCents: fullUnitCents, addOn: false })
+    }
+    if (line.qty > fullUnits) {
+      rows.push({ ...base, qty: line.qty - fullUnits, unitCents: addOnUnitCents, addOn: true })
+    }
+  }
+  return rows
+}
+
 // À-la-carte totals only — does NOT include the package.
 //
 // THE ENGINE: the single most expensive line in the cart charges full price
@@ -153,19 +207,15 @@ export function cartTotals(
   let itemCount = 0
   let minutes = 0
   let naiveSubtotalCents = 0
-  let subtotalCents = 0
-  let anchor: ResolvedCartLine | null = null
   for (const line of lines) {
     itemCount += line.qty
     minutes += line.minutes * line.qty
     naiveSubtotalCents += unit(line.priceCents) * line.qty
-    subtotalCents += unit(addOnOrFullCents(line)) * line.qty
-    if (!anchor || line.priceCents > anchor.priceCents) anchor = line
   }
-  // Promote exactly one unit of the most expensive line to full price.
-  if (anchor) {
-    subtotalCents += unit(anchor.priceCents) - unit(addOnOrFullCents(anchor))
-  }
+  const subtotalCents = itemizeLines(lines, { family }).reduce(
+    (sum, row) => sum + row.unitCents * row.qty,
+    0,
+  )
   return { itemCount, subtotalCents, naiveSubtotalCents, minutes }
 }
 

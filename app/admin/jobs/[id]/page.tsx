@@ -10,6 +10,8 @@ import { addJobNoteAction } from "./actions";
 import { ActivityTimeline } from "@/components/admin/ActivityTimeline";
 import { AddNoteForm } from "@/components/admin/AddNoteForm";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { QuoteLinesTable } from "@/components/admin/QuoteLinesTable";
+import { extractQuoteMeta } from "@/lib/automation/lifecycle";
 import {
   crmEnabled,
   findRowByJobId,
@@ -48,6 +50,7 @@ export default async function JobDetailPage({
     ? await listActivitiesForJob(jobId)
     : [];
   const appointment = timelineEnabled ? await getAppointmentByJobId(jobId) : null;
+  const lastQuote = extractQuoteMeta(activities);
   // Offer Schedule on a job with no live appointment that can still be booked.
   const canSchedule =
     timelineEnabled &&
@@ -126,6 +129,56 @@ export default async function JobDetailPage({
               {row.description || "(no description)"}
             </p>
           </Panel>
+          {lastQuote && (
+            <Panel title="Last quote">
+              <Detail
+                label="Sent"
+                value={new Date(lastQuote.sentAt).toLocaleString()}
+              />
+              {lastQuote.itemized ? (
+                <div className="pt-1">
+                  <QuoteLinesTable
+                    lines={lastQuote.itemized.lines}
+                    totalCents={lastQuote.itemized.totalCents}
+                  />
+                  {lastQuote.itemized.family && (
+                    <p className="mt-2 text-xs text-ink/55">
+                      Priced at the Forge Family rate.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <Detail label="Pricing" value="Custom amount" />
+              )}
+              {lastQuote.depositCents != null && (
+                <Detail
+                  label="Deposit"
+                  value={`$${(lastQuote.depositCents / 100).toFixed(2)}`}
+                />
+              )}
+              {lastQuote.balanceCents != null && (
+                <Detail
+                  label="Balance"
+                  value={`$${(lastQuote.balanceCents / 100).toFixed(2)}`}
+                />
+              )}
+              {lastQuote.paymentLinkUrl && (
+                <div className="flex items-baseline gap-3">
+                  <span className="w-32 shrink-0 text-xs font-medium uppercase tracking-wide text-ink/55">
+                    Payment link
+                  </span>
+                  <a
+                    href={lastQuote.paymentLinkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="break-all text-sm text-amber-forge hover:underline"
+                  >
+                    Open link
+                  </a>
+                </div>
+              )}
+            </Panel>
+          )}
           <PhotosPanel csv={row.photo_urls || ""} />
         </div>
 

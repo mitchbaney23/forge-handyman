@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto'
+import type Stripe from 'stripe'
 import { buildIdempotencyKey, getStripe } from '@/lib/stripe/client'
 import { appendAuditRow } from '@/lib/data'
 import { logger, maskEmail } from '@/lib/security/logger'
 
+// One checkout line of a quote built from the menu (lib/quote-lines.ts).
 export interface QuoteLineItem {
   name: string
-  description?: string
-  amountCents: number
-  quantity?: number
+  unitCents: number
+  quantity: number
 }
 
 export interface QuoteInput {
@@ -18,6 +19,9 @@ export interface QuoteInput {
   balanceCents: number
   tier: 'small' | 'medium' | 'large'
   description: string
+  // Menu quotes only. Shown as separate checkout lines when the link collects
+  // the whole total; a deposit-only link stays a single deposit line.
+  lines?: QuoteLineItem[]
 }
 
 export interface CreatedPaymentLink {
@@ -41,7 +45,7 @@ const SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60
 export function quoteContentHash(
   quote: Pick<
     QuoteInput,
-    'description' | 'tier' | 'depositCents' | 'balanceCents' | 'customerEmail'
+    'description' | 'tier' | 'depositCents' | 'balanceCents' | 'customerEmail' | 'lines'
   >,
 ): string {
   const canonical = JSON.stringify({
@@ -50,8 +54,34 @@ export function quoteContentHash(
     depositCents: quote.depositCents,
     balanceCents: quote.balanceCents,
     customerEmail: quote.customerEmail,
+    // Only menu quotes carry lines; leaving the key out otherwise keeps the
+    // hash of a custom-amount quote what it has always been.
+    ...(quote.lines && quote.lines.length > 0 ? { lines: quote.lines } : {}),
   })
   return createHash('sha256').update(canonical).digest('hex').slice(0, 16)
+}
+
+// The checkout lines for a menu quote that collects its whole total now (no
+// balance): one line per quoted row, so the Stripe page and receipt list the
+// items, quantities and add-on prices the email showed. null when the link
+// should stay a single deposit line — a custom-amount quote, or a deposit
+// smaller than the total (charging "2 × $55" toward a partial deposit would
+// misstate what the money is for). Exported for unit testing.
+export function itemizedLinkLineItems(
+  quote: Pick<QuoteInput, 'jobId' | 'depositCents' | 'balanceCents' | 'lines'>,
+): Stripe.PaymentLinkCreateParams.LineItem[] | null {
+  const lines = quote.lines ?? []
+  if (lines.length === 0 || quote.balanceCents !== 0) return null
+  const sum = lines.reduce((total, line) => total + line.unitCents * line.quantity, 0)
+  if (sum !== quote.depositCents) return null
+  return lines.map((line) => ({
+    price_data: {
+      currency: 'usd',
+      unit_amount: line.unitCents,
+      product_data: { name: line.name, metadata: { jobId: quote.jobId } },
+    },
+    quantity: line.quantity,
+  }))
 }
 
 export async function createQuotePaymentLink(
@@ -62,28 +92,32 @@ export async function createQuotePaymentLink(
   const expiresAt = new Date(Date.now() + SEVEN_DAYS_SECONDS * 1000).toISOString()
   const contentHash = quoteContentHash(quote)
 
-  const product = await stripe.products.create(
-    {
-      name: `Forge Handyman — ${quote.description}`,
-      description: `Deposit for ${quote.tier} job (balance: $${(quote.balanceCents / 100).toFixed(2)})`,
-      metadata: { jobId: quote.jobId, tier: quote.tier },
-    },
-    { idempotencyKey: buildIdempotencyKey('quote-product', quote.jobId, contentHash) },
-  )
+  let lineItems = itemizedLinkLineItems(quote)
+  if (!lineItems) {
+    const product = await stripe.products.create(
+      {
+        name: `Forge Handyman — ${quote.description}`,
+        description: `Deposit for ${quote.tier} job (balance: $${(quote.balanceCents / 100).toFixed(2)})`,
+        metadata: { jobId: quote.jobId, tier: quote.tier },
+      },
+      { idempotencyKey: buildIdempotencyKey('quote-product', quote.jobId, contentHash) },
+    )
 
-  const price = await stripe.prices.create(
-    {
-      product: product.id,
-      unit_amount: quote.depositCents,
-      currency: 'usd',
-      metadata: { jobId: quote.jobId },
-    },
-    { idempotencyKey: buildIdempotencyKey('quote-price', quote.jobId, contentHash) },
-  )
+    const price = await stripe.prices.create(
+      {
+        product: product.id,
+        unit_amount: quote.depositCents,
+        currency: 'usd',
+        metadata: { jobId: quote.jobId },
+      },
+      { idempotencyKey: buildIdempotencyKey('quote-price', quote.jobId, contentHash) },
+    )
+    lineItems = [{ price: price.id, quantity: 1 }]
+  }
 
   const paymentLink = await stripe.paymentLinks.create(
     {
-      line_items: [{ price: price.id, quantity: 1 }],
+      line_items: lineItems,
       // Without this, Stripe runs a GUEST checkout: no Customer object is
       // created, setup_future_usage has nothing to attach the card to, and the
       // balance charge at Mark Complete fails with an empty stripe_customer_id
@@ -125,6 +159,7 @@ export async function createQuotePaymentLink(
       tier: quote.tier,
       customerEmail: maskEmail(quote.customerEmail),
       depositCents: quote.depositCents,
+      lineCount: lineItems.length,
     },
     'stripe: payment link created',
   )

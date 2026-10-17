@@ -1,6 +1,16 @@
+import type { Cart } from '@/lib/cart'
 import { appendAuditRow, findRowByJobId, updateRowByJobId } from '@/lib/data'
 import { ACTIONS } from '@/lib/data/activity-actions'
 import { sendQuoteEmail } from '@/lib/email/quote'
+import {
+  MIN_DEPOSIT_CENTS,
+  formatCents,
+  parseQuoteCart,
+  planMenuQuote,
+  quoteLineLabel,
+  summarizeQuoteLines,
+  type ItemizedQuote,
+} from '@/lib/quote-lines'
 import { logger, maskEmail } from '@/lib/security/logger'
 import { createQuotePaymentLink } from '@/lib/stripe/payment-links'
 
@@ -10,6 +20,9 @@ import { createQuotePaymentLink } from '@/lib/stripe/payment-links'
 // "Build a quote" in this business means: create a Stripe Payment Link for the
 // deposit (card saved for the balance), email it to the customer, flip the job
 // to Quoted and stamp the quote.sent activity the lifecycle cron reads back.
+// A quote is either a custom amount (deposit + balance, typed in) or built
+// from the flat-rate menu (items + quantities, priced here by the add-on
+// engine via lib/quote-lines.ts — the caller never supplies a menu price).
 // Both callers run exactly this code:
 //   - the admin quote page (app/admin/quotes/[id]/actions.ts), actor
 //     `admin:<email>`, which wraps it with the session check, the admin-money
@@ -24,19 +37,35 @@ export type QuoteTier = (typeof QUOTE_TIERS)[number]
 
 // What the quote email shows the customer; also the Stripe product name.
 export const QUOTE_DESCRIPTION_MAX = 500
-// Stripe will not sell a $0 line item, and a deposit is what saves the card.
-export const MIN_DEPOSIT_CENTS = 100
+export { MIN_DEPOSIT_CENTS }
 
-export interface SendQuoteArgs {
+interface SendQuoteBase {
   jobId: string
-  depositCents: number
-  balanceCents: number
   tier: QuoteTier
-  // Overrides the job's own description in the email. Empty or whitespace
-  // falls back to the job description, then the service type.
+  // Custom quotes: overrides the job's own description in the email; empty or
+  // whitespace falls back to the job description, then the service type.
+  // Menu quotes: an optional note shown above the items (no fallback — the
+  // job description would repeat the booking summary the items replace).
   description?: string
   actor: string
 }
+
+export type SendQuoteArgs = SendQuoteBase &
+  (
+    | { menu?: undefined; depositCents: number; balanceCents: number }
+    | {
+        // Menu items + quantities and at most one bundle. Re-validated
+        // (parseQuoteCart) and priced here at the job's rate (Forge Family
+        // when it applies) — callers pass ids and quantities, never prices.
+        menu: Cart
+        // Defaults to the whole menu total; the rest becomes the balance.
+        depositCents?: number
+        // The total the sender was shown. When given and the menu now prices
+        // the quote differently, nothing is sent.
+        expectedTotalCents?: number
+        balanceCents?: undefined
+      }
+  )
 
 export type SendQuoteStep = 'validate' | 'payment_link' | 'email'
 
@@ -49,6 +78,8 @@ export type SendQuoteResult =
       depositCents: number
       balanceCents: number
       sentTo: string
+      // Menu quotes only.
+      itemized?: ItemizedQuote
     }
   | { ok: false; error: string; step: SendQuoteStep; cause?: unknown }
 
@@ -57,16 +88,21 @@ function refuse(error: string): SendQuoteResult {
 }
 
 export async function sendQuote(args: SendQuoteArgs): Promise<SendQuoteResult> {
-  const { jobId, depositCents, balanceCents, tier, actor } = args
+  const { jobId, tier, actor } = args
 
   if (!QUOTE_TIERS.includes(tier)) return refuse('Invalid tier')
-  if (!Number.isInteger(depositCents) || depositCents < 0) {
-    return refuse('Deposit must be a non-negative whole number of cents')
+  if (args.menu !== undefined) {
+    const parsed = parseQuoteCart(args.menu)
+    if (!parsed.ok) return refuse(parsed.error)
+  } else {
+    if (!Number.isInteger(args.depositCents) || args.depositCents < 0) {
+      return refuse('Deposit must be a non-negative whole number of cents')
+    }
+    if (!Number.isInteger(args.balanceCents) || args.balanceCents < 0) {
+      return refuse('Balance must be a non-negative whole number of cents')
+    }
+    if (args.depositCents < MIN_DEPOSIT_CENTS) return refuse('Deposit must be at least $1.00')
   }
-  if (!Number.isInteger(balanceCents) || balanceCents < 0) {
-    return refuse('Balance must be a non-negative whole number of cents')
-  }
-  if (depositCents < MIN_DEPOSIT_CENTS) return refuse('Deposit must be at least $1.00')
 
   const found = await findRowByJobId(jobId)
   if (!found) return refuse('Job not found')
@@ -78,15 +114,55 @@ export async function sendQuote(args: SendQuoteArgs): Promise<SendQuoteResult> {
     return refuse('Customer email or name missing on job row')
   }
 
-  const description = ((args.description ?? '').trim() || found.row.description || serviceType).slice(
-    0,
-    QUOTE_DESCRIPTION_MAX,
-  )
+  let depositCents: number
+  let balanceCents: number
+  let itemized: ItemizedQuote | undefined
+  // What the email shows above the amounts.
+  let note: string
+  // The scope string the Stripe product and the idempotency hash use.
+  let description: string
+  if (args.menu !== undefined) {
+    const plan = planMenuQuote(args.menu, found.row.description, args.depositCents)
+    if (!plan.ok) return refuse(plan.error)
+    if (args.expectedTotalCents != null && args.expectedTotalCents !== plan.quote.totalCents) {
+      return refuse(
+        `The menu prices this quote at ${formatCents(plan.quote.totalCents)}, not ${formatCents(args.expectedTotalCents)}. Reload and check it before sending.`,
+      )
+    }
+    ;({ depositCents, balanceCents } = plan)
+    itemized = plan.quote
+    note = (args.description ?? '').trim().slice(0, QUOTE_DESCRIPTION_MAX)
+    description = (note || summarizeQuoteLines(itemized.lines)).slice(0, QUOTE_DESCRIPTION_MAX)
+  } else {
+    ;({ depositCents, balanceCents } = args)
+    description = ((args.description ?? '').trim() || found.row.description || serviceType).slice(
+      0,
+      QUOTE_DESCRIPTION_MAX,
+    )
+    note = description
+  }
 
   let paymentLink
   try {
     paymentLink = await createQuotePaymentLink(
-      { jobId, customerEmail, customerName, depositCents, balanceCents, tier, description },
+      {
+        jobId,
+        customerEmail,
+        customerName,
+        depositCents,
+        balanceCents,
+        tier,
+        description,
+        ...(itemized
+          ? {
+              lines: itemized.lines.map((line) => ({
+                name: quoteLineLabel(line),
+                unitCents: line.unitCents,
+                quantity: line.qty,
+              })),
+            }
+          : {}),
+      },
       actor,
     )
   } catch (err) {
@@ -104,11 +180,12 @@ export async function sendQuote(args: SendQuoteArgs): Promise<SendQuoteResult> {
       toEmail: customerEmail,
       toName: customerName,
       serviceType,
-      description,
+      description: note,
       depositCents,
       balanceCents,
       paymentLinkUrl: paymentLink.url,
       expiresAt: paymentLink.expiresAt,
+      ...(itemized ? { lines: itemized.lines, family: itemized.family } : {}),
     })
   } catch (err) {
     logger.error({ err, jobId, actor }, 'quote: sendQuoteEmail failed')
@@ -140,6 +217,11 @@ export async function sendQuote(args: SendQuoteArgs): Promise<SendQuoteResult> {
       balanceCents,
       tier,
       customerEmail: maskEmail(customerEmail),
+      // Menu quotes: what was quoted, line by line (readQuotedLines reads it
+      // back for the job page and preview_quote).
+      ...(itemized
+        ? { lines: itemized.lines, totalCents: itemized.totalCents, family: itemized.family }
+        : {}),
     }),
   })
   logger.info(
@@ -150,6 +232,7 @@ export async function sendQuote(args: SendQuoteArgs): Promise<SendQuoteResult> {
       depositCents,
       balanceCents,
       tier,
+      lineCount: itemized?.lines.length ?? 0,
       maskedEmail: maskEmail(customerEmail),
     },
     'quote: sent',
@@ -163,5 +246,6 @@ export async function sendQuote(args: SendQuoteArgs): Promise<SendQuoteResult> {
     depositCents,
     balanceCents,
     sentTo: customerEmail,
+    ...(itemized ? { itemized } : {}),
   }
 }

@@ -1,5 +1,7 @@
 import { google } from 'googleapis'
 import type { JWT } from 'google-auth-library'
+import { FAMILY_DISCOUNT_LABEL } from '@/lib/family-pricing'
+import { formatCents, formatQuoteLineText, type QuoteLine } from '@/lib/quote-lines'
 
 const SCOPES = ['https://www.googleapis.com/auth/gmail.send']
 
@@ -45,22 +47,109 @@ export interface QuoteEmailInput {
   toEmail: string
   toName: string
   serviceType: string
+  // Custom quotes: the scope. Menu quotes: an optional note above the items
+  // (empty hides the box).
   description: string
   depositCents: number
   balanceCents: number
   paymentLinkUrl: string
   expiresAt: string
+  // Menu quotes only: the priced lines (lib/quote-lines.ts). Their total is
+  // deposit + balance.
+  lines?: QuoteLine[]
+  family?: boolean
 }
 
-function buildQuoteHtml(data: QuoteEmailInput): string {
+const ADD_ON_RULE =
+  'The highest-priced item is at full price. Each additional item is at its add-on price.'
+const FAMILY_NOTE = `Forge Family rate: ${FAMILY_DISCOUNT_LABEL} off menu prices.`
+
+function buildLinesHtml(lines: QuoteLine[], totalCents: number, family: boolean): string {
+  const cell = 'padding:8px 0;border-bottom:1px solid #E5E7EB;vertical-align:top;'
+  const rows = lines
+    .map(
+      (line) => `
+                  <tr>
+                    <td style="${cell}color:#1f2937;">${escapeHtml(line.name)}${
+                      line.addOn
+                        ? '<div style="font-size:12px;color:#6b7280;margin-top:2px;">Add-on price</div>'
+                        : ''
+                    }</td>
+                    <td style="${cell}text-align:center;color:#4b5563;white-space:nowrap;">${line.qty}</td>
+                    <td style="${cell}text-align:right;color:#4b5563;white-space:nowrap;">${formatCents(line.unitCents)}</td>
+                    <td style="${cell}text-align:right;font-weight:600;color:#1B3A5C;white-space:nowrap;">${formatCents(line.totalCents)}</td>
+                  </tr>`,
+    )
+    .join('')
+  const notes = [lines.some((l) => l.addOn) ? ADD_ON_RULE : '', family ? FAMILY_NOTE : '']
+    .filter(Boolean)
+    .map((note) => `<div style="margin-top:4px;">${escapeHtml(note)}</div>`)
+    .join('')
+  return `
+                <table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 4px;font-size:14px;">
+                  <tr>
+                    <th align="left" style="padding:0 0 6px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:1px;">Item</th>
+                    <th style="padding:0 8px 6px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:1px;">Qty</th>
+                    <th align="right" style="padding:0 0 6px 8px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:1px;">Price</th>
+                    <th align="right" style="padding:0 0 6px 8px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:1px;">Amount</th>
+                  </tr>${rows}
+                  <tr>
+                    <td colspan="3" style="padding:12px 0 8px;color:#1B3A5C;font-weight:700;font-size:15px;">Total</td>
+                    <td style="padding:12px 0 8px;text-align:right;color:#1B3A5C;font-weight:700;font-size:18px;white-space:nowrap;">${formatCents(totalCents)}</td>
+                  </tr>
+                </table>${notes ? `
+                <div style="font-size:12px;color:#6b7280;line-height:1.5;">${notes}</div>` : ''}`
+}
+
+export function buildQuoteHtml(data: QuoteEmailInput): string {
   const depositDollars = (data.depositCents / 100).toFixed(2)
   const balanceDollars = (data.balanceCents / 100).toFixed(2)
-  const totalDollars = ((data.depositCents + data.balanceCents) / 100).toFixed(2)
+  const totalCents = data.depositCents + data.balanceCents
+  const totalDollars = (totalCents / 100).toFixed(2)
   const expiresDate = new Date(data.expiresAt).toLocaleDateString(undefined, {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
   })
+  const itemized = data.lines && data.lines.length > 0 ? data.lines : null
+  const paidInFull = data.balanceCents === 0
+  const descriptionBox = data.description.trim()
+    ? `
+                <div style="padding:16px;background:#F9FAFB;border-radius:8px;margin:16px 0;">
+                  <div style="font-size:14px;color:#4b5563;white-space:pre-wrap;">${escapeHtml(data.description)}</div>
+                </div>`
+    : ''
+  const amounts = itemized
+    ? `${buildLinesHtml(itemized, totalCents, data.family ?? false)}
+                <table width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0 20px;font-size:15px;">
+                  <tr>
+                    <td style="padding:8px 0;color:#4b5563;">${paidInFull ? 'Due today' : 'Deposit (due today)'}</td>
+                    <td style="padding:8px 0;text-align:right;font-weight:600;color:#1B3A5C;">$${depositDollars}</td>
+                  </tr>${
+                    paidInFull
+                      ? ''
+                      : `
+                  <tr>
+                    <td style="padding:8px 0;color:#4b5563;">Balance (due on completion)</td>
+                    <td style="padding:8px 0;text-align:right;font-weight:600;color:#1B3A5C;">$${balanceDollars}</td>
+                  </tr>`
+                  }
+                </table>`
+    : `
+                <table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;font-size:15px;">
+                  <tr>
+                    <td style="padding:8px 0;color:#4b5563;">Deposit (due today)</td>
+                    <td style="padding:8px 0;text-align:right;font-weight:600;color:#1B3A5C;">$${depositDollars}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 0;color:#4b5563;">Balance (due on completion)</td>
+                    <td style="padding:8px 0;text-align:right;font-weight:600;color:#1B3A5C;">$${balanceDollars}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 0 8px;border-top:2px solid #1B3A5C;color:#1B3A5C;font-weight:700;">Total estimate</td>
+                    <td style="padding:12px 0 8px;border-top:2px solid #1B3A5C;text-align:right;color:#1B3A5C;font-weight:700;font-size:18px;">$${totalDollars}</td>
+                  </tr>
+                </table>`
 
   return `<!DOCTYPE html>
 <html>
@@ -83,33 +172,21 @@ function buildQuoteHtml(data: QuoteEmailInput): string {
                 <p style="margin:0 0 16px;font-size:15px;line-height:1.5;">
                   Thanks for reaching out about your <strong>${escapeHtml(data.serviceType)}</strong> project. Here&rsquo;s the estimate:
                 </p>
-                <div style="padding:16px;background:#F9FAFB;border-radius:8px;margin:16px 0;">
-                  <div style="font-size:14px;color:#4b5563;white-space:pre-wrap;">${escapeHtml(data.description)}</div>
-                </div>
-                <table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;font-size:15px;">
-                  <tr>
-                    <td style="padding:8px 0;color:#4b5563;">Deposit (due today)</td>
-                    <td style="padding:8px 0;text-align:right;font-weight:600;color:#1B3A5C;">$${depositDollars}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;color:#4b5563;">Balance (due on completion)</td>
-                    <td style="padding:8px 0;text-align:right;font-weight:600;color:#1B3A5C;">$${balanceDollars}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:12px 0 8px;border-top:2px solid #1B3A5C;color:#1B3A5C;font-weight:700;">Total estimate</td>
-                    <td style="padding:12px 0 8px;border-top:2px solid #1B3A5C;text-align:right;color:#1B3A5C;font-weight:700;font-size:18px;">$${totalDollars}</td>
-                  </tr>
-                </table>
+${descriptionBox}${amounts}
                 <div style="text-align:center;margin:28px 0 8px;">
                   <a href="${data.paymentLinkUrl}" style="display:inline-block;background:#D97706;color:#ffffff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:16px;">
-                    Pay deposit &amp; book the date
+                    ${paidInFull ? 'Pay &amp; book the date' : 'Pay deposit &amp; book the date'}
                   </a>
                 </div>
                 <p style="margin:16px 0 0;font-size:13px;color:#6b7280;text-align:center;">
                   This link expires on ${escapeHtml(expiresDate)}.
                 </p>
                 <p style="margin:24px 0 0;font-size:14px;line-height:1.5;color:#374151;">
-                  Once your deposit is in, we&rsquo;ll lock in the date and send a confirmation. The balance auto-charges to the same card on the day David finishes the work.
+                  ${
+                    paidInFull
+                      ? 'Once your payment is in, we&rsquo;ll lock in the date and send a confirmation.'
+                      : 'Once your deposit is in, we&rsquo;ll lock in the date and send a confirmation. The balance auto-charges to the same card on the day David finishes the work.'
+                  }
                 </p>
                 <p style="margin:16px 0 0;font-size:14px;line-height:1.5;color:#374151;">
                   Questions? Just reply to this email.
@@ -132,26 +209,46 @@ function buildQuoteHtml(data: QuoteEmailInput): string {
 </html>`
 }
 
-function buildQuoteText(data: QuoteEmailInput): string {
+export function buildQuoteText(data: QuoteEmailInput): string {
   const depositDollars = (data.depositCents / 100).toFixed(2)
   const balanceDollars = (data.balanceCents / 100).toFixed(2)
-  const totalDollars = ((data.depositCents + data.balanceCents) / 100).toFixed(2)
+  const totalCents = data.depositCents + data.balanceCents
+  const totalDollars = (totalCents / 100).toFixed(2)
+  const itemized = data.lines && data.lines.length > 0 ? data.lines : null
+  const paidInFull = data.balanceCents === 0
+  const scope = data.description.trim() ? [data.description, ''] : []
+  const amounts = itemized
+    ? [
+        ...itemized.map(formatQuoteLineText),
+        `Total: ${formatCents(totalCents)}`,
+        '',
+        ...(itemized.some((l) => l.addOn) ? [ADD_ON_RULE] : []),
+        ...(data.family ? [FAMILY_NOTE] : []),
+        ...(itemized.some((l) => l.addOn) || data.family ? [''] : []),
+        paidInFull
+          ? `Due today: $${depositDollars}`
+          : `Deposit (due today):     $${depositDollars}\nBalance (on completion): $${balanceDollars}`,
+      ]
+    : [
+        `Deposit (due today):    $${depositDollars}`,
+        `Balance (on completion): $${balanceDollars}`,
+        `Total estimate:          $${totalDollars}`,
+      ]
   return [
     `Hi ${data.toName},`,
     '',
     `Thanks for reaching out about your ${data.serviceType} project. Here's the estimate:`,
     '',
-    data.description,
+    ...scope,
+    ...amounts,
     '',
-    `Deposit (due today):    $${depositDollars}`,
-    `Balance (on completion): $${balanceDollars}`,
-    `Total estimate:          $${totalDollars}`,
-    '',
-    `Pay deposit & book the date: ${data.paymentLinkUrl}`,
+    `${paidInFull ? 'Pay & book the date' : 'Pay deposit & book the date'}: ${data.paymentLinkUrl}`,
     '',
     `(Link expires on ${new Date(data.expiresAt).toLocaleDateString()}.)`,
     '',
-    "Once your deposit is in, we'll lock in the date and send a confirmation. The balance auto-charges to the same card on the day David finishes the work.",
+    paidInFull
+      ? "Once your payment is in, we'll lock in the date and send a confirmation."
+      : "Once your deposit is in, we'll lock in the date and send a confirmation. The balance auto-charges to the same card on the day David finishes the work.",
     '',
     'Questions? Just reply to this email.',
     '',

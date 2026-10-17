@@ -447,6 +447,99 @@ describe('send_quote', () => {
   })
 })
 
+describe('itemized quotes from the menu', () => {
+  const items = [
+    { id: 'ceiling-fan', qty: 1 },
+    { id: 'light-fixture', qty: 2 },
+  ]
+
+  it('preview_quote prices the items line by line, deposit defaulting to the whole total', async () => {
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row({ description: 'Fan and two fixtures' }) })
+    const res = (await previewQuote.run({ jobId: JOB, items, tier: 'small' }, ACTOR)) as {
+      quote: Record<string, unknown> & { lines: { id: string; qty: number; unitCents: number; addOn: boolean }[] }
+      canSend: boolean
+      blockers: string[]
+    }
+    // Fan anchors at $135; both fixtures at the $55 add-on price.
+    expect(res.quote).toMatchObject({ pricing: 'menu', family: false, depositCents: 24500, balanceCents: 0, totalCents: 24500, description: '' })
+    expect(res.quote.lines.map((l) => [l.id, l.qty, l.unitCents, l.addOn])).toEqual([
+      ['ceiling-fan', 1, 13500, false],
+      ['light-fixture', 2, 5500, true],
+    ])
+    expect(res.canSend).toBe(true)
+    expect(res.blockers).toEqual([])
+  })
+
+  it('preview_quote splits a smaller deposit and blocks a balance, a bad id or the #3', async () => {
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row() })
+    const split = (await previewQuote.run({ jobId: JOB, items, depositDollars: 100, tier: 'small' }, ACTOR)) as { quote: Record<string, unknown> }
+    expect(split.quote).toMatchObject({ depositCents: 10000, balanceCents: 14500, totalCents: 24500 })
+
+    const withBalance = (await previewQuote.run({ jobId: JOB, items, balanceDollars: 10, tier: 'small' }, ACTOR)) as { canSend: boolean; blockers: string[] }
+    expect(withBalance.canSend).toBe(false)
+    expect(withBalance.blockers).toEqual([expect.stringContaining('leave balanceDollars out')])
+
+    const bad = (await previewQuote.run({ jobId: JOB, items: [{ id: 'gutters', qty: 1 }], tier: 'small' }, ACTOR)) as { blockers: string[] }
+    expect(bad.blockers).toEqual([expect.stringContaining('Unknown menu item: gutters')])
+
+    const whole = (await previewQuote.run({ jobId: JOB, packageNumber: 3, tier: 'large' }, ACTOR)) as { blockers: string[] }
+    expect(whole.blockers).toEqual([expect.stringContaining('send it as a custom amount')])
+  })
+
+  it('preview_quote hands back the items picked at booking and the lines of the last menu quote', async () => {
+    data.findRowByJobId.mockResolvedValue({
+      rowNumber: 2,
+      row: row({ description: '• Ceiling fan (existing wiring) ×1 — $135 first / $65 add-on\n• Light fixture swap ×2 — $110 first / $55 add-on\n\nEstimated: 3 items · $245 (final on site)' }),
+    })
+    const lines = [{ kind: 'item', id: 'ceiling-fan', name: 'Ceiling fan (existing wiring)', qty: 1, unitCents: 13500, fullUnitCents: 13500, addOn: false, totalCents: 13500 }]
+    data.listActivitiesForJob.mockResolvedValue([
+      { at: '2026-10-01T12:00:00.000Z', actor: 'admin:x', action: 'quote.sent', notes: '', before: '', after: '', data: { after: { depositCents: 13500, balanceCents: 0, lines, totalCents: 13500, family: false } } },
+    ])
+    const res = (await previewQuote.run({ jobId: JOB, tier: 'medium' }, ACTOR)) as {
+      bookedItems: unknown
+      lastQuote: Record<string, unknown>
+      warnings: string[]
+    }
+    expect(res.bookedItems).toEqual({ items, packageNumber: null, notOnMenu: [] })
+    expect(res.lastQuote).toMatchObject({ lines, totalCents: 13500 })
+    expect(res.warnings).toContainEqual(expect.stringContaining('pass them as items'))
+  })
+
+  it('send_quote passes ids and quantities to the core, never prices, and reports the lines', async () => {
+    data.findRowByJobId.mockResolvedValue({ rowNumber: 2, row: row() })
+    const itemized = { lines: [{ id: 'ceiling-fan' }], totalCents: 24500, family: false }
+    quote.sendQuote.mockResolvedValue({
+      ok: true, paymentLinkUrl: 'u', paymentLinkId: 'p', expiresAt: 'e', depositCents: 24500, balanceCents: 0, sentTo: 'sarah@example.com', itemized,
+    })
+    const res = await sendQuoteTool.run({ jobId: JOB, items, packageNumber: 1, tier: 'small', description: 'Ladder needed' }, ACTOR)
+    expect(quote.sendQuote).toHaveBeenCalledWith({
+      jobId: JOB,
+      menu: { items, packageNumber: 1 },
+      tier: 'small',
+      description: 'Ladder needed',
+      actor: ACTOR,
+    })
+    expect(res).toMatchObject({ ok: true, lines: itemized.lines, totalCents: 24500, status: 'Quoted' })
+
+    await sendQuoteTool.run({ jobId: JOB, items, depositDollars: 100, tier: 'small' }, ACTOR)
+    expect(quote.sendQuote.mock.calls[1][0]).toMatchObject({ menu: { items, packageNumber: null }, depositCents: 10000 })
+  })
+
+  it('send_quote refuses a balance with items, or a custom quote missing an amount', async () => {
+    expect(await sendQuoteTool.run({ jobId: JOB, items, balanceDollars: 10, tier: 'small' }, ACTOR)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('leave balanceDollars out'),
+    })
+    expect(await sendQuoteTool.run({ jobId: JOB, depositDollars: 135, tier: 'small' }, ACTOR)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Pass items for a menu quote'),
+    })
+    expect(quote.sendQuote).not.toHaveBeenCalled()
+    expect(sendQuoteTool.inputSchema.safeParse({ jobId: JOB, items: [{ id: 'ceiling-fan', qty: 11 }], tier: 'small' }).success).toBe(false)
+    expect(sendQuoteTool.inputSchema.safeParse({ jobId: JOB, items, tier: 'small' }).success).toBe(true)
+  })
+})
+
 describe('update_customer', () => {
   it('passes only the fields given through to the shared core, as the caller', async () => {
     mutations.updateCustomerContact.mockResolvedValue({ ok: true, changed: ['phone'], jobsUpdated: 1, message: 'Saved the new phone. Also updated on their 1 job.' })

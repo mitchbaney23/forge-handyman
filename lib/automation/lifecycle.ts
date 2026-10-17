@@ -1,5 +1,6 @@
 import type { JobRow } from "@/lib/data";
 import { ACTIONS } from "@/lib/data/activity-actions";
+import { readQuotedLines, type ItemizedQuote } from "@/lib/quote-lines";
 import { easternIsoDate } from "@/lib/scheduling/time";
 
 // Pure candidate-selection logic for the daily lifecycle cron
@@ -47,6 +48,8 @@ export interface QuoteMeta {
   paymentLinkUrl: string;
   depositCents: number | null;
   balanceCents: number | null;
+  // Present only on quotes built from the menu: the lines the customer saw.
+  itemized?: ItemizedQuote;
 }
 
 interface ActivityLike {
@@ -62,6 +65,7 @@ export function extractQuoteMeta(activities: ActivityLike[]): QuoteMeta | null {
   if (!activity) return null;
   const data = activity.data as { after?: Record<string, unknown> } | null;
   const after = data?.after ?? {};
+  const itemized = readQuotedLines(after);
   return {
     sentAt: activity.at,
     expiresAt: typeof after.expiresAt === "string" ? after.expiresAt : "",
@@ -71,6 +75,7 @@ export function extractQuoteMeta(activities: ActivityLike[]): QuoteMeta | null {
       typeof after.depositCents === "number" ? after.depositCents : null,
     balanceCents:
       typeof after.balanceCents === "number" ? after.balanceCents : null,
+    ...(itemized ? { itemized } : {}),
   };
 }
 
