@@ -10,6 +10,7 @@ import {
 } from '@/lib/data'
 import { ACTIONS } from '@/lib/data/activity-actions'
 import { deleteBookingEvent } from '@/lib/google'
+import { operationsCalendarEmail } from '@/lib/scheduling/config'
 import { notifyCancellation } from '@/lib/telegram/dispatch'
 import { logger } from '@/lib/security/logger'
 
@@ -41,12 +42,17 @@ export async function performCancellation(
     return { ok: false, reason: existing ? 'already_cancelled' : 'not_found' }
   }
 
-  // Remove the calendar event so the slot frees on David's calendar too.
+  // Remove the calendar event so the slot frees on the calendar too. A
+  // self-serve booking's event is on the technician's calendar; one scheduled
+  // from the admin is on the operations calendar.
   if (appt.googleEventId) {
     try {
-      const tech = await getTechnicianById(appt.technicianId)
-      if (tech?.calendarEmail) {
-        await deleteBookingEvent({ subject: tech.calendarEmail, eventId: appt.googleEventId })
+      const subject =
+        appt.source === 'admin'
+          ? operationsCalendarEmail()
+          : (await getTechnicianById(appt.technicianId))?.calendarEmail
+      if (subject) {
+        await deleteBookingEvent({ subject, eventId: appt.googleEventId })
       }
     } catch (err) {
       // 404/410 (already gone) or transient — non-fatal.

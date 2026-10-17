@@ -62,7 +62,16 @@ export async function appendContactRow(row: ContactRow): Promise<{ rowNumber: nu
     )
   }
 
-  const jobInsert = { ...toDbInsert(row), customer_id: customer.id as string }
+  await insertJobRow(row, customer.id as string)
+  return { rowNumber: 0 }
+}
+
+// Step 2 of appendContactRow, shared with insertJobForCustomer: insert the job
+// under a known customer id, retrying once with a fresh UUID on a PK conflict.
+// Returns the id the row actually landed under.
+async function insertJobRow(row: ContactRow, customerId: string): Promise<string> {
+  const client = getSupabaseClient()
+  const jobInsert = { ...toDbInsert(row), customer_id: customerId }
   const { error: jobError } = await client.from('jobs').insert(jobInsert)
   if (jobError && jobError.code === '23505') {
     const retryId = randomUUID()
@@ -78,11 +87,23 @@ export async function appendContactRow(row: ContactRow): Promise<{ rowNumber: nu
     if (retryError) {
       throw new Error(`pg/repo: jobs insert retry failed: ${retryError.message}`)
     }
+    return retryId
   } else if (jobError) {
     throw new Error(`pg/repo: jobs insert failed: ${jobError.message}`)
   }
+  return jobInsert.id as string
+}
 
-  return { rowNumber: 0 }
+// A new job for a customer who is already on file, linked by id. Unlike
+// appendContactRow this never touches the customers row and never matches by
+// email, so it works for customers saved without one (an email-less customer
+// would otherwise get a second, empty customer record). Returns the job id.
+export async function insertJobForCustomer(
+  customerId: string,
+  row: ContactRow,
+): Promise<{ jobId: string } | null> {
+  if (!isUuid(customerId)) return null
+  return { jobId: await insertJobRow(row, customerId) }
 }
 
 export async function findRowByJobId(

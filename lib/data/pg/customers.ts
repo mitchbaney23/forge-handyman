@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { spentCentsByJob, type SpendJob, type SpendPayment } from '@/lib/admin/metrics'
 import { getSupabaseClient } from '@/lib/data/pg/client'
 import { isUuid, toContactRow, type DbJob } from '@/lib/data/pg/mappers'
 import type { JobRow } from '@/lib/sheet/queries'
@@ -30,9 +31,16 @@ const PAGE_SIZE = 1000
 // ---------------------------------------------------------------------------
 
 // One row of customer_summary, coerced to the all-strings discipline. Money
-// (depositsCollectedCents) and counts (jobCount, propertyCount) are STRINGS;
-// dates are ISO or ''. `anonymized` is the boolean derived from
-// customers.anonymized_at (a redacted customer's PII is sentinel/REDACTED).
+// (depositsCollectedCents, totalSpentCents) and counts (jobCount,
+// propertyCount) are STRINGS; dates are ISO or ''. `anonymized` is the boolean
+// derived from customers.anonymized_at (a redacted customer's PII is
+// sentinel/REDACTED). `email` is '' when the row holds an unknown:/redacted:
+// placeholder rather than a real address.
+//
+// totalSpentCents is what the customer has paid Forge across all their jobs:
+// deposits + balance payments − refunds, from the payments ledger (see
+// spentCentsByJob in lib/admin/metrics.ts). depositsCollectedCents is the
+// view's older deposits-only figure, kept for callers that still read it.
 export interface CustomerSummary {
   id: string
   name: string
@@ -43,6 +51,7 @@ export interface CustomerSummary {
   lastJobAt: string
   firstJobAt: string
   depositsCollectedCents: string
+  totalSpentCents: string
   propertyCount: string
   anonymized: boolean
 }
@@ -111,12 +120,21 @@ function strFromTimestamp(value: string | null | undefined): string {
   return new Date(value).toISOString()
 }
 
-function mapSummary(row: DbCustomerSummary): CustomerSummary {
+// The customers.email column is NOT NULL + unique, so a customer without a
+// real address holds a placeholder: 'unknown:<uuid>' (added with no email) or
+// 'redacted:<uuid>' (anonymized). Those are storage details, never an address
+// to show, search, or send to.
+export function isPlaceholderEmail(email: string): boolean {
+  return /^(unknown|redacted):/i.test(email.trim())
+}
+
+function mapSummary(row: DbCustomerSummary, totalSpentCents = 0): CustomerSummary {
+  const email = strFromText(row.email)
   return {
     id: strFromText(row.id),
     name: strFromText(row.name),
     phone: strFromText(row.phone),
-    email: strFromText(row.email),
+    email: isPlaceholderEmail(email) ? '' : email,
     notes: strFromText(row.notes),
     jobCount: strFromNumber(row.job_count),
     lastJobAt: strFromTimestamp(row.last_job_at),
@@ -124,6 +142,7 @@ function mapSummary(row: DbCustomerSummary): CustomerSummary {
     // coalesce(sum(...),0) in the view means this is always a number, but the
     // number->string convention still applies (cent-STRING, never a number).
     depositsCollectedCents: strFromNumber(row.deposits_collected_cents),
+    totalSpentCents: String(totalSpentCents),
     propertyCount: strFromNumber(row.property_count),
     anonymized: row.anonymized_at != null,
   }
@@ -191,7 +210,93 @@ export async function listCustomers(): Promise<CustomerSummary[]> {
     if (page.length < PAGE_SIZE) break
     offset += PAGE_SIZE
   }
-  return rows.map(mapSummary)
+  const spent = await loadSpentByCustomer()
+  return rows.map((row) => mapSummary(row, spent.get(row.id) ?? 0))
+}
+
+// ---------------------------------------------------------------------------
+// Total spent — rolled up from the payments ledger per job, then per customer.
+// Small tables at this volume; two paginated reads, math in memory.
+// ---------------------------------------------------------------------------
+
+interface DbPaymentLite {
+  job_id: string | null
+  purpose: string | null
+  status: string | null
+  amount_cents: number | null
+}
+
+function toSpendPayment(row: DbPaymentLite): SpendPayment {
+  return {
+    jobId: row.job_id ?? '',
+    purpose: row.purpose ?? '',
+    status: row.status ?? '',
+    amountCents: row.amount_cents,
+  }
+}
+
+async function loadSpentByCustomer(): Promise<Map<string, number>> {
+  const client = getSupabaseClient()
+
+  const jobs: { id: string; customer_id: string; deposit_paid_cents: number | null }[] = []
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await client
+      .from('jobs')
+      .select('id,customer_id,deposit_paid_cents')
+      .order('id', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (error) throw new Error(`pg/customers: spend jobs read failed: ${error.message}`)
+    const page = (data ?? []) as typeof jobs
+    jobs.push(...page)
+    if (page.length < PAGE_SIZE) break
+  }
+
+  const payments: SpendPayment[] = []
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await client
+      .from('payments')
+      .select('job_id,purpose,status,amount_cents')
+      .eq('status', 'succeeded')
+      .order('id', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (error) throw new Error(`pg/customers: spend payments read failed: ${error.message}`)
+    const page = (data ?? []) as DbPaymentLite[]
+    payments.push(...page.map(toSpendPayment))
+    if (page.length < PAGE_SIZE) break
+  }
+
+  const spendJobs: SpendJob[] = jobs.map((j) => ({
+    jobId: j.id,
+    depositPaidCents: j.deposit_paid_cents ?? 0,
+  }))
+  const byJob = spentCentsByJob(payments, spendJobs)
+  const byCustomer = new Map<string, number>()
+  for (const j of jobs) {
+    const cents = byJob.get(j.id) ?? 0
+    if (cents !== 0) byCustomer.set(j.customer_id, (byCustomer.get(j.customer_id) ?? 0) + cents)
+  }
+  return byCustomer
+}
+
+// One customer's total, given the jobs already loaded for their profile.
+async function loadSpentForJobs(jobs: JobRow[]): Promise<number> {
+  const jobIds = jobs.map((j) => j.job_id ?? '').filter((id) => isUuid(id))
+  if (jobIds.length === 0) return 0
+  const client = getSupabaseClient()
+  const { data, error } = await client
+    .from('payments')
+    .select('job_id,purpose,status,amount_cents')
+    .eq('status', 'succeeded')
+    .in('job_id', jobIds)
+  if (error) throw new Error(`pg/customers: spend payments read failed: ${error.message}`)
+  const payments = ((data ?? []) as DbPaymentLite[]).map(toSpendPayment)
+  const byJob = spentCentsByJob(
+    payments,
+    jobs.map((j) => ({ jobId: j.job_id ?? '', depositPaidCents: Number(j.deposit_paid_cents || '0') || 0 })),
+  )
+  let total = 0
+  for (const cents of byJob.values()) total += cents
+  return total
 }
 
 // One customer_summary row + that customer's jobs + the derived properties.
@@ -246,7 +351,10 @@ export async function getCustomerById(id: string): Promise<CustomerDetail | null
   // email redaction missed (a future email-edit / merge), this profile must
   // still never out-render the deletion. When the customer is anonymized, blank
   // the joined jobs' PII at the boundary regardless of each row's own state.
-  const summary = mapSummary(summaryRow as unknown as DbCustomerSummary)
+  const summary = mapSummary(
+    summaryRow as unknown as DbCustomerSummary,
+    await loadSpentForJobs(jobs),
+  )
   const safeJobs: JobRow[] = summary.anonymized
     ? jobs.map((j) => ({
         ...j,
@@ -321,6 +429,64 @@ export async function updateCustomerNotes(
     .select('id')
   if (error) throw new Error(`pg/customers: updateCustomerNotes update failed: ${error.message}`)
   return { updated: (data?.length ?? 0) > 0 }
+}
+
+// Change a customer's name / phone / email, and copy the same change onto every
+// job they own. Jobs carry their own copy of the contact details (the quote
+// email, balance link, reminders and the pipeline card all read the JOB), so a
+// fix made only on the customer row would leave the next quote going to the
+// old address. Only the fields present in `patch` are written. An empty email
+// stores a fresh 'unknown:<uuid>' placeholder on the customer (the column is
+// NOT NULL + unique) and '' on the jobs. A citext-unique conflict (the email
+// already belongs to someone else) returns { reason: 'duplicate' }.
+//
+// Two writes, not a transaction (PostgREST has none without an RPC): the
+// customer row goes first because it is the one that can be refused; if the
+// jobs write then fails it throws, and re-saving the same values repairs it.
+export async function updateCustomerContact(
+  id: string,
+  patch: { name?: string; phone?: string; email?: string },
+): Promise<{ ok: true; jobsUpdated: number } | { ok: false; reason: 'not_found' | 'duplicate' }> {
+  if (!isUuid(id)) return { ok: false, reason: 'not_found' }
+  const client = getSupabaseClient()
+
+  const customerPayload: { name?: string; phone?: string; email?: string } = {}
+  const jobPayload: { name?: string; phone?: string; email?: string } = {}
+  if (patch.name !== undefined) {
+    customerPayload.name = patch.name
+    jobPayload.name = patch.name
+  }
+  if (patch.phone !== undefined) {
+    customerPayload.phone = patch.phone
+    jobPayload.phone = patch.phone
+  }
+  if (patch.email !== undefined) {
+    const email = patch.email.trim()
+    customerPayload.email = email === '' ? `unknown:${randomUUID()}` : email
+    jobPayload.email = email
+  }
+  if (Object.keys(customerPayload).length === 0) return { ok: true, jobsUpdated: 0 }
+
+  const { data, error } = await client
+    .from('customers')
+    .update(customerPayload)
+    .eq('id', id)
+    .select('id')
+  if (error) {
+    if (error.code === '23505') return { ok: false, reason: 'duplicate' }
+    throw new Error(`pg/customers: updateCustomerContact customer update failed: ${error.message}`)
+  }
+  if ((data?.length ?? 0) === 0) return { ok: false, reason: 'not_found' }
+
+  const { data: jobs, error: jobsError } = await client
+    .from('jobs')
+    .update(jobPayload)
+    .eq('customer_id', id)
+    .select('id')
+  if (jobsError) {
+    throw new Error(`pg/customers: updateCustomerContact jobs update failed: ${jobsError.message}`)
+  }
+  return { ok: true, jobsUpdated: jobs?.length ?? 0 }
 }
 
 // One customer row by email. citext .eq() makes the match case-insensitive,

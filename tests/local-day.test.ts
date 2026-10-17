@@ -23,3 +23,25 @@ describe('isSameLocalDay — Eastern-time bucketing', () => {
     expect(isSameLocalDay('', new Date('2026-06-15T02:00:00Z'))).toBe(false)
   })
 })
+
+describe('easternWallTimeToIso: an Eastern date + time to the UTC instant', () => {
+  it('handles daylight and standard time', async () => {
+    const { easternWallTimeToIso } = await import('@/lib/scheduling/time')
+    expect(easternWallTimeToIso('2026-10-20', '10:00')).toBe('2026-10-20T14:00:00.000Z')
+    expect(easternWallTimeToIso('2026-01-15', '09:30')).toBe('2026-01-15T14:30:00.000Z')
+  })
+
+  it('gets both sides of a DST change right', async () => {
+    const { easternWallTimeToIso } = await import('@/lib/scheduling/time')
+    expect(easternWallTimeToIso('2026-03-08', '03:00')).toBe('2026-03-08T07:00:00.000Z')
+    expect(easternWallTimeToIso('2026-11-01', '02:00')).toBe('2026-11-01T07:00:00.000Z')
+  })
+
+  it('returns null for the skipped spring-forward hour and malformed input', async () => {
+    const { easternWallTimeToIso } = await import('@/lib/scheduling/time')
+    expect(easternWallTimeToIso('2026-03-08', '02:30')).toBeNull()
+    expect(easternWallTimeToIso('2026-02-30', '10:00')).toBeNull()
+    expect(easternWallTimeToIso('2026-10-20', '24:00')).toBeNull()
+    expect(easternWallTimeToIso('10/20/2026', '10:00')).toBeNull()
+  })
+})

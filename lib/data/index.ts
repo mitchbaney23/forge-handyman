@@ -221,6 +221,27 @@ export async function insertCustomer(input: {
   throw new Error('insertCustomer: customers are only available on the Postgres backend')
 }
 
+// Postgres-only: edit a customer's name/phone/email and copy the change onto
+// their jobs (see pg/customers.updateCustomerContact). Sheet mode has no
+// customers table; the profile page that offers this is gated on crmEnabled().
+export async function updateCustomerContact(
+  id: string,
+  patch: { name?: string; phone?: string; email?: string },
+): Promise<{ ok: true; jobsUpdated: number } | { ok: false; reason: 'not_found' | 'duplicate' }> {
+  if (getBackend() === 'postgres') return pgCustomers.updateCustomerContact(id, patch)
+  return { ok: false, reason: 'not_found' }
+}
+
+// Postgres-only: a new job linked to an existing customer by id. Sheet mode
+// fails loud, like insertCustomer.
+export async function insertJobForCustomer(
+  customerId: string,
+  row: ContactRow,
+): Promise<{ jobId: string } | null> {
+  if (getBackend() === 'postgres') return pgRepo.insertJobForCustomer(customerId, row)
+  throw new Error('insertJobForCustomer: customers are only available on the Postgres backend')
+}
+
 export async function listActivitiesForJob(jobId: string): Promise<Activity[]> {
   return getBackend() === 'postgres' ? pgActivitiesRead.listActivitiesForJob(jobId) : []
 }
@@ -265,7 +286,7 @@ export async function claimSlot(args: {
 
 export async function linkAppointment(
   id: string,
-  fields: { jobId?: string; googleEventId?: string },
+  fields: { jobId?: string; googleEventId?: string; source?: string },
 ): Promise<void> {
   if (getBackend() === 'postgres') await pgAppointments.linkAppointment(id, fields)
 }

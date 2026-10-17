@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { JobActions } from "./JobActions";
 import { CancelBookingButton } from "./CancelBookingButton";
+import { SchedulePanel } from "./SchedulePanel";
 import { RefundSection } from "./RefundSection";
 import { listRefundablePayments } from "@/lib/data/pg/payments";
 import { addJobNoteAction } from "./actions";
@@ -15,6 +16,8 @@ import {
   getAppointmentByJobId,
   listActivitiesForJob,
 } from "@/lib/data";
+import { canAdminTransition } from "@/lib/jobs/status-machine";
+import { operationsCalendarEmail } from "@/lib/scheduling/config";
 import { formatEtDay, formatEtTime } from "@/lib/scheduling/time";
 
 export const metadata: Metadata = {
@@ -45,6 +48,11 @@ export default async function JobDetailPage({
     ? await listActivitiesForJob(jobId)
     : [];
   const appointment = timelineEnabled ? await getAppointmentByJobId(jobId) : null;
+  // Offer Schedule on a job with no live appointment that can still be booked.
+  const canSchedule =
+    timelineEnabled &&
+    !appointment &&
+    (row.status === "Booked" || canAdminTransition(row.status, "Booked"));
   // Refunds are postgres-only (the payments ledger holds the Stripe refs).
   const refundablePayments = timelineEnabled
     ? await listRefundablePayments(jobId)
@@ -131,6 +139,11 @@ export default async function JobDetailPage({
                 )}–${formatEtTime(new Date(appointment.endsAt))}`}
               />
               <CancelBookingButton jobId={decoded} />
+            </Panel>
+          )}
+          {canSchedule && (
+            <Panel title="Appointment">
+              <SchedulePanel jobId={decoded} calendarEmail={operationsCalendarEmail()} />
             </Panel>
           )}
           <Panel title="Actions">

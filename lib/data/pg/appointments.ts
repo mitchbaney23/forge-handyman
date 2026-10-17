@@ -116,14 +116,17 @@ export async function claimSlot(args: {
 // The slot is claimed with a null job_id (before the jobs row is written, to
 // fail fast on a taken slot without leaving a dangling job); this sets job_id
 // once the jobs row exists, plus the Google event id for later reschedule/cancel.
+// `source` marks who booked it ('self-serve' default, 'admin' for a job
+// scheduled from the admin), which also says whose calendar holds the event.
 export async function linkAppointment(
   id: string,
-  fields: { jobId?: string; googleEventId?: string },
+  fields: { jobId?: string; googleEventId?: string; source?: string },
 ): Promise<void> {
   if (!isUuid(id)) return
   const update: Record<string, string> = {}
   if (fields.jobId && isUuid(fields.jobId)) update.job_id = fields.jobId
   if (fields.googleEventId != null) update.google_event_id = fields.googleEventId
+  if (fields.source) update.source = fields.source
   if (Object.keys(update).length === 0) return
   const client = getSupabaseClient()
   const { error } = await client.from('appointments').update(update).eq('id', id)

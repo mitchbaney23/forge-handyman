@@ -9,8 +9,9 @@ import {
   SERVICE_MENU,
   SERVICE_PACKAGES,
 } from '@/lib/constants'
-import { createCustomer, moveJobStatus } from '@/lib/crm/mutations'
+import { createCustomer, createJobForCustomer, moveJobStatus, updateCustomerContact } from '@/lib/crm/mutations'
 import { QUOTE_DESCRIPTION_MAX, QUOTE_TIERS, sendQuote } from '@/lib/crm/quote'
+import { easternWindow, scheduleJob } from '@/lib/crm/schedule'
 import { FORGE_FAMILY } from '@/lib/family-pricing'
 import {
   addJobNote,
@@ -31,6 +32,7 @@ import { getBackend } from '@/lib/data/backend'
 import { listPaymentsSince } from '@/lib/data/pg/payments'
 import { claudeActor } from '@/lib/data/activity-actions'
 import { revenueThisMonthCents, topLeadSources } from '@/lib/admin/metrics'
+import { operationsCalendarEmail } from '@/lib/scheduling/config'
 import { easternIsoDate } from '@/lib/scheduling/time'
 
 // ---------------------------------------------------------------------------
@@ -42,7 +44,9 @@ import { easternIsoDate } from '@/lib/scheduling/time'
 //
 // send_quote is the one customer-facing action here: it runs the same core as
 // the admin quote page (lib/crm/quote.ts), so a Stripe Payment Link goes out
-// by email under the admin-money rate limit. Deliberately absent: charging,
+// by email under the admin-money rate limit. create_job with a schedule writes
+// to the operations Google Calendar, and the day-before reminder cron then
+// emails the customer as it does for any booking. Deliberately absent: charging,
 // refunding, cancelling an appointment, anonymizing, any other email.
 // ---------------------------------------------------------------------------
 
@@ -123,7 +127,7 @@ export const findCustomer = define({
   name: 'find_customer',
   title: 'Find a customer',
   description:
-    'Look up customers by email, phone, or part of a name. Returns up to 10 matches with their id, contact details, job count and last job date. Use the id with customer_history.',
+    'Look up customers by email, phone, or part of a name. Returns up to 10 matches with their id, contact details, job count, last job date and total spent (cents). Use the id with customer_history, update_customer or create_job.',
   inputSchema: z.object({
     query: z.string().min(2).max(120).describe('An email, a phone number, or part of a name'),
   }),
@@ -159,14 +163,24 @@ function summaryOf(c: {
   jobCount: string
   lastJobAt: string
   notes: string
+  totalSpentCents: string
 }) {
-  return { id: c.id, name: c.name, phone: c.phone, email: c.email, jobCount: c.jobCount, lastJobAt: c.lastJobAt, notes: c.notes }
+  return {
+    id: c.id,
+    name: c.name,
+    phone: c.phone,
+    email: c.email,
+    jobCount: c.jobCount,
+    lastJobAt: c.lastJobAt,
+    totalSpentCents: Number(c.totalSpentCents || '0') || 0,
+    notes: c.notes,
+  }
 }
 
 export const customerHistory = define({
   name: 'customer_history',
   title: 'Customer history',
-  description: 'Everything about one customer: contact details, notes, their properties, and every job with status and money.',
+  description: 'Everything about one customer: contact details, notes, total spent with Forge (deposits + balances − refunds, in cents), their properties, and every job with status and money.',
   inputSchema: z.object({ customerId: z.string().uuid() }),
   readOnly: true,
   run: async ({ customerId }) => {
@@ -264,7 +278,7 @@ export const logPhoneJob = define({
   name: 'log_phone_job',
   title: 'Log a phone job',
   description:
-    'Record a job that came in by phone, text or referral: creates the customer (or links an existing one by email) and a job at New. David is NOT notified by this; dispatch him from the admin site when the job is ready. Read the result back to the caller.',
+    'Record a job that came in by phone, text or referral from someone NEW: creates the customer (or links an existing one by email) and a job at New. For a customer already on file use create_job with their id instead. David is NOT notified by this; dispatch him from the admin site when the job is ready. Read the result back to the caller.',
   inputSchema: z.object({
     name: z.string().min(1).max(120),
     phone: z.string().max(40).optional(),
@@ -293,6 +307,81 @@ export const logPhoneJob = define({
     })
     if (!result.ok) return { ok: false, error: result.error, duplicate: result.duplicate }
     return { ok: true, customerId: result.customerId, jobId: result.jobId, message: result.message, dispatched: false }
+  },
+})
+
+const scheduleInput = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('YYYY-MM-DD, Eastern'),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/).describe('HH:MM, 24-hour, Eastern'),
+  durationMinutes: z.number().int().min(30).max(720),
+})
+
+export const updateCustomer = define({
+  name: 'update_customer',
+  title: 'Update a customer',
+  description:
+    "Change a customer's name, phone or email (find_customer gives the id). Leave a field out to keep it; pass an empty string to clear phone or email. The change is copied onto all of their jobs, so future quotes, balance links and reminders use it. Refused if another customer already has the email. Read the change back to the person before making it.",
+  inputSchema: z.object({
+    customerId: z.string().uuid(),
+    name: z.string().min(1).max(120).optional(),
+    phone: z.string().max(40).optional(),
+    email: z.string().max(160).optional(),
+  }),
+  readOnly: false,
+  run: async ({ customerId, name, phone, email }, actor) =>
+    updateCustomerContact({ customerId, changes: { name, phone, email }, actor }),
+})
+
+export const createJob = define({
+  name: 'create_job',
+  title: 'Create a job for a customer',
+  description:
+    `Add a new job for a customer already on file (find_customer gives the id). It lands at New. With schedule, it also books that Eastern-time slot, puts it on the ${operationsCalendarEmail()} Google Calendar, sets the job to Booked and holds the time so the website can't double-book it; the customer then gets the usual reminder email the day before. Read the date, time and length back and get a clear yes before scheduling. David is NOT notified; dispatch him from the admin site.`,
+  inputSchema: z.object({
+    customerId: z.string().uuid(),
+    serviceType: z.string().min(1).max(120).describe('Short description of the service, e.g. "TV mounting"'),
+    description: z.string().min(1).max(2000).describe('What needs doing, in the customer\'s words'),
+    address: z.string().max(300).optional().describe('Defaults to blank; customer_history lists the addresses on file'),
+    urgency: z.enum(['asap', 'two_weeks', 'month', 'flexible']).optional(),
+    referralSource: z.string().max(120).optional(),
+    preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('YYYY-MM-DD; ignored when schedule is given'),
+    schedule: scheduleInput.optional(),
+  }),
+  readOnly: false,
+  run: async ({ customerId, serviceType, description, address, urgency, referralSource, preferredDate, schedule }, actor) => {
+    let window: { startsAt: string; endsAt: string } | undefined
+    if (schedule) {
+      const w = easternWindow(schedule)
+      if (!w) return { ok: false, error: 'That date and time is not a real Eastern time.' }
+      window = w
+    }
+    return createJobForCustomer({
+      customerId,
+      job: {
+        serviceType,
+        description,
+        address,
+        urgency,
+        referralSource,
+        preferredDate: schedule ? schedule.date : preferredDate,
+      },
+      schedule: window,
+      actor,
+    })
+  },
+})
+
+export const scheduleJobTool = define({
+  name: 'schedule_job',
+  title: 'Schedule a job',
+  description:
+    `Book a time for a job that has no appointment yet (a website lead, a phone job, or one whose scheduling failed). Puts it on the ${operationsCalendarEmail()} Google Calendar, sets the job to Booked and holds the time so the website can't double-book it; the customer then gets the usual reminder email the day before. Refused if the time overlaps another booking or the job is already scheduled. Read the date, time and length back and get a clear yes first. David is NOT notified.`,
+  inputSchema: z.object({ jobId: z.string().uuid() }).merge(scheduleInput),
+  readOnly: false,
+  run: async ({ jobId, date, startTime, durationMinutes }, actor) => {
+    const window = easternWindow({ date, startTime, durationMinutes })
+    if (!window) return { ok: false, error: 'That date and time is not a real Eastern time.' }
+    return scheduleJob({ jobId, ...window, actor })
   },
 })
 
@@ -551,6 +640,9 @@ export const TOOLS = [
   getJob,
   todaySchedule,
   logPhoneJob,
+  updateCustomer,
+  createJob,
+  scheduleJobTool,
   moveJob,
   addNote,
   businessSnapshot,
