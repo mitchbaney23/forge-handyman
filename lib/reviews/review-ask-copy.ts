@@ -14,7 +14,7 @@ export interface ReviewAskCopy {
 
 export const REVIEW_SIGN_OFF = "— The Forge team";
 
-// serviceRef: "your TV mounting project in Garner"; omitted, "this job".
+// serviceRef: "your project in Clayton"; omitted, "this job".
 export function reviewAskCopy(serviceRef?: string): ReviewAskCopy {
   const what = serviceRef?.trim() ? serviceRef.trim() : "this job";
   return {
