@@ -22,7 +22,10 @@ import {
   balanceLinkIdsFrom,
   moveJobStatus,
 } from "@/lib/crm/mutations";
+import { recordManualPayment } from "@/lib/crm/payments";
+import { requestReview } from "@/lib/crm/review";
 import { easternWindow, scheduleJob } from "@/lib/crm/schedule";
+import type { PaymentMethod } from "@/lib/payment-methods";
 import { performCancellation } from "@/lib/scheduling/cancel";
 import { adminActor } from "@/lib/data/activity-actions";
 import { getBackend } from "@/lib/data/backend";
@@ -816,4 +819,71 @@ export async function scheduleJobAction(
   revalidatePath("/admin");
   revalidatePath("/admin/pipeline");
   return { ok: true, message: res.message };
+}
+
+// Record a payment taken outside Stripe (cash, check, Venmo, Zelle, other).
+// Thin wrapper over the shared core (lib/crm/payments.ts), which writes the
+// ledger, updates the balance and status, switches off the job's emailed
+// Stripe links, and sends the office notice and the optional receipt. Money
+// bucket: it changes what is owed and closes payment links.
+export async function recordPaymentAction(
+  jobId: string,
+  input: {
+    amountDollars: number;
+    method: PaymentMethod;
+    methodDetail?: string;
+    note?: string;
+    balanceAfterDollars?: number;
+    closeOut: boolean;
+    emailCustomer: boolean;
+  },
+): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdminMoney(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  if (!Number.isFinite(input.amountDollars)) {
+    return { ok: false, error: "Enter the amount they paid." };
+  }
+  if (input.balanceAfterDollars !== undefined && !Number.isFinite(input.balanceAfterDollars)) {
+    return { ok: false, error: "Enter the balance left, or $0." };
+  }
+  const res = await recordManualPayment({
+    jobId,
+    amountCents: Math.round(input.amountDollars * 100),
+    method: input.method,
+    methodDetail: input.methodDetail,
+    note: input.note,
+    balanceAfterCents:
+      input.balanceAfterDollars !== undefined ? Math.round(input.balanceAfterDollars * 100) : undefined,
+    closeOut: input.closeOut,
+    emailCustomer: input.emailCustomer,
+    actor: adminActor(auth.email),
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/admin");
+  revalidatePath("/admin/pipeline");
+  revalidatePath("/admin/customers");
+  return { ok: true, message: res.message };
+}
+
+// Email the customer a Google review request now (resend, or a job closed out
+// another way). Shared core: lib/crm/review.ts.
+export async function requestReviewAction(jobId: string): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth) return { ok: false, error: "Not authorized" };
+  if (!(await rateLimitAdmin(auth.email))) {
+    return { ok: false, error: "Too many actions. Slow down a moment." };
+  }
+  try {
+    const res = await requestReview({ jobId, actor: adminActor(auth.email) });
+    if (!res.ok) return { ok: false, error: res.error };
+    revalidatePath(`/admin/jobs/${jobId}`);
+    return { ok: true, message: res.message };
+  } catch (err) {
+    logger.error({ err, jobId }, "admin: review request failed");
+    return { ok: false, error: "The review request email didn't send. Try again in a minute." };
+  }
 }

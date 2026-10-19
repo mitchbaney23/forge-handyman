@@ -52,6 +52,10 @@ export const ACTIONS = {
   // Admin (or Claude) changed what the balance charge will be, before it runs
   BALANCE_ADJUSTED: 'balance.adjusted',
   BALANCE_CHARGE_FAILED: 'balance.charge_failed',
+  // A payment taken outside Stripe (cash, check, Venmo, Zelle) recorded by hand
+  PAYMENT_RECORDED: 'payment.recorded',
+  // A Google review request emailed to the customer
+  REVIEW_REQUESTED: 'review.requested',
   REFUND_ISSUED: 'refund.issued',
   REFUND_FAILED: 'refund.failed',
   CHARGE_FULLY_REFUNDED: 'charge.fully_refunded',

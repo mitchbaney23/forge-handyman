@@ -310,8 +310,8 @@ export function JobActions({
           </div>
           <div className="mt-1 text-xs text-amber-900/80">
             {hasSavedCard
-              ? "This charges the card from the deposit checkout. It cannot be undone except via a refund. If this balance was already collected outside the app (e.g. Stripe Dashboard), cancel and zero it there instead."
-              : "The customer pays on a secure Stripe page; the balance clears and a paid-in-full receipt sends automatically once they do. If this balance was already collected outside the app, don't send the link."}
+              ? "This charges the card from the deposit checkout. It cannot be undone except via a refund. If they already paid the balance another way (cash, check, Venmo), cancel and use Record a payment instead."
+              : "The customer pays on a secure Stripe page; the balance clears and a paid-in-full receipt sends automatically once they do. If they already paid another way, use Record a payment instead."}
           </div>
           <div className="mt-3 flex gap-2">
             <button

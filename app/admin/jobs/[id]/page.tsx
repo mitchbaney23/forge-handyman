@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { JobActions } from "./JobActions";
 import { CancelBookingButton } from "./CancelBookingButton";
 import { SchedulePanel } from "./SchedulePanel";
+import { RecordPaymentPanel } from "./RecordPaymentPanel";
+import { ReviewRequestPanel } from "./ReviewRequestPanel";
 import { RefundSection } from "./RefundSection";
 import { listRefundablePayments } from "@/lib/data/pg/payments";
 import { addJobNoteAction } from "./actions";
@@ -210,6 +212,34 @@ export default async function JobDetailPage({
               firstTouchSentAt={row.first_touch_sent_at || ""}
             />
           </Panel>
+          {timelineEnabled && (
+            <Panel title="Record a payment">
+              <RecordPaymentPanel
+                jobId={decoded}
+                status={row.status}
+                depositPaidCents={depositCents}
+                balanceOwedCents={balanceCents}
+                lastQuoteTotalCents={
+                  lastQuote && lastQuote.depositCents != null
+                    ? lastQuote.depositCents + (lastQuote.balanceCents ?? 0)
+                    : null
+                }
+                customerEmail={row.email || ""}
+              />
+            </Panel>
+          )}
+          {(row.status === "Complete" || row.review_sent_at) && (
+            <Panel title="Google review">
+              <ReviewRequestPanel
+                jobId={decoded}
+                customerName={row.name || ""}
+                customerEmail={row.email || ""}
+                reviewSentAt={row.review_sent_at || ""}
+                sendCount={Number(row.review_send_count || "0") || 0}
+                optedOut={(row.opt_out || "").trim().toLowerCase() === "true"}
+              />
+            </Panel>
+          )}
           {refundablePayments.length > 0 && (
             <Panel title="Refunds">
               <RefundSection

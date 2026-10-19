@@ -224,14 +224,17 @@ interface DbPaymentLite {
   purpose: string | null
   status: string | null
   amount_cents: number | null
+  data: { kind?: unknown } | null
 }
 
 function toSpendPayment(row: DbPaymentLite): SpendPayment {
+  const kind = row.data?.kind
   return {
     jobId: row.job_id ?? '',
     purpose: row.purpose ?? '',
     status: row.status ?? '',
     amountCents: row.amount_cents,
+    ...(typeof kind === 'string' ? { kind } : {}),
   }
 }
 
@@ -255,7 +258,7 @@ async function loadSpentByCustomer(): Promise<Map<string, number>> {
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data, error } = await client
       .from('payments')
-      .select('job_id,purpose,status,amount_cents')
+      .select('job_id,purpose,status,amount_cents,data')
       .eq('status', 'succeeded')
       .order('id', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1)
@@ -285,7 +288,7 @@ async function loadSpentForJobs(jobs: JobRow[]): Promise<number> {
   const client = getSupabaseClient()
   const { data, error } = await client
     .from('payments')
-    .select('job_id,purpose,status,amount_cents')
+    .select('job_id,purpose,status,amount_cents,data')
     .eq('status', 'succeeded')
     .in('job_id', jobIds)
   if (error) throw new Error(`pg/customers: spend payments read failed: ${error.message}`)

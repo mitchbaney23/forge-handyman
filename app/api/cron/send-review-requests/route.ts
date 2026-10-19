@@ -1,10 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import * as Sentry from "@sentry/nextjs";
-import {
-  SERVICE_LABEL_BY_CODE,
-  type ServiceCategoryCode,
-} from "@/lib/constants";
 import { sendReviewRequestEmail } from "@/lib/email/review-request";
+import { reviewCityFrom, reviewServiceLabel } from "@/lib/reviews/request-fields";
 import { logger, maskEmail } from "@/lib/security/logger";
 import {
   listJobs,
@@ -29,39 +26,6 @@ function verifyCronSecret(request: NextRequest): boolean {
   if (!secret) return false;
   const header = request.headers.get("authorization");
   return header === `Bearer ${secret}`;
-}
-
-function extractCity(address: string): string | undefined {
-  if (!address) return undefined;
-  const parts = address
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  while (
-    parts.length > 0 &&
-    /^(USA|U\.S\.A\.|United States|US|U\.S\.)$/i.test(parts[parts.length - 1])
-  ) {
-    parts.pop();
-  }
-  if (parts.length === 0) return undefined;
-  if (parts.length >= 3) return parts[parts.length - 2];
-  if (parts.length === 2) {
-    return /^\d/.test(parts[0]) ? parts[1] : parts[0];
-  }
-  return parts[0];
-}
-
-function deriveServiceLabel(row: JobRow): string {
-  const categories = (row.service_categories || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean) as ServiceCategoryCode[];
-  if (categories.length === 1) {
-    return SERVICE_LABEL_BY_CODE[categories[0]] ?? row.service_type ?? "project";
-  }
-  if (categories.length >= 2) return "punch list";
-  const code = row.service_type as ServiceCategoryCode;
-  return SERVICE_LABEL_BY_CODE[code] ?? row.service_type ?? "project";
 }
 
 interface AttemptResult {
@@ -114,8 +78,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       await sendReviewRequestEmail({
         toEmail: row.email,
         toName: row.name || "",
-        serviceLabel: deriveServiceLabel(row),
-        customerCity: extractCity(row.address || ""),
+        serviceLabel: reviewServiceLabel(row),
+        customerCity: reviewCityFrom(row.address || ""),
       });
       const sentAt = new Date().toISOString();
       const nextCount =

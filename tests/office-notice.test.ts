@@ -119,3 +119,27 @@ describe('senderLabel', () => {
     expect(senderLabel('claude')).toBe('Claude')
   })
 })
+
+describe('recorded payment notice', () => {
+  it('says the method, what is left, the receipt and who recorded it', () => {
+    const n = buildPaymentNotice({
+      jobId: JOB,
+      kind: 'balance',
+      customerName: 'Jane Doe',
+      customerEmail: 'jane@example.com',
+      serviceType: 'TV mounting',
+      amountPaidCents: 12000,
+      balanceCents: 0,
+      cardSaved: false,
+      recorded: { methodLabel: 'Cash', actor: 'admin:mitch@forgehandyman.com', statusAfter: 'Complete', note: 'Paid at the door', linksClosed: 1, receipt: 'sent' },
+    })
+    expect(n.subject).toBe('Cash payment recorded: Jane Doe — $120.00')
+    expect(n.text).toContain('Method: Cash')
+    expect(n.text).toContain('Balance now: None — paid in full')
+    expect(n.text).toContain('Status: Complete')
+    expect(n.text).toContain('Note: Paid at the door')
+    expect(n.text).toContain('Stripe links: 1 open link closed')
+    expect(n.text).toContain('Recorded by: mitch@forgehandyman.com')
+    expect(n.text).not.toContain('Card on file')
+  })
+})

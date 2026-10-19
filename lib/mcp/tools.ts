@@ -11,8 +11,11 @@ import {
 } from '@/lib/constants'
 import { createCustomer, createJobForCustomer, moveJobStatus, updateCustomerContact } from '@/lib/crm/mutations'
 import { QUOTE_DESCRIPTION_MAX, QUOTE_TIERS, sendQuote } from '@/lib/crm/quote'
+import { recordManualPayment } from '@/lib/crm/payments'
+import { requestReview } from '@/lib/crm/review'
 import { easternWindow, scheduleJob } from '@/lib/crm/schedule'
 import { FORGE_FAMILY } from '@/lib/family-pricing'
+import { METHOD_DETAIL_MAX, PAYMENT_METHODS, PAYMENT_NOTE_MAX } from '@/lib/payment-methods'
 import {
   CUSTOM_MAX_QTY,
   CUSTOM_MAX_UNIT_CENTS,
@@ -775,6 +778,47 @@ export const sendQuoteTool = define({
   },
 })
 
+export const recordPaymentTool = define({
+  name: 'record_payment',
+  title: 'Record a payment',
+  description:
+    'Record money a customer paid outside Stripe: cash, check, Venmo, Zelle or other. It counts toward their total spent and the month\'s revenue, sets the balance left (by default the quote total or current balance minus this payment), moves an unbooked job to Booked (it was their deposit), switches off the job\'s emailed Stripe payment links so they can\'t pay twice, emails the office, and emails the customer a receipt unless emailCustomer is false. closeOut marks the job Complete when nothing is left owed, and its receipt asks for a Google review. Nothing is charged. Read the amount, method and balance left back and get a clear yes first.',
+  inputSchema: z.object({
+    jobId: z.string().uuid(),
+    amountDollars: dollars(0.01).describe('What they paid'),
+    method: z.enum(PAYMENT_METHODS),
+    methodDetail: z.string().max(METHOD_DETAIL_MAX).optional().describe('Check number, or what "other" was (Cash App, gift card); required for other'),
+    note: z.string().max(PAYMENT_NOTE_MAX).optional().describe('For the timeline'),
+    balanceAfterDollars: dollars(0).optional().describe('The balance left after this payment; leave out to use the suggestion'),
+    closeOut: z.boolean().default(false).describe('Mark the job Complete (only when nothing is left owed)'),
+    emailCustomer: z.boolean().default(true).describe('Email the customer a receipt'),
+  }),
+  readOnly: false,
+  money: true,
+  run: async ({ jobId, amountDollars, method, methodDetail, note, balanceAfterDollars, closeOut, emailCustomer }, actor) =>
+    recordManualPayment({
+      jobId,
+      amountCents: Math.round(amountDollars * 100),
+      method,
+      methodDetail,
+      note,
+      balanceAfterCents: balanceAfterDollars != null ? Math.round(balanceAfterDollars * 100) : undefined,
+      closeOut,
+      emailCustomer,
+      actor,
+    }),
+})
+
+export const requestReviewTool = define({
+  name: 'request_review',
+  title: 'Ask for a Google review',
+  description:
+    'Email the customer a link to leave a Google review. Closing a job out already asks with the receipt, so use this to ask again or for a job closed out another way. Refused if the customer unsubscribed or has no email. This emails the customer, so get a yes first.',
+  inputSchema: z.object({ jobId: z.string().uuid() }),
+  readOnly: false,
+  run: async ({ jobId }, actor) => requestReview({ jobId, actor }),
+})
+
 export const TOOLS = [
   findCustomer,
   customerHistory,
@@ -791,6 +835,8 @@ export const TOOLS = [
   priceMenu,
   previewQuote,
   sendQuoteTool,
+  recordPaymentTool,
+  requestReviewTool,
 ] as unknown as ToolDefinition<unknown>[]
 
 export function actorFor(label: string): string {
