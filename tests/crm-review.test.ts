@@ -30,7 +30,6 @@ describe("requestReview", () => {
     expect(mail.sendReviewRequestEmail).toHaveBeenCalledWith({
       toEmail: "jane@example.com",
       toName: "Jane Doe",
-      serviceLabel: "TV mounting",
       customerCity: "Garner",
     });
     expect(data.updateRowByJobId).toHaveBeenCalledWith("j1", { review_sent_at: expect.any(String), review_send_count: "2" });

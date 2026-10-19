@@ -1,7 +1,7 @@
 import { appendAuditRow, findRowByJobId, updateRowByJobId } from "@/lib/data";
 import { ACTIONS } from "@/lib/data/activity-actions";
 import { sendReviewRequestEmail } from "@/lib/email/review-request";
-import { reviewCityFrom, reviewServiceLabel } from "@/lib/reviews/request-fields";
+import { reviewCityFrom } from "@/lib/reviews/request-fields";
 import { logger, maskEmail } from "@/lib/security/logger";
 
 // Ask a customer for a Google review now, from the job page or Claude. Closing
@@ -27,7 +27,6 @@ export async function requestReview(args: { jobId: string; actor: string }): Pro
   await sendReviewRequestEmail({
     toEmail: row.email,
     toName: row.name || "",
-    serviceLabel: reviewServiceLabel(row),
     customerCity: reviewCityFrom(row.address || ""),
   });
   const sendCount = (Number(row.review_send_count || "0") || 0) + 1;

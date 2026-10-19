@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { sendReviewRequestEmail } from "@/lib/email/review-request";
-import { reviewCityFrom, reviewServiceLabel } from "@/lib/reviews/request-fields";
+import { reviewCityFrom } from "@/lib/reviews/request-fields";
 import { logger, maskEmail } from "@/lib/security/logger";
 import {
   listJobs,
@@ -78,7 +78,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       await sendReviewRequestEmail({
         toEmail: row.email,
         toName: row.name || "",
-        serviceLabel: reviewServiceLabel(row),
         customerCity: reviewCityFrom(row.address || ""),
       });
       const sentAt = new Date().toISOString();

@@ -2,6 +2,7 @@ import { google } from 'googleapis'
 import type { JWT } from 'google-auth-library'
 import { BUSINESS } from '@/lib/constants'
 import { getGoogleReviewUrl } from '@/lib/reviews/google'
+import { REVIEW_SIGN_OFF, reviewAskCopy } from '@/lib/reviews/review-ask-copy'
 
 // "Work's done — here's your receipt" email, sent best-effort from
 // markComplete. Doubles as the review ask (the caller stamps review_sent_at on
@@ -65,6 +66,7 @@ function totalPaidCents(data: CompletionReceiptEmailInput): number {
 }
 
 function buildHtml(data: CompletionReceiptEmailInput): string {
+  const review = reviewAskCopy()
   const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`
   const rows: string[] = []
   if (data.depositPaidCents > 0) {
@@ -111,20 +113,15 @@ function buildHtml(data: CompletionReceiptEmailInput): string {
                 ${rows.join('\n')}
               </table>
               ${owedBlock}
-              <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">
-                If you were happy with the work, a quick Google review makes a real
-                difference for a small local business:
-              </p>
+              <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">${escapeHtml(review.opening)}</p>
+              <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">${escapeHtml(review.ask)}</p>
               <div style="margin:0 0 16px;">
                 <a href="${getGoogleReviewUrl()}" style="display:inline-block;background:#D97706;color:#ffffff;font-size:14px;font-weight:600;padding:10px 18px;border-radius:8px;text-decoration:none;">
                   Leave a Google review &rarr;
                 </a>
               </div>
-              <p style="margin:0 0 16px;font-size:14px;color:#374151;line-height:1.55;">
-                If anything wasn&rsquo;t up to standard, please reply to this email instead.
-                We&rsquo;ll make it right.
-              </p>
-              <p style="margin:24px 0 0;font-size:14px;color:#374151;">&mdash; The Forge team</p>
+              <p style="margin:0 0 16px;font-size:15px;line-height:1.55;">${escapeHtml(review.closing)}</p>
+              <p style="margin:24px 0 0;font-size:15px;color:#374151;">${escapeHtml(REVIEW_SIGN_OFF)}</p>
             </td>
           </tr>
           <tr>
@@ -141,6 +138,7 @@ function buildHtml(data: CompletionReceiptEmailInput): string {
 }
 
 function buildText(data: CompletionReceiptEmailInput): string {
+  const review = reviewAskCopy()
   const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`
   return [
     `Hi ${firstNameOf(data.toName)},`,
@@ -156,12 +154,14 @@ function buildText(data: CompletionReceiptEmailInput): string {
       ? ['', `Remaining balance: ${dollars(data.balanceOwedCents)} — we'll follow up on collecting it.`]
       : []),
     '',
-    'If you were happy with the work, a quick Google review makes a real difference for a small local business:',
+    review.opening,
+    '',
+    review.ask,
     getGoogleReviewUrl(),
     '',
-    "If anything wasn't up to standard, please reply to this email instead. We'll make it right.",
+    review.closing,
     '',
-    '— The Forge team',
+    REVIEW_SIGN_OFF,
     '',
     'Forge Handyman Service · Serving Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs & Fuquay-Varina, NC',
     BUSINESS.mailingAddress,
