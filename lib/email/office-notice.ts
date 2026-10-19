@@ -112,32 +112,60 @@ export interface PaymentNoticeInput {
   serviceType: string;
   amountPaidCents: number;
   // What is still owed after this payment (deposit: the balance charged at
-  // completion; balance link: 0).
+  // completion; balance link: 0; a recorded payment: what is left).
   balanceCents: number;
   appointmentLabel?: string;
   // False when Stripe ran a guest checkout and no card was saved: Mark
-  // Complete will have nothing to charge.
+  // Complete will have nothing to charge. Not shown for recorded payments.
   cardSaved: boolean;
+  // A payment taken outside Stripe and recorded by hand: how it was paid
+  // ("Cash", "Check #1043") and who recorded it.
+  recorded?: {
+    methodLabel: string;
+    actor: string;
+    statusAfter: string;
+    note?: string;
+    linksClosed: number;
+    receipt: "sent" | "failed" | "no-email" | "skipped";
+  };
 }
+
+const RECEIPT_LABEL: Record<NonNullable<PaymentNoticeInput["recorded"]>["receipt"], string> = {
+  sent: "Emailed to the customer",
+  failed: "Did NOT send (email error)",
+  "no-email": "Not sent — no email on file",
+  skipped: "Not sent — you chose not to",
+};
 
 export function buildPaymentNotice(input: PaymentNoticeInput): OfficeNotice {
   const who = input.customerName || input.customerEmail || "a customer";
   const isDeposit = input.kind === "deposit";
+  const rec = input.recorded;
+  const owed = input.balanceCents > 0 ? formatCents(input.balanceCents) : "None — paid in full";
   const rows: Row[] = [
     ["Customer", `${who}${input.customerEmail ? ` <${input.customerEmail}>` : ""}`],
     ["Job", input.serviceType || "—"],
     ["Paid", formatCents(input.amountPaidCents)],
-    ...(isDeposit
+    ...(rec
       ? ([
-          [
-            "Balance at completion",
-            input.balanceCents > 0 ? formatCents(input.balanceCents) : "None — paid in full",
-          ],
-          ["Status", "Booked"],
+          ["Method", rec.methodLabel],
+          ["Balance now", owed],
+          ["Status", rec.statusAfter],
+          ...(rec.note ? [["Note", rec.note]] : []),
+          ["Receipt", RECEIPT_LABEL[rec.receipt]],
+          ...(rec.linksClosed > 0
+            ? [["Stripe links", `${rec.linksClosed} open link${rec.linksClosed === 1 ? "" : "s"} closed`]]
+            : []),
+          ["Recorded by", senderLabel(rec.actor)],
         ] as Row[])
-      : ([["Balance", "Paid in full"]] as Row[])),
+      : isDeposit
+        ? ([
+            ["Balance at completion", owed],
+            ["Status", "Booked"],
+          ] as Row[])
+        : ([["Balance", "Paid in full"]] as Row[])),
     ...(input.appointmentLabel ? ([["Scheduled", input.appointmentLabel]] as Row[]) : []),
-    ...(isDeposit && input.balanceCents > 0
+    ...(!rec && isDeposit && input.balanceCents > 0
       ? ([
           [
             "Card on file",
@@ -148,6 +176,12 @@ export function buildPaymentNotice(input: PaymentNoticeInput): OfficeNotice {
         ] as Row[])
       : []),
   ];
+  if (rec) {
+    return {
+      subject: `${rec.methodLabel} payment recorded: ${who} — ${formatCents(input.amountPaidCents)}`,
+      ...render(`${rec.methodLabel} payment recorded for ${who}`, rows, input.jobId),
+    };
+  }
   const heading = isDeposit ? `Deposit paid by ${who}` : `Balance paid by ${who}`;
   return {
     subject: `${isDeposit ? "Deposit paid" : "Balance paid"}: ${who} — ${formatCents(input.amountPaidCents)}`,

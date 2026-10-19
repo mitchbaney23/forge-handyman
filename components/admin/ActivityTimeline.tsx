@@ -31,6 +31,8 @@ const ACTION_META: Record<string, { icon: IconName; label: string }> = {
   [ACTIONS.PAYMENT_FAILED]: { icon: "dollar", label: "Payment failed" },
   [ACTIONS.BALANCE_CHARGED]: { icon: "dollar", label: "Balance charged" },
   [ACTIONS.BALANCE_ADJUSTED]: { icon: "dollar", label: "Balance adjusted" },
+  [ACTIONS.PAYMENT_RECORDED]: { icon: "dollar", label: "Payment recorded" },
+  [ACTIONS.REVIEW_REQUESTED]: { icon: "star", label: "Review requested" },
   [ACTIONS.BALANCE_CHARGE_FAILED]: {
     icon: "dollar",
     label: "Balance charge failed",

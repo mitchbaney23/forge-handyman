@@ -47,6 +47,10 @@ describe("revenueThisMonthCents", () => {
     expect(revenueThisMonthCents(payments, NOW)).toBe(30000);
   });
 
+  it("counts a payment recorded by hand (cash, check, Venmo)", () => {
+    expect(revenueThisMonthCents([payment({ purpose: "manual", amountCents: 12000 })], NOW)).toBe(12000);
+  });
+
   it("counts a balance paid through an emailed balance link", () => {
     const payments = [
       payment({ amountCents: 10000 }),
@@ -156,7 +160,21 @@ describe("spentCentsByJob", () => {
     expect(Object.fromEntries(net)).toEqual({ a: 20000, b: 5000 });
   });
 
-  it("falls back to deposit_paid_cents only for a job with no money-in ledger row", () => {
+  it("keeps a deposit with no ledger row when a later payment was recorded by hand", () => {
+    const net = spentCentsByJob(
+      [
+        { jobId: "a", purpose: "manual", status: "succeeded", amountCents: 12000, kind: "balance" },
+        { jobId: "b", purpose: "manual", status: "succeeded", amountCents: 20000, kind: "deposit" },
+      ],
+      [
+        { jobId: "a", depositPaidCents: 10000 },
+        { jobId: "b", depositPaidCents: 20000 },
+      ],
+    );
+    expect(Object.fromEntries(net)).toEqual({ a: 22000, b: 20000 });
+  });
+
+  it("falls back to deposit_paid_cents only for a job with no deposit ledger row", () => {
     const net = spentCentsByJob(
       [pay("a", "deposit", 10000)],
       [

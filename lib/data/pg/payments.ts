@@ -201,7 +201,8 @@ export async function listRefundablePayments(jobId: string): Promise<PaymentRow[
 }
 
 // Record a non-guarded payment event (deposit collected via the hosted checkout
-// link, or a refund) for the financial ledger / future LTV. No conflict gate —
+// link, a payment taken outside Stripe and recorded by hand, or a refund) for
+// the financial ledger / future LTV. No conflict gate —
 // these aren't re-chargeable from our side. Best-effort: never the thing that
 // fails a webhook, so callers wrap it.
 export async function recordPayment(args: {
@@ -212,6 +213,9 @@ export async function recordPayment(args: {
   stripePaymentIntentId?: string
   stripeChargeId?: string
   stripeCustomerId?: string
+  // Anything else worth keeping with the row (a manual payment's method and
+  // note); stored in the jsonb `data` column.
+  data?: Record<string, unknown>
 }): Promise<void> {
   if (!isUuid(args.jobId)) return
   const client = getSupabaseClient()
@@ -223,6 +227,7 @@ export async function recordPayment(args: {
     stripe_payment_intent_id: args.stripePaymentIntentId ?? '',
     stripe_charge_id: args.stripeChargeId ?? '',
     stripe_customer_id: args.stripeCustomerId ?? '',
+    ...(args.data ? { data: args.data } : {}),
   })
   if (error) throw new Error(`pg/payments: recordPayment failed: ${error.message}`)
 }

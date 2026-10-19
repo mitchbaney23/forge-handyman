@@ -93,7 +93,7 @@ beforeEach(() => {
 })
 
 describe('registry', () => {
-  it('exposes the fifteen tools; send_quote is the only one that moves money', () => {
+  it('exposes the seventeen tools; send_quote and record_payment take the money limit', () => {
     expect(TOOLS.map((t) => t.name)).toEqual([
       'find_customer',
       'customer_history',
@@ -110,6 +110,8 @@ describe('registry', () => {
       'price_menu',
       'preview_quote',
       'send_quote',
+      'record_payment',
+      'request_review',
     ])
     expect(TOOLS.filter((t) => !t.readOnly).map((t) => t.name)).toEqual([
       'log_phone_job',
@@ -119,8 +121,10 @@ describe('registry', () => {
       'move_job',
       'add_note',
       'send_quote',
+      'record_payment',
+      'request_review',
     ])
-    expect(TOOLS.filter((t) => t.money).map((t) => t.name)).toEqual(['send_quote'])
+    expect(TOOLS.filter((t) => t.money).map((t) => t.name)).toEqual(['send_quote', 'record_payment'])
   })
 
   it('derives the actor from the token label', () => {
