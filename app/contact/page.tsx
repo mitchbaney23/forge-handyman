@@ -5,7 +5,7 @@ import { BUSINESS } from "@/lib/constants";
 import { Icon, type IconName } from "@/lib/icons";
 
 export const metadata: Metadata = {
-  title: "Book a Job — Contact Forge Handyman Service",
+  title: "Contact Us — Book a Job",
   description: `Book a handyman in Garner, Raleigh, Cary, Clayton, Knightdale, Wendell, Holly Springs, or Fuquay-Varina. Fill out the quick form, or call David at ${BUSINESS.phone}. Free estimates, one-business-day response.`,
   alternates: { canonical: "/contact" },
 };

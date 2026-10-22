@@ -3,7 +3,7 @@ import { LegalLayout } from "@/components/LegalLayout";
 import { BUSINESS } from "@/lib/constants";
 
 export const metadata: Metadata = {
-  title: "Terms of Service — Forge Handyman Service",
+  title: "Terms of Service",
   description:
     "The terms that govern estimates, bookings, and payments with Forge Handyman Service.",
   alternates: { canonical: "/terms" },
