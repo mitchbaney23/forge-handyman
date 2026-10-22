@@ -1,3 +1,22 @@
+const CANONICAL_SITE_URL = "https://forgehandyman.com";
+
+// The address every public page names as its official one (canonical tags,
+// og:url, sitemap, robots, JSON-LD). NEXT_PUBLIC_SITE_URL was once set on
+// Vercel to the old forge-handyman.vercel.app test address with a trailing
+// newline, which pointed Google at the wrong site — so trim it, and ignore
+// anything that isn't a real URL or is a *.vercel.app deployment.
+export function resolveSiteUrl(value: string | undefined): string {
+  const trimmed = (value ?? "").trim().replace(/\/+$/, "");
+  if (!trimmed) return CANONICAL_SITE_URL;
+  try {
+    const { hostname } = new URL(trimmed);
+    if (/(^|\.)vercel\.app$/i.test(hostname)) return CANONICAL_SITE_URL;
+  } catch {
+    return CANONICAL_SITE_URL;
+  }
+  return trimmed;
+}
+
 export const BUSINESS = {
   name: "Forge Handyman Service",
   tagline: "Honest Work. Built to Last.",
@@ -27,7 +46,7 @@ export const BUSINESS = {
     { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], opens: "08:00", closes: "18:00" },
     { days: ["Saturday"], opens: "09:00", closes: "14:00" },
   ],
-  siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "https://forgehandyman.com",
+  siteUrl: resolveSiteUrl(process.env.NEXT_PUBLIC_SITE_URL),
 };
 
 export const NAV_LINKS = [
