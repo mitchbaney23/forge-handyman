@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { Hero } from "@/components/Hero";
@@ -8,6 +9,12 @@ import { CTABanner } from "@/components/CTABanner";
 import { Reveal } from "@/components/Reveal";
 import { SERVICES, BUSINESS } from "@/lib/constants";
 import { Icon, type IconName } from "@/lib/icons";
+
+// Title and description come from the root layout; set here rather than there
+// so pages without their own canonical don't inherit the homepage's.
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 export default function HomePage() {
   return (
