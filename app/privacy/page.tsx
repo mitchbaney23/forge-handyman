@@ -3,7 +3,7 @@ import { LegalLayout } from "@/components/LegalLayout";
 import { BUSINESS } from "@/lib/constants";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — Forge Handyman Service",
+  title: "Privacy Policy",
   description:
     "How Forge Handyman Service collects, uses, and protects your personal information.",
   alternates: { canonical: "/privacy" },

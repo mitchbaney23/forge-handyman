@@ -47,6 +47,9 @@ export const BUSINESS = {
     { days: ["Saturday"], opens: "09:00", closes: "14:00" },
   ],
   siteUrl: resolveSiteUrl(process.env.NEXT_PUBLIC_SITE_URL),
+  // The Google Business Profile listing (its stable ?cid= link). Named in the
+  // JSON-LD sameAs so Google ties the website and the Maps listing together.
+  googleProfileUrl: "https://maps.google.com/?cid=17195121418732811108",
 };
 
 export const NAV_LINKS = [

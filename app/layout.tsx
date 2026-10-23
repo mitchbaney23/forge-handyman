@@ -87,8 +87,14 @@ const structuredData = {
   name: BUSINESS.name,
   description:
     "Local handyman services including general repairs, carpentry, painting, assembly, deck/fence, drywall, and pressure washing.",
-  image: `${siteUrl}/og-image.png`,
+  image: [
+    `${siteUrl}/david-at-work.jpg`,
+    `${siteUrl}/david-tree.jpg`,
+    `${siteUrl}/david-wipers.jpg`,
+  ],
+  logo: `${siteUrl}/logo.png`,
   url: siteUrl,
+  sameAs: [BUSINESS.googleProfileUrl],
   telephone: BUSINESS.phone,
   email: BUSINESS.email,
   priceRange: "$$",
